@@ -1,20 +1,3 @@
-# Godot 4+ specific
-.godot/
-*.tmp
-*.import
-export.cfg
-export_presets.cfg
-*.translation
-
-# Android
-android/build/
-android/.gradle/
-
-# Mono/C# (if applicable)
-.mono/
-data_*/
-mono_crash.*.json
-
 # OS generated
 .DS_Store
 Thumbs.db
@@ -22,3 +5,6 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+
+# Supabase
+supabase/.env
