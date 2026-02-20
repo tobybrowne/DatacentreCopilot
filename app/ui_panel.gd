@@ -5,6 +5,7 @@ const PanelScene = preload("res://ui_panel.tscn")
 @export var follow_speed: float = 2.0
 @export var distance: float = 0.8
 @export var height_offset: float = -0.15
+@export var lateral_offset: float = 0.0
 
 var _camera: XRCamera3D
 var _viewport: SubViewport
@@ -56,7 +57,11 @@ func _process(delta: float) -> void:
 		return
 	forward = forward.normalized()
 
-	var target_pos := cam_pos + forward * distance + Vector3(0.0, height_offset, 0.0)
+	var right := _camera.global_transform.basis.x
+	right.y = 0.0
+	right = right.normalized()
+
+	var target_pos := cam_pos + forward * distance + right * lateral_offset + Vector3(0.0, height_offset, 0.0)
 	global_position = global_position.lerp(target_pos, follow_speed * delta)
 
 	var target_y := atan2(-forward.x, -forward.z)

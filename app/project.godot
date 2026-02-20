@@ -19,6 +19,8 @@ config/icon="res://icon.svg"
 
 XRToolsUserSettings="*uid://bqgb8i74tm0t"
 XRToolsRumbleManager="*uid://by853dk86g1qw"
+Supabase="*uid://ocnh0cal4jt1"
+SupabaseManager="*uid://cu146gf6hduem"
 
 [display]
 
@@ -30,7 +32,7 @@ project/assembly_name="EntanglCopilot"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/godot-xr-tools/plugin.cfg")
+enabled=PackedStringArray("res://addons/godot-xr-tools/plugin.cfg", "res://addons/supabase/plugin.cfg")
 
 [physics]
 

@@ -4,6 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://c1tj181ndel56" path="res://assets/hands/LeftHandHumanoid.gltf" id="2_left"]
 [ext_resource type="PackedScene" uid="uid://b4in1gm7dioen" path="res://assets/hands/RightHandHumanoid.gltf" id="3_right"]
 [ext_resource type="PackedScene" path="res://ui_panel_3d.tscn" id="4_uipanel"]
+[ext_resource type="PackedScene" path="res://documents_panel_3d.tscn" id="5_docspanel"]
 
 [sub_resource type="Environment" id="Environment_ar"]
 background_mode = 5
@@ -33,7 +34,7 @@ show_when_tracked = true
 
 [node name="LeftHandHumanoid" parent="XROrigin3D/LeftHand" unique_id=1952445359 instance=ExtResource("2_left")]
 
-[node name="XRHandModifier3D" type="XRHandModifier3D" parent="XROrigin3D/LeftHand/LeftHandHumanoid/LeftHandHumanoid/Skeleton3D" parent_id_path=PackedInt32Array(1952445359, 1984154157) index="1" unique_id=448934385]
+[node name="XRHandModifier3D" type="XRHandModifier3D" parent="XROrigin3D/LeftHand/LeftHandHumanoid/LeftHandHumanoid/Skeleton3D" parent_id_path=PackedInt32Array(1952445359, 1129207713) index="1" unique_id=448934385]
 
 [node name="RightHand" type="XRNode3D" parent="XROrigin3D" unique_id=626780475]
 tracker = &"/user/hand_tracker/right"
@@ -41,11 +42,16 @@ show_when_tracked = true
 
 [node name="RightHandHumanoid" parent="XROrigin3D/RightHand" unique_id=1322806692 instance=ExtResource("3_right")]
 
-[node name="XRHandModifier3D" type="XRHandModifier3D" parent="XROrigin3D/RightHand/RightHandHumanoid/RightHandHumanoid/Skeleton3D" parent_id_path=PackedInt32Array(1322806692, 502284937) index="1" unique_id=2057868498]
+[node name="XRHandModifier3D" type="XRHandModifier3D" parent="XROrigin3D/RightHand/RightHandHumanoid/RightHandHumanoid/Skeleton3D" parent_id_path=PackedInt32Array(1322806692, 1030318621) index="1" unique_id=2057868498]
 hand_tracker = &"/user/hand_tracker/right"
 
 [node name="UIPanel" parent="XROrigin3D" unique_id=1171545322 instance=ExtResource("4_uipanel")]
 distance = 0.65
+lateral_offset = 0.4
+
+[node name="DocumentsPanel" parent="XROrigin3D" unique_id=1171545323 instance=ExtResource("5_docspanel")]
+distance = 0.65
+lateral_offset = 0.0
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1686587610]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -5)
