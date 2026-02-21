@@ -1,6 +1,10 @@
 extends Node
 class_name AnchorManager
 
+# NOTE: remember that spatial anchors are attached to the SPACE and are indepenedent from the application
+# this prevents us from just grabbing all anchors from the space, as they may be from other applications
+# therefore we are capable to keep our own tracking
+
 ## Manages ML2 spatial anchors: create, load, persist, and visualise.
 ## Must be a child of XROrigin3D.
 
@@ -30,12 +34,16 @@ func _on_mgr_entered_tree() -> void:
 	# _ml_mgr is now in the tree under XROrigin3D — xr_origin is set.
 	var xr := XRServer.find_interface("OpenXR") as OpenXRInterface
 	if xr:
-		xr.session_begun.connect(_load_anchors)
+		xr.session_begun.connect(_load_anchors_from_db)
 		if xr.is_initialized():
-			_load_anchors()
+			_load_anchors_from_db()
 
 
 func place_anchor(world_transform: Transform3D) -> void:
+	"""
+	Place a new anchor at this coordinate, and save it to ML2 storage and the saved anchor list.
+	The co-ordinate is in Godot world space, but the addon will convert it to a headset-relative transform before sending to ML2.
+	"""
 	if not _ml_mgr:
 		return
 	print("AnchorManager: placing anchor at ", world_transform.origin)
@@ -43,65 +51,66 @@ func place_anchor(world_transform: Transform3D) -> void:
 
 
 func remove_anchor(uuid: StringName) -> void:
+	"""
+	Deletes an anchor from both the ML2 storage and the saved anchor list.
+	"""
 	if not _ml_mgr:
 		return
 	_ml_mgr.call("untrack_anchor", uuid)
-	_save_anchors()
+	SupabaseManager.remove_anchor(str(uuid))
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
 
-func _load_anchors() -> void:
+func _load_anchors_from_db() -> void:
+	"""
+	Reads the anchors form the database and tells ML2 to load them, which will eventually trigger the 'tracked' callback for each successfully loaded anchor.
+	"""
 	if _anchors_loaded:
 		return
 	_anchors_loaded = true
 
-	if not FileAccess.file_exists(SAVE_FILE):
-		print("AnchorManager: no saved anchors.")
-		return
+	var anchors_in_db: Array[Anchor] = await SupabaseManager.get_anchors()
+	print("AnchorManager: loaded ", anchors_in_db.size(), " anchors from database.")
 
-	var file := FileAccess.open(SAVE_FILE, FileAccess.READ)
-	if not file:
-		return
-
-	var data = JSON.parse_string(file.get_as_text())
-	if not data is Array:
-		return
-
-	for uuid: String in data:
+	for uuid: String in anchors_in_db.map(func(a): return a.id):
 		print("AnchorManager: loading anchor ", uuid)
 		_ml_mgr.call("load_anchor", StringName(uuid))
-
-
-func _save_anchors() -> void:
-	var uuids: Array[String] = []
-	for uuid in _ml_mgr.call("get_anchor_uuids"):
-		uuids.append(str(uuid))
-
-	var file := FileAccess.open(SAVE_FILE, FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify(uuids))
-	print("AnchorManager: saved ", uuids.size(), " anchor(s).")
-
 
 # ── Callbacks ─────────────────────────────────────────────────────────────────
 
 func _on_anchor_tracked(anchor_node: Node3D, uuid: StringName, is_new: bool) -> void:
+	"""
+	Fires once per anchor per session, either when an existing anchor is loaded or when a new anchor is created.
+	Runs after a node has been created for the anchor and added to the scene tree.
+	Calling 'create_anchor' and 'load_anchor' will both eventually trigger this callback if successful.
+	"""
 	print("AnchorManager: tracked ", uuid, " (new=", is_new, ")")
 	anchor_node.add_child(_make_marker())
 	if is_new:
-		_save_anchors()
+		var new_anchor := Anchor.new()
+		new_anchor.id = uuid
+		SupabaseManager.insert_anchor(new_anchor)
 
 
 func _on_anchor_untracked(uuid: StringName) -> void:
+	"""
+	Fires after an anchor has been untracked (deleted)
+	"""
 	print("AnchorManager: untracked ", uuid)
 
 
 func _on_create_failed(transform: Transform3D) -> void:
+	"""
+	Called when anchor creation fails.
+	"""
 	push_warning("AnchorManager: failed to create anchor at ", transform.origin)
 
 
 func _on_load_failed(uuid: StringName) -> void:
+	"""
+	Called when anchor loading fails.
+	"""
 	push_warning("AnchorManager: failed to load anchor ", uuid)
 
 

@@ -48,11 +48,15 @@ func _ready():
 	else:
 		print("OpenXR not initialized, please check if your headset is connected")
 
+
 func _process(delta: float) -> void:
-	_update_anchor_placement(delta)
+	_check_for_anchor_creation(delta)
 
 
-func _update_anchor_placement(delta: float) -> void:
+func _check_for_anchor_creation(delta: float) -> void:
+	"""
+	Run on every frame, checks if the user has made a long pinch gesture with their right hand, and if so places an anchor at the hand position.
+	"""
 	var tracker := XRServer.get_tracker("/user/hand_tracker/right")
 	if not tracker is XRHandTracker:
 		_pinch_hold_time = 0.0

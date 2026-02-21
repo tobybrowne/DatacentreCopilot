@@ -22,11 +22,18 @@ END;
 $$;
 
 -- create procedures table
-
 CREATE TABLE procedures (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
     steps TEXT[] NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- create anchors table
+CREATE TABLE anchors (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), -- id from ML2
+    name TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
