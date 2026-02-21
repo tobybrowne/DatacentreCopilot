@@ -47,8 +47,9 @@ textures/vram_compression/import_etc2_astc=true
 [xr]
 
 openxr/enabled=true
-openxr/reference_space=0
+openxr/reference_space=1
 openxr/environment_blend_mode=1
 openxr/extensions/hand_tracking=true
 openxr/extensions/hand_interaction_profile=true
 shaders/enabled=true
+openxr/extensions/magic_leap/spatial_anchors=true

@@ -5,3 +5,4 @@ sleep 1
 $ADB shell am start -a android.intent.action.MAIN \
   -n com.example.entanglcopilot/com.godot.game.GodotApp \
   -c org.khronos.openxr.intent.category.IMMERSIVE_HMD
+$ADB logcat -s godot

@@ -1,5 +1,5 @@
--- initialise the documents table
-INSERT INTO documents (title, content) VALUES
-('Document 1', '{"text": "This is the content of document 1."}'),
-('Document 2', '{"text": "This is the content of document 2."}'),
-('Document 3', '{"text": "This is the content of document 3."}');
+-- initialise the procedures table
+INSERT INTO procedures (title, steps) VALUES
+('Procedure 1', ARRAY['Pick up the instrument', 'Position over the target area', 'Apply gentle pressure']),
+('Procedure 2', ARRAY['Step 1 for Procedure 2', 'Step 2 for Procedure 2', 'Step 3 for Procedure 2']),
+('Procedure 3', ARRAY['Step 1 for Procedure 3', 'Step 2 for Procedure 3', 'Step 3 for Procedure 3']);

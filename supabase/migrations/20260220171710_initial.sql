@@ -21,11 +21,12 @@ BEGIN
 END;
 $$;
 
--- create documents table
-CREATE TABLE documents (
-    id SERIAL PRIMARY KEY,
+-- create procedures table
+
+CREATE TABLE procedures (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
-    content jsonb NOT NULL,
+    steps TEXT[] NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );

@@ -14,17 +14,24 @@ func sign_in(email, password):
 		return false
 
 
-func get_documents(table: String) -> Array[Dictionary]:
+func get_procedures() -> Array[Procedure]:
 	var task = await Supabase.database.query(
-		SupabaseQuery.new().from(table).select()
+		SupabaseQuery.new().from("procedures").select()
 	).completed
 
-	if task.error == null:
-		var result: Array[Dictionary] = []
-		result.assign(task.data)
+	print("get_procedures task: ", task)
+
+	if task.error == null and task.data != null:
+		var result: Array[Procedure] = []
+		for row in task.data:
+			print("Row: ", row)
+			result.append(Procedure.from_dict(row))
 		return result
 	else:
-		print("get_documents error: ", task.error.message)
+		if task.error != null:
+			print("get_procedures error: ", task.error.message)
+		else:
+			print("get_procedures error: null response (check Supabase connection)")
 		return []
 
 
