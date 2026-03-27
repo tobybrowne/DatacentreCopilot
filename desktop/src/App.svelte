@@ -1,0 +1,230 @@
+<script>
+  import { onMount } from 'svelte'
+  import { fetchAnchors, insertAnchor, deleteAnchor, setGlbPosition } from './lib/supabase.js'
+  import Scene from './lib/Scene.svelte'
+  import Sidebar from './lib/Sidebar.svelte'
+
+  let glbUrl = null
+  let anchors = []
+  let selectedId = null
+  let pendingPosition = null  // {x,y,z} — new content anchor awaiting name
+  let mappingAnchor = null    // anchor whose glb_position is being set by clicking mesh
+  let newAnchorName = ''
+  let saving = false
+  let error = null
+
+  $: unmappedRefs = anchors.filter(a => a.is_reference && !a.glb_position)
+
+  onMount(refresh)
+
+  async function refresh() {
+    try {
+      anchors = await fetchAnchors()
+    } catch (e) {
+      error = e.message
+    }
+  }
+
+  // Mesh was clicked — behaviour depends on current mode.
+  function handleMeshClick({ detail: position }) {
+    if (mappingAnchor) {
+      confirmMapping(position)
+    } else {
+      pendingPosition = position
+      newAnchorName = ''
+    }
+  }
+
+  // Save glb_position for the anchor being mapped.
+  async function confirmMapping(position) {
+    if (!mappingAnchor || saving) return
+    saving = true
+    try {
+      await setGlbPosition(mappingAnchor.id, position)
+      await refresh()
+      mappingAnchor = null
+    } catch (e) {
+      error = e.message
+    } finally {
+      saving = false
+    }
+  }
+
+  // Save a brand new desktop-placed content anchor.
+  async function confirmPlacement() {
+    if (!pendingPosition || saving) return
+    saving = true
+    try {
+      await insertAnchor({ name: newAnchorName, glbPosition: pendingPosition })
+      await refresh()
+      pendingPosition = null
+    } catch (e) {
+      error = e.message
+    } finally {
+      saving = false
+    }
+  }
+
+  async function handleDelete(e) {
+    try {
+      await deleteAnchor(e.detail)
+      if (selectedId === e.detail) selectedId = null
+      if (mappingAnchor?.id === e.detail) mappingAnchor = null
+      await refresh()
+    } catch (e) {
+      error = e.message
+    }
+  }
+
+  function cancel() {
+    pendingPosition = null
+    mappingAnchor = null
+  }
+
+  function handleKeydown(e) {
+    if (e.key === 'Escape') cancel()
+    if (e.key === 'Enter' && pendingPosition) confirmPlacement()
+  }
+</script>
+
+<svelte:window on:keydown={handleKeydown} />
+
+<Sidebar
+  {anchors}
+  {selectedId}
+  {mappingAnchor}
+  on:fileload={(e) => glbUrl = e.detail}
+  on:select={(e) => selectedId = e.detail}
+  on:delete={handleDelete}
+  on:startmapping={(e) => { mappingAnchor = e.detail; selectedId = e.detail.id }}
+  on:cancelmapping={cancel}
+/>
+
+<Scene
+  {glbUrl}
+  {anchors}
+  {selectedId}
+  {pendingPosition}
+  {mappingAnchor}
+  on:place={handleMeshClick}
+  on:select={(e) => selectedId = e.detail}
+/>
+
+<!-- Mapping mode banner -->
+{#if mappingAnchor}
+  <div class="mapping-banner">
+    <span class="dot" />
+    Click the mesh to map: <strong>{mappingAnchor.name || 'Unnamed'}</strong>
+    <button on:click={cancel}>Cancel</button>
+  </div>
+{/if}
+
+<!-- Unmapped reference anchors prompt -->
+{#if unmappedRefs.length > 0 && !mappingAnchor && glbUrl}
+  <div class="unmapped-notice">
+    {unmappedRefs.length} reference anchor{unmappedRefs.length > 1 ? 's' : ''} not yet mapped to the mesh.
+    Map them in the sidebar.
+  </div>
+{/if}
+
+<!-- New content anchor dialog -->
+{#if pendingPosition}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <div class="overlay" on:click|self={cancel}>
+    <div class="dialog">
+      <h3>Place content anchor</h3>
+      <p class="coords">
+        x: {pendingPosition.x.toFixed(3)}
+        y: {pendingPosition.y.toFixed(3)}
+        z: {pendingPosition.z.toFixed(3)}
+      </p>
+      <input
+        type="text"
+        bind:value={newAnchorName}
+        placeholder="Anchor name (optional)"
+        autofocus
+      />
+      <div class="dialog-actions">
+        <button on:click={cancel}>Cancel</button>
+        <button class="primary" on:click={confirmPlacement} disabled={saving}>
+          {saving ? 'Saving…' : 'Place'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if error}
+  <div class="error-toast" on:click={() => error = null}>{error}</div>
+{/if}
+
+<style>
+  .mapping-banner {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    z-index: 50;
+    box-shadow: 0 0 20px #00d4ff33;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1s infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .unmapped-notice {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ffcc0022;
+    border: 1px solid var(--pending);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 12px;
+    color: var(--pending);
+    z-index: 50;
+  }
+
+  .empty-state {
+    position: absolute;
+    inset: 0;
+    left: 280px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  .error-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #ff444488;
+    border: 1px solid var(--danger);
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    z-index: 200;
+    max-width: 360px;
+  }
+</style>

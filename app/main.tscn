@@ -15,8 +15,6 @@ ambient_light_source = 2
 ambient_light_color = Color(1, 1, 1, 1)
 ambient_light_energy = 0.5
 
-[sub_resource type="CylinderMesh" id="CylinderMesh_ig7tw"]
-
 [node name="Main" type="Node3D" unique_id=886124997]
 script = ExtResource("1_ig7tw")
 
@@ -37,7 +35,7 @@ show_when_tracked = true
 
 [node name="LeftHandHumanoid" parent="XROrigin3D/LeftHand" unique_id=1952445359 instance=ExtResource("2_left")]
 
-[node name="XRHandModifier3D" type="XRHandModifier3D" parent="XROrigin3D/LeftHand/LeftHandHumanoid/LeftHandHumanoid/Skeleton3D" parent_id_path=PackedInt32Array(1952445359, 1129207713) index="1" unique_id=448934385]
+[node name="XRHandModifier3D" type="XRHandModifier3D" parent="XROrigin3D/LeftHand/LeftHandHumanoid/LeftHandHumanoid/Skeleton3D" parent_id_path=PackedInt32Array(1952445359, 1960428556) index="1" unique_id=448934385]
 
 [node name="RightHand" type="XRNode3D" parent="XROrigin3D" unique_id=626780475]
 tracker = &"/user/hand_tracker/right"
@@ -45,7 +43,7 @@ show_when_tracked = true
 
 [node name="RightHandHumanoid" parent="XROrigin3D/RightHand" unique_id=1322806692 instance=ExtResource("3_right")]
 
-[node name="XRHandModifier3D" type="XRHandModifier3D" parent="XROrigin3D/RightHand/RightHandHumanoid/RightHandHumanoid/Skeleton3D" parent_id_path=PackedInt32Array(1322806692, 1030318621) index="1" unique_id=2057868498]
+[node name="XRHandModifier3D" type="XRHandModifier3D" parent="XROrigin3D/RightHand/RightHandHumanoid/RightHandHumanoid/Skeleton3D" parent_id_path=PackedInt32Array(1322806692, 1658836164) index="1" unique_id=2057868498]
 hand_tracker = &"/user/hand_tracker/right"
 
 [node name="UIPanel" parent="XROrigin3D" unique_id=1171545322 instance=ExtResource("4_uipanel")]
@@ -54,6 +52,7 @@ distance = 0.65
 lateral_offset = 0.4
 
 [node name="ProcedurePanel" parent="XROrigin3D" unique_id=1171545323 instance=ExtResource("5_docspanel")]
+visible = false
 distance = 0.65
 
 [node name="StepViewer" parent="XROrigin3D" unique_id=1171545324 instance=ExtResource("6_stepviewer")]
@@ -64,10 +63,6 @@ script = ExtResource("7_pinchstep")
 
 [node name="AnchorManager" type="Node" parent="XROrigin3D" unique_id=1171545326]
 script = ExtResource("8_anchormgr")
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="." unique_id=1686587610]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -5)
-mesh = SubResource("CylinderMesh_ig7tw")
 
 [editable path="XROrigin3D/LeftHand/LeftHandHumanoid"]
 [editable path="XROrigin3D/RightHand/RightHandHumanoid"]

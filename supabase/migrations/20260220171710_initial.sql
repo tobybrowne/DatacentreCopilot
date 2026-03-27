@@ -31,9 +31,15 @@ CREATE TABLE procedures (
 );
 
 -- create anchors table
+-- Add mesh-space position for desktop-placed anchors.
+-- mesh_position is {x, y, z} in the GLB/mesh coordinate frame.
+-- source distinguishes headset-placed vs desktop-placed anchors.
 CREATE TABLE anchors (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), -- id from ML2
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), -- supabase only UUID
     name TEXT,
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    updated_at TIMESTAMP DEFAULT NOW(),
+    ml2_id UUID DEFAULT NULL, -- ML2's UUID for this anchor, if available
+    glb_position jsonb, -- {x, y, z} in the GLB/mesh coordinate frame
+    is_reference boolean NOT NULL DEFAULT false -- currently, all ML2 anchors are reference
 );
