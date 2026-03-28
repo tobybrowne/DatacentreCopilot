@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://b_docspanel3d"]
+
+[ext_resource type="Script" uid="uid://doem5fohiy6tt" path="res://ui/viewport_panel_3d.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://b_docspanel" path="res://ui/procedure_panel/procedure_panel.tscn" id="2_scene"]
+
+[node name="ProcedurePanel3D" type="Node3D"]
+script = ExtResource("1_script")
+panel_scene = ExtResource("2_scene")

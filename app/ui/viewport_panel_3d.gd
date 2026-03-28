@@ -1,5 +1,13 @@
+# Handles UI Panel boilerplate:
+#	- SubViewport setup
+#	- QuadMesh setup to render the SubViewport in 3D space
+#	- Positioning and orienting the panel in front of the user
+#	- Projecting hand tracker positions to the panel and sending input events to the SubViewport
+
 class_name ViewportPanel3D
 extends Node3D
+
+@export var panel_scene: PackedScene
 
 @export var follow_speed: float = 2.0
 @export var distance: float = 0.8
@@ -23,9 +31,8 @@ func _ready() -> void:
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(_viewport)
 
-	var scene := _get_panel_scene()
-	if scene:
-		_panel = scene.instantiate()
+	if panel_scene:
+		_panel = panel_scene.instantiate()
 		_on_panel_ready(_panel)
 		_viewport.add_child(_panel)
 
@@ -43,14 +50,13 @@ func _ready() -> void:
 	add_child(_mesh_instance)
 
 
-# Override in subclass to provide the 2D scene to render
-func _get_panel_scene() -> PackedScene:
-	return null
-
-
 # Override in subclass to wire signals or configure the panel after instantiation
 func _on_panel_ready(_p: Control) -> void:
 	pass
+
+
+func get_panel() -> Control:
+	return _panel
 
 
 func _process(delta: float) -> void:

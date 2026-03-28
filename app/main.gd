@@ -4,11 +4,9 @@ var xr_interface: XRInterface
 
 @onready var procedure_panel = $XROrigin3D/ProcedurePanel
 @onready var step_viewer = $XROrigin3D/StepViewer
-@onready var pinch_step_control = $XROrigin3D/PinchStepControl
+@onready var gesture_manager: GestureManager = $XROrigin3D/GestureManager
 @onready var anchor_manager: AnchorManager = $XROrigin3D/AnchorManager
 
-const PINCH_DIST           := 0.015  # metres — finger gap to count as pinching
-const PINCH_HOLD_TIME      := 3.0    # seconds to hold before action fires
 const ANCHOR_DELETE_RADIUS := 0.10   # metres — how close to an anchor to target it for delete
 
 # Tracking indicator
@@ -25,11 +23,9 @@ var _tracking_dot_mat: StandardMaterial3D
 # UUID poll timer
 var _uuid_timer := 0.0
 
-# Pinch state
-var _pinch_hold_time := 0.0
-var _pinch_fired     := false
-var _pinch_mode      := ""   # "create" | "delete"
-var _pinch_target: Anchor = null   # uuid of anchor targeted for deletion
+# Anchor pinch state
+var _anchor_mode   := ""   # "create" | "delete"
+var _anchor_target: Anchor = null
 
 # Progress ring — two separate mesh nodes so each has a plain, reliable material
 const RING_R_IN    := 0.04
@@ -44,9 +40,11 @@ var _progress_arc_mat:  StandardMaterial3D  = null
 
 
 func _ready():
-	procedure_panel.procedure_selected.connect(_on_procedure_selected)
-	pinch_step_control.prev_requested.connect(step_viewer.prev_step)
-	pinch_step_control.next_requested.connect(step_viewer.next_step)
+	procedure_panel.get_panel().connect("procedure_selected", _on_procedure_selected)
+	gesture_manager.pinch_started.connect(_on_pinch_started)
+	gesture_manager.pinch_held.connect(_on_pinch_held)
+	gesture_manager.pinch_completed.connect(_on_pinch_completed)
+	gesture_manager.pinch_ended.connect(_on_pinch_ended)
 
 	xr_interface = XRServer.find_interface("OpenXR")
 	_create_tracking_indicator()
@@ -71,7 +69,6 @@ func _ready():
 
 
 func _process(delta: float) -> void:
-	_check_for_anchor_action(delta)
 	_update_tracking_indicator(delta)
 	_poll_localization_uuid(delta)
 
@@ -150,53 +147,39 @@ func _update_tracking_indicator(_delta: float) -> void:
 # 	_tracking_dot_mat.albedo_color = color
 
 
-# ── Pinch → anchor create / delete ────────────────────────────────────────────
+# ── Gesture signals ────────────────────────────────────────────────────────────
 
-func _check_for_anchor_action(delta: float) -> void:
-	var tracker := XRServer.get_tracker("/user/hand_tracker/right")
-	if not tracker is XRHandTracker:
-		_end_pinch()
-		return
+func _on_pinch_started(hand: String, position: Vector3) -> void:
+	if hand == "left":
+		step_viewer.get_panel().prev_step()
+	elif hand == "right":
+		step_viewer.get_panel().next_step()
+		var near: Anchor = anchor_manager.get_anchor_near(position, ANCHOR_DELETE_RADIUS)
+		_anchor_mode   = "delete" if near != null else "create"
+		_anchor_target = near
 
-	var ht := tracker as XRHandTracker
-	if not (ht.get_hand_joint_flags(5) & 4) or not (ht.get_hand_joint_flags(10) & 4):
-		_end_pinch()
-		return
 
-	var thumb_pos := ht.get_hand_joint_transform(5).origin
-	var index_pos := ht.get_hand_joint_transform(10).origin
-	var pinch_pos := (thumb_pos + index_pos) * 0.5
+func _on_pinch_held(hand: String, position: Vector3, duration: float) -> void:
+	if hand == "right":
+		_update_progress_indicator(position, minf(duration / gesture_manager.hold_time, 1.0))
 
-	if thumb_pos.distance_to(index_pos) >= PINCH_DIST:
-		_end_pinch()
-		return
 
-	if _pinch_fired:
-		return
-
-	if _pinch_hold_time == 0.0:
-		var near: Anchor = anchor_manager.get_anchor_near(pinch_pos, ANCHOR_DELETE_RADIUS)
-		_pinch_mode   = "delete" if near != null else "create"
-		_pinch_target = near
-
-	_pinch_hold_time += delta
-	_update_progress_indicator(pinch_pos, minf(_pinch_hold_time / PINCH_HOLD_TIME, 1.0))
-
-	if _pinch_hold_time >= PINCH_HOLD_TIME:
-		_pinch_fired = true
+func _on_pinch_completed(hand: String, position: Vector3) -> void:
+	if hand == "right":
 		_clear_progress_indicator()
-		if _pinch_mode == "create":
-			anchor_manager.place_anchor(Transform3D(Basis.IDENTITY, pinch_pos))
+		if _anchor_mode == "create":
+			anchor_manager.place_anchor(Transform3D(Basis.IDENTITY, position))
 		else:
-			anchor_manager.remove_anchor(_pinch_target)
+			anchor_manager.remove_anchor(_anchor_target)
+		_anchor_mode   = ""
+		_anchor_target = null
 
 
-func _end_pinch() -> void:
-	_pinch_hold_time = 0.0
-	_pinch_fired     = false
-	_pinch_mode      = ""
-	_pinch_target    = null
-	_clear_progress_indicator()
+func _on_pinch_ended(hand: String) -> void:
+	if hand == "right":
+		_clear_progress_indicator()
+		_anchor_mode   = ""
+		_anchor_target = null
 
 
 # ── Progress ring ──────────────────────────────────────────────────────────────
@@ -213,7 +196,7 @@ func _update_progress_indicator(pos: Vector3, progress: float) -> void:
 		_progress_root.look_at(cam.global_position, Vector3.UP)
 
 	# Swap colours when in delete mode.
-	var color := Color(0.2, 0.8, 1.0) if _pinch_mode == "create" else Color(1.0, 0.3, 0.2)
+	var color := Color(0.2, 0.8, 1.0) if _anchor_mode == "create" else Color(1.0, 0.3, 0.2)
 	_progress_bg_mat.albedo_color  = Color(color.r, color.g, color.b, 0.2)
 	_progress_arc_mat.albedo_color = color
 
@@ -289,4 +272,4 @@ func _on_procedure_selected(procedure: Procedure):
 	print("Switching to: ", procedure.id)
 	procedure_panel.visible = false
 	step_viewer.visible = true
-	step_viewer.setup(procedure.steps)
+	step_viewer.get_panel().setup(procedure.steps)
