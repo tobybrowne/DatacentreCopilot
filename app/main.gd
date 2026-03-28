@@ -25,6 +25,8 @@ var _tracking_dot_mat: StandardMaterial3D
 var _uuid_timer := 0.0
 
 # Anchor pinch state
+var _spaces_synced := false
+
 var _anchor_mode   := ""   # "create" | "delete"
 var _anchor_target: Anchor = null
 
@@ -43,6 +45,7 @@ var _progress_arc_mat:  StandardMaterial3D  = null
 func _ready():
 	# bind signals to functions
 	procedure_panel.get_panel().connect("procedure_selected", _on_procedure_selected)
+	procedure_panel.visible = false
 	gesture_manager.pinch_started.connect(_on_pinch_started)
 	gesture_manager.pinch_held.connect(_on_pinch_held)
 	gesture_manager.pinch_completed.connect(_on_pinch_completed)
@@ -82,6 +85,10 @@ func _process(delta: float) -> void:
 	
 
 func _on_localization_changed(_state: int, _confidence: int, _error_flags: int, _ext: Object) -> void:
+	if _spaces_synced:
+		return
+	_spaces_synced = true
+
 	var local_spaces: Array[Space] = space_manager.get_all_local_spaces()
 	var db_spaces: Array[Space] = await SupabaseManager.get_spaces()
 	var db_ids := db_spaces.map(func(s): return s.id)

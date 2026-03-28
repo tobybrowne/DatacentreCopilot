@@ -54,3 +54,4 @@ openxr/extensions/hand_interaction_profile=true
 shaders/enabled=true
 openxr/extensions/magic_leap/spatial_anchors=true
 openxr/extensions/magic_leap/localization_map=true
+openxr/extensions/magic_leap/plane_detection=true
