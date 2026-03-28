@@ -5,11 +5,26 @@ export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_KEY
 );
 
-export async function fetchAnchors() {
+export async function fetchSpaces() {
   const { data, error } = await supabase
-    .from("anchors")
+    .from("spaces")
     .select("*")
-    .order("created_at", { ascending: false });
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+export function getSpaceGlbUrl(glbPath) {
+  const { data } = supabase.storage
+    .from("spaces_bucket")
+    .getPublicUrl(glbPath);
+  return data.publicUrl;
+}
+
+export async function fetchAnchors(spaceId = null) {
+  let query = supabase.from("anchors").select("*").order("created_at", { ascending: false });
+  if (spaceId) query = query.eq("space_id", spaceId);
+  const { data, error } = await query;
   if (error) throw error;
   return data;
 }

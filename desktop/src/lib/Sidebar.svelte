@@ -5,30 +5,47 @@
   export let selectedId = null
   export let mappingAnchor = null
   export let monitoring = false
+  export let spaces = []
+  export let selectedSpaceId = null
 
   const dispatch = createEventDispatcher()
 
   $: unmappedRefs = anchors.filter(a => a.is_reference && !a.glb_position)
   $: mappedRefs   = anchors.filter(a => a.is_reference && a.glb_position)
   $: content      = anchors.filter(a => !a.is_reference)
-
-  function handleFile(e) {
-    const file = e.target.files[0]
-    if (!file) return
-    dispatch('fileload', URL.createObjectURL(file))
-  }
 </script>
 
 <aside>
   <div class="logo">Entangl Desktop</div>
 
-  <!-- File picker -->
-  <section>
-    <label class="section-label">Space mesh</label>
-    <label class="file-btn">
-      Load .glb file
-      <input type="file" accept=".glb,.gltf" on:change={handleFile} hidden />
+  <!-- Spaces list -->
+  <section class="spaces-section">
+    <label class="section-label">
+      Spaces
+      <span class="badge">{spaces.length}</span>
     </label>
+    {#if spaces.length === 0}
+      <p class="empty-msg">No spaces in database.</p>
+    {:else}
+      <ul class="spaces-list">
+        {#each spaces as space (space.id)}
+          <li
+            class="space-item"
+            class:selected={space.id === selectedSpaceId}
+            class:no-glb={!space.glb_path}
+            on:click={() => space.glb_path && dispatch('selectspace', space)}
+            title={space.glb_path ? space.name : `${space.name} — no GLB exported yet`}
+          >
+            <span class="space-name">{space.name || space.id}</span>
+            {#if space.glb_path}
+              <span class="tag glb">GLB</span>
+            {:else}
+              <span class="tag no-mesh">no mesh</span>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
   </section>
 
   <!-- Monitor mode -->
@@ -201,17 +218,28 @@
 
   .hint-text { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 
-  .file-btn {
-    display: block;
-    text-align: center;
-    padding: 8px 12px;
-    border: 1px dashed var(--border);
-    border-radius: 6px;
+  .spaces-section { overflow: hidden; max-height: 260px; }
+  .spaces-list { list-style: none; overflow-y: auto; max-height: 200px; display: flex; flex-direction: column; gap: 2px; }
+
+  .space-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 4px;
+    border-radius: 4px;
+    border-bottom: 1px solid var(--border);
     cursor: pointer;
-    color: var(--text-muted);
-    transition: border-color 0.15s, color 0.15s;
+    transition: background 0.1s;
   }
-  .file-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .space-item:last-child { border-bottom: none; }
+  .space-item:hover:not(.no-glb) { background: #202020; }
+  .space-item.selected { background: var(--accent-dim); }
+  .space-item.no-glb { opacity: 0.45; cursor: default; }
+
+  .space-name { font-size: 13px; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .tag.glb { background: #00d4ff22; color: var(--accent); }
+  .tag.no-mesh { background: var(--border); color: var(--text-muted); }
 
   li {
     display: flex;

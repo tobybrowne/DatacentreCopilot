@@ -3,10 +3,11 @@
 [ext_resource type="Script" uid="uid://cds85vytekarp" path="res://main.gd" id="1_ig7tw"]
 [ext_resource type="PackedScene" uid="uid://c1tj181ndel56" path="res://assets/hands/LeftHandHumanoid.gltf" id="2_left"]
 [ext_resource type="PackedScene" uid="uid://b4in1gm7dioen" path="res://assets/hands/RightHandHumanoid.gltf" id="3_right"]
-[ext_resource type="PackedScene" uid="uid://b_docspanel3d" path="res://ui/procedure_panel/procedure_panel_3d.tscn" id="5_docspanel"]
-[ext_resource type="PackedScene" uid="uid://b_stepviewer3d" path="res://ui/step_viewer/step_viewer_3d.tscn" id="6_stepviewer"]
-[ext_resource type="Script" path="res://scripts/GestureManager.gd" id="7_gesturemgr"]
-[ext_resource type="Script" path="res://scripts/AnchorManager.gd" id="8_anchormgr"]
+[ext_resource type="PackedScene" path="res://ui/procedure_panel/procedure_panel_3d.tscn" id="5_docspanel"]
+[ext_resource type="PackedScene" path="res://ui/step_viewer/step_viewer_3d.tscn" id="6_stepviewer"]
+[ext_resource type="Script" uid="uid://daxqqllngyuo0" path="res://scripts/GestureManager.gd" id="7_gesturemgr"]
+[ext_resource type="Script" uid="uid://dqghhykvqv8y7" path="res://scripts/AnchorManager.gd" id="8_anchormgr"]
+[ext_resource type="Script" uid="uid://daochuruug7v7" path="res://scripts/SpaceManager.gd" id="9_spacemgr"]
 
 [sub_resource type="Environment" id="Environment_ar"]
 background_mode = 5
@@ -46,17 +47,18 @@ show_when_tracked = true
 hand_tracker = &"/user/hand_tracker/right"
 
 [node name="ProcedurePanel" parent="XROrigin3D" unique_id=1171545323 instance=ExtResource("5_docspanel")]
-visible = false
 distance = 0.65
 
 [node name="StepViewer" parent="XROrigin3D" unique_id=1171545324 instance=ExtResource("6_stepviewer")]
-visible = false
 
 [node name="GestureManager" type="Node" parent="XROrigin3D" unique_id=1171545325]
 script = ExtResource("7_gesturemgr")
 
 [node name="AnchorManager" type="Node" parent="XROrigin3D" unique_id=1171545326]
 script = ExtResource("8_anchormgr")
+
+[node name="SpaceManager" type="Node" parent="XROrigin3D" unique_id=1171545327]
+script = ExtResource("9_spacemgr")
 
 [editable path="XROrigin3D/LeftHand/LeftHandHumanoid"]
 [editable path="XROrigin3D/RightHand/RightHandHumanoid"]

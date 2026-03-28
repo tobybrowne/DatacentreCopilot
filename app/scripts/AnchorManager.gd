@@ -264,6 +264,7 @@ func _on_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bool)
 		new_anchor.ml2_id = uuid_str
 		new_anchor.name = str(_next_num)
 		new_anchor.is_reference = true
+		new_anchor.space_id = localized_space_uuid
 		_next_num += 1
 		_all_anchors[uuid_str] = new_anchor
 		SupabaseManager.insert_anchor(new_anchor)

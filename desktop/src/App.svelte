@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { fetchAnchors, insertAnchor, deleteAnchor, setGlbPosition, fetchUserPosition, subscribeUserPosition } from './lib/supabase.js'
+  import { fetchAnchors, insertAnchor, deleteAnchor, setGlbPosition, fetchUserPosition, subscribeUserPosition, fetchSpaces, getSpaceGlbUrl } from './lib/supabase.js'
   import Scene from './lib/Scene.svelte'
   import Sidebar from './lib/Sidebar.svelte'
 
@@ -18,6 +18,9 @@
   let monitoring = false
   let userPosition = null
   let unsubscribeUser = null
+
+  let spaces = []
+  let selectedSpaceId = null
 
   async function startMonitoring() {
     monitoring = true
@@ -37,11 +40,32 @@
 
   $: unmappedRefs = anchors.filter(a => a.is_reference && !a.glb_position)
 
-  onMount(refresh)
+  onMount(async () => {
+    await Promise.all([refresh(), loadSpaces()])
+  })
 
   async function refresh() {
     try {
-      anchors = await fetchAnchors()
+      anchors = await fetchAnchors(selectedSpaceId)
+    } catch (e) {
+      error = e.message
+    }
+  }
+
+  async function loadSpaces() {
+    try {
+      spaces = await fetchSpaces()
+    } catch (e) {
+      error = e.message
+    }
+  }
+
+  async function selectSpace(space) {
+    selectedSpaceId = space.id
+    glbUrl = null  // clear while loading
+    try {
+      glbUrl = getSpaceGlbUrl(space.glb_path)
+      await refresh()
     } catch (e) {
       error = e.message
     }
@@ -116,7 +140,9 @@
   {selectedId}
   {mappingAnchor}
   {monitoring}
-  on:fileload={(e) => glbUrl = e.detail}
+  {spaces}
+  {selectedSpaceId}
+  on:selectspace={(e) => selectSpace(e.detail)}
   on:select={(e) => selectedId = e.detail}
   on:delete={handleDelete}
   on:startmapping={(e) => { mappingAnchor = e.detail; selectedId = e.detail.id }}

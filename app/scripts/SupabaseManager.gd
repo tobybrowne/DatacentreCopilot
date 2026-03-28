@@ -48,18 +48,65 @@ func get_anchors() -> Array[Anchor]:
 			print("get_anchors error: null response (check Supabase connection)")
 		return []
 
-func insert_anchor(anchor: Anchor) -> bool:
-	print("Inserting anchor: ", anchor.id, " / ", anchor.name, " / ml2_id=", anchor.ml2_id, " / is_reference=", anchor.is_reference)
+func get_spaces() -> Array[Space]:
 	var task = await Supabase.database.query(
-		SupabaseQuery.new().from("anchors").insert([{
-			"name": anchor.name,
-			"ml2_id": anchor.ml2_id,
-			"is_reference": anchor.is_reference,
-		}])
+		SupabaseQuery.new().from("spaces").select()
+	).completed
+
+	if task.error == null and task.data != null:
+		var result: Array[Space] = []
+		for row in task.data:
+			result.append(Space.from_dict(row))
+		return result
+	else:
+		if task.error != null:
+			print("get_spaces error: ", task.error.message)
+		else:
+			print("get_spaces error: null response (check Supabase connection)")
+		return []
+
+func get_space_blob(space: Space) -> PackedByteArray:
+	var task = await Supabase.storage.from("spaces_bucket").download(space.blob_path).completed
+
+	if task.error == null and task.data != null:
+		return task.data
+	else:
+		if task.error != null:
+			print("get_space_blob error: ", task.error.message)
+		else:
+			print("get_space_blob error: null response (check Supabase connection)")
+		return PackedByteArray()
+
+func upsert_space(space: Space) -> bool:
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("spaces").insert([{
+			"id": space.id,
+			"name": space.name,
+			"blob_path": space.blob_path,
+			"glb_path": space.glb_path,
+		}], true)
 	).completed
 
 	if task.error == null:
-		print("Anchor inserted: ", anchor.id)
+		return true
+	else:
+		print("upsert_space error: ", task.error.message)
+		return false
+
+
+func insert_anchor(anchor: Anchor) -> bool:
+	var row := {
+		"name": anchor.name,
+		"ml2_id": anchor.ml2_id,
+		"is_reference": anchor.is_reference,
+	}
+	if not anchor.space_id.is_empty():
+		row["space_id"] = anchor.space_id
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("anchors").insert([row])
+	).completed
+
+	if task.error == null:
 		return true
 	else:
 		print("Error inserting anchor: ", task.error.message)

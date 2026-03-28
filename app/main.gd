@@ -6,6 +6,7 @@ var xr_interface: XRInterface
 @onready var step_viewer = $XROrigin3D/StepViewer
 @onready var gesture_manager: GestureManager = $XROrigin3D/GestureManager
 @onready var anchor_manager: AnchorManager = $XROrigin3D/AnchorManager
+@onready var space_manager: SpaceManager = $XROrigin3D/SpaceManager
 
 const ANCHOR_DELETE_RADIUS := 0.10   # metres — how close to an anchor to target it for delete
 
@@ -47,6 +48,9 @@ func _ready():
 	gesture_manager.pinch_completed.connect(_on_pinch_completed)
 	gesture_manager.pinch_ended.connect(_on_pinch_ended)
 
+	if OS.get_name() == "Android":
+		OS.request_permissions()
+
 	xr_interface = XRServer.find_interface("OpenXR")
 	_create_tracking_indicator()
 	if xr_interface and xr_interface.is_initialized():
@@ -74,16 +78,24 @@ func _ready():
 
 func _process(delta: float) -> void:
 	_update_tracking_indicator(delta)
-	_poll_localization_uuid(delta)
-	
+	# _poll_localization_uuid(delta)
 	
 
+func _on_localization_changed(_state: int, _confidence: int, _error_flags: int, _ext: Object) -> void:
+	var local_spaces: Array[Space] = space_manager.get_all_local_spaces()
+	var db_spaces: Array[Space] = await SupabaseManager.get_spaces()
+	var db_ids := db_spaces.map(func(s): return s.id)
 
-func _on_localization_changed(_state: int, _confidence: int, _error_flags: int, ext: Object) -> void:
-	var maps: Array = ext.get_localization_maps()
-	print("Spaces on device (", maps.size(), "):")
-	for map in maps:
-		print("  ", map["name"], " — ", map["uuid"])
+	for space in local_spaces:
+		if space.id in db_ids:
+			print("Space already in DB: ", space.name, " (", space.id, ")")
+		else:
+			print("Exporting new space: ", space.id)
+			var exported: Space = await space_manager.export_space(space)
+			if exported:
+				print("Exported space: ", exported.id)
+			else:
+				print("Failed to export space: ", space.id)
 
 
 func _poll_localization_uuid(delta: float) -> void:
