@@ -1,3 +1,4 @@
+class_name StepViewer
 extends Control
 
 @onready var _counter: Label = $MarginContainer/VBoxContainer/StepCounter

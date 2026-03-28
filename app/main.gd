@@ -150,10 +150,15 @@ func _update_tracking_indicator(_delta: float) -> void:
 # ── Gesture signals ────────────────────────────────────────────────────────────
 
 func _on_pinch_started(hand: String, position: Vector3) -> void:
-	if hand == "left":
-		step_viewer.get_panel().prev_step()
-	elif hand == "right":
-		step_viewer.get_panel().next_step()
+	if step_viewer.visible:
+		var panel := step_viewer.get_panel() as StepViewer
+		if panel:
+			if hand == "left":
+				panel.prev_step()
+			elif hand == "right":
+				panel.next_step()
+
+	if hand == "right":
 		var near: Anchor = anchor_manager.get_anchor_near(position, ANCHOR_DELETE_RADIUS)
 		_anchor_mode   = "delete" if near != null else "create"
 		_anchor_target = near
@@ -272,4 +277,4 @@ func _on_procedure_selected(procedure: Procedure):
 	print("Switching to: ", procedure.id)
 	procedure_panel.visible = false
 	step_viewer.visible = true
-	step_viewer.get_panel().setup(procedure.steps)
+	(step_viewer.get_panel() as StepViewer).setup(procedure.steps)
