@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://b_docspanel"]
 
-[ext_resource type="Script" path="res://procedure_panel.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://74ed2a6k7h1m" path="res://ui/procedure_panel/procedure_panel.gd" id="1_script"]
 
 [node name="ProcedurePanel" type="Control"]
 layout_mode = 0

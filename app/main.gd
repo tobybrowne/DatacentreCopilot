@@ -40,6 +40,7 @@ var _progress_arc_mat:  StandardMaterial3D  = null
 
 
 func _ready():
+	# bind signals to functions
 	procedure_panel.get_panel().connect("procedure_selected", _on_procedure_selected)
 	gesture_manager.pinch_started.connect(_on_pinch_started)
 	gesture_manager.pinch_held.connect(_on_pinch_held)
@@ -50,6 +51,9 @@ func _ready():
 	_create_tracking_indicator()
 	if xr_interface and xr_interface.is_initialized():
 		print("OpenXR initialized successfully")
+		if Engine.has_singleton("OpenXRMlLocalizationMapExtension"):
+			var ext = Engine.get_singleton("OpenXRMlLocalizationMapExtension")
+			ext.localization_changed.connect(_on_localization_changed.bind(ext))
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		get_viewport().transparent_bg = true
 		get_viewport().use_xr = true
@@ -71,6 +75,15 @@ func _ready():
 func _process(delta: float) -> void:
 	_update_tracking_indicator(delta)
 	_poll_localization_uuid(delta)
+	
+	
+
+
+func _on_localization_changed(_state: int, _confidence: int, _error_flags: int, ext: Object) -> void:
+	var maps: Array = ext.get_localization_maps()
+	print("Spaces on device (", maps.size(), "):")
+	for map in maps:
+		print("  ", map["name"], " — ", map["uuid"])
 
 
 func _poll_localization_uuid(delta: float) -> void:

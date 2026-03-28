@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://b_stepviewer"]
 
-[ext_resource type="Script" path="res://step_viewer.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://c85kbsimi7vbp" path="res://ui/step_viewer/step_viewer.gd" id="1_script"]
 
 [node name="StepViewer" type="Control"]
 layout_mode = 0
