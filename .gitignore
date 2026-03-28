@@ -11,6 +11,7 @@ app/addons/supabase/.env
 
 node_modules/
 *.uid
+*.gd.uid
 .godot/
 addons/
 build/
