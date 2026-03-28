@@ -83,6 +83,30 @@ func update_anchor_glb_position(anchor_id: String, glb_position: Vector3) -> boo
 		print("Error updating glb_position: ", task.error.message)
 		return false
 
+func update_user_glb_position(glb_position: Vector3) -> bool:
+	# if auth_user == null:
+	# 	return false
+
+	# temp dummy user id
+	var auth_user_id := '00000000-0000-0000-0000-000000000000';
+
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("users").update({
+			"glb_position": {
+				"x": glb_position.x,
+				"y": glb_position.y,
+				"z": glb_position.z,
+			}
+		}).eq("id", auth_user_id)
+	).completed
+
+	if task.error == null:
+		return true
+	else:
+		print("Error updating user glb_position: ", task.error.message)
+		return false
+
+
 func remove_anchor(anchor_id: String) -> bool:
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("anchors").delete().eq("id", anchor_id)

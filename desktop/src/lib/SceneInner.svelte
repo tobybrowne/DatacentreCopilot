@@ -8,6 +8,7 @@
   export let selectedId = null
   export let pendingPosition = null
   export let mappingAnchor = null
+  export let userPosition = null
 
   const dispatch = createEventDispatcher()
 
@@ -63,6 +64,16 @@
     />
   </T.Mesh>
 {/each}
+
+<!-- User position marker -->
+{#if userPosition}
+  {#key userPosition}
+    <T.Mesh position={[userPosition.x, userPosition.y, userPosition.z]}>
+      <T.SphereGeometry args={[0.08, 16, 16]} />
+      <T.MeshStandardMaterial color="#ff4dff" emissive="#ff4dff" emissiveIntensity={0.6} />
+    </T.Mesh>
+  {/key}
+{/if}
 
 <!-- Ghost sphere while placing a new content anchor -->
 {#if pendingPosition}

@@ -7,6 +7,7 @@
   export let anchors = []
   export let selectedId = null
   export let pendingPosition = null
+  export let userPosition = null
 
   const dispatch = createEventDispatcher()
 </script>
@@ -18,6 +19,7 @@
       {anchors}
       {selectedId}
       {pendingPosition}
+      {userPosition}
       on:place
       on:select
     />

@@ -1,8 +1,10 @@
 <script>
   import { onMount } from 'svelte'
-  import { fetchAnchors, insertAnchor, deleteAnchor, setGlbPosition } from './lib/supabase.js'
+  import { fetchAnchors, insertAnchor, deleteAnchor, setGlbPosition, fetchUserPosition, subscribeUserPosition } from './lib/supabase.js'
   import Scene from './lib/Scene.svelte'
   import Sidebar from './lib/Sidebar.svelte'
+
+  const DEMO_USER_ID = '00000000-0000-0000-0000-000000000000'
 
   let glbUrl = null
   let anchors = []
@@ -12,6 +14,26 @@
   let newAnchorName = ''
   let saving = false
   let error = null
+
+  let monitoring = false
+  let userPosition = null
+  let unsubscribeUser = null
+
+  async function startMonitoring() {
+    monitoring = true
+    try {
+      userPosition = await fetchUserPosition(DEMO_USER_ID)
+    } catch (e) {
+      error = e.message
+    }
+    unsubscribeUser = subscribeUserPosition(DEMO_USER_ID, (pos) => { userPosition = pos })
+  }
+
+  function stopMonitoring() {
+    monitoring = false
+    userPosition = null
+    if (unsubscribeUser) { unsubscribeUser(); unsubscribeUser = null }
+  }
 
   $: unmappedRefs = anchors.filter(a => a.is_reference && !a.glb_position)
 
@@ -93,11 +115,13 @@
   {anchors}
   {selectedId}
   {mappingAnchor}
+  {monitoring}
   on:fileload={(e) => glbUrl = e.detail}
   on:select={(e) => selectedId = e.detail}
   on:delete={handleDelete}
   on:startmapping={(e) => { mappingAnchor = e.detail; selectedId = e.detail.id }}
   on:cancelmapping={cancel}
+  on:togglemonitor={() => monitoring ? stopMonitoring() : startMonitoring()}
 />
 
 <Scene
@@ -106,6 +130,7 @@
   {selectedId}
   {pendingPosition}
   {mappingAnchor}
+  {userPosition}
   on:place={handleMeshClick}
   on:select={(e) => selectedId = e.detail}
 />

@@ -4,6 +4,7 @@
   export let anchors = []
   export let selectedId = null
   export let mappingAnchor = null
+  export let monitoring = false
 
   const dispatch = createEventDispatcher()
 
@@ -28,6 +29,18 @@
       Load .glb file
       <input type="file" accept=".glb,.gltf" on:change={handleFile} hidden />
     </label>
+  </section>
+
+  <!-- Monitor mode -->
+  <section>
+    <label class="section-label">Monitoring</label>
+    <button
+      class="monitor-btn {monitoring ? 'active' : ''}"
+      on:click={() => dispatch('togglemonitor')}
+    >
+      <span class="dot" class:live={monitoring} />
+      {monitoring ? 'Stop monitoring' : 'Start monitoring'}
+    </button>
   </section>
 
   <!-- Unmapped reference anchors — shown prominently -->
@@ -271,5 +284,38 @@
     color: var(--text-muted);
     font-size: 12px;
     font-style: italic;
+  }
+
+  .monitor-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    width: 100%;
+  }
+  .monitor-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .monitor-btn.active { border-color: #ff4dff; color: #ff4dff; background: #ff4dff11; }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .dot.live {
+    background: #ff4dff;
+    animation: pulse 1s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
   }
 </style>

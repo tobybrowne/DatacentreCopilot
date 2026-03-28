@@ -39,3 +39,25 @@ export async function deleteAnchor(id) {
   const { error } = await supabase.from("anchors").delete().eq("id", id);
   if (error) throw error;
 }
+
+export async function fetchUserPosition(userId) {
+  const { data, error } = await supabase
+    .from("users")
+    .select("glb_position")
+    .eq("id", userId)
+    .single();
+  if (error) throw error;
+  return data?.glb_position ?? null;
+}
+
+export function subscribeUserPosition(userId, onChange) {
+  const channel = supabase
+    .channel(`user-pos-${userId}`)
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "users", filter: `id=eq.${userId}` },
+      (payload) => onChange(payload.new.glb_position ?? null)
+    )
+    .subscribe();
+  return () => supabase.removeChannel(channel);
+}

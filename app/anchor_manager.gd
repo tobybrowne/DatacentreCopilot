@@ -28,6 +28,8 @@ var _kabsch_src: Array[Vector3] = []       # GLB-space positions (fixed, from DB
 var _kabsch_nodes: Array[Node3D] = []      # tracked nodes for live LOCAL-space positions
 var _recalib_timer := 0.0
 const RECALIB_INTERVAL := 2.0             # re-run Kabsch every N seconds while calibrated
+var _user_pos_timer := 0.0
+const USER_POS_INTERVAL := 1.0            # push user GLB position every N seconds
 
 # Calibration state — maps GLB space → LOCAL space.
 var _calibration := Transform3D.IDENTITY
@@ -72,6 +74,13 @@ func _process(delta: float) -> void:
 	if _recalib_timer >= RECALIB_INTERVAL:
 		_recalib_timer = 0.0
 		_try_calibrate()
+	_user_pos_timer += delta
+	if _user_pos_timer >= USER_POS_INTERVAL:
+		_user_pos_timer = 0.0
+		var camera := get_parent().get_node_or_null("XRCamera3D")
+		if camera:
+			var glb_pos: Vector3 = _calibration.affine_inverse() * camera.position
+			SupabaseManager.update_user_glb_position(glb_pos)
 
 
 func _on_mgr_entered_tree() -> void:
