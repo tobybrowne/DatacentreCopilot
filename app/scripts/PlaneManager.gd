@@ -8,6 +8,7 @@ var _timer := 0.0
 var _detecting := false
 var _beginning := false
 var _plane_nodes: Array[MeshInstance3D] = []
+var planes_data: Array = []
 
 # Color per semantic type
 const COLORS := {
@@ -78,6 +79,7 @@ func _begin() -> void:
 
 func _refresh_planes() -> void:
 	var planes: Array = _ext.get_planes()
+	planes_data = planes
 
 	# Remove excess nodes
 	while _plane_nodes.size() > planes.size():

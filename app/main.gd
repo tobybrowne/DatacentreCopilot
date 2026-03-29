@@ -45,7 +45,7 @@ var _progress_arc_mat:  StandardMaterial3D  = null
 func _ready():
 	# bind signals to functions
 	procedure_panel.get_panel().connect("procedure_selected", _on_procedure_selected)
-	procedure_panel.visible = false
+	procedure_panel.visible = true
 	gesture_manager.pinch_started.connect(_on_pinch_started)
 	gesture_manager.pinch_held.connect(_on_pinch_held)
 	gesture_manager.pinch_completed.connect(_on_pinch_completed)

@@ -81,12 +81,29 @@ func _process(delta: float) -> void:
 		+ right * lateral_offset \
 		+ Vector3(0.0, height_offset, 0.0)
 
+	target_pos = _avoid_planes(target_pos)
 	global_position = global_position.lerp(target_pos, follow_speed * delta)
 
 	var target_y := atan2(-forward.x, -forward.z)
 	rotation.y = lerp_angle(rotation.y, target_y, follow_speed * delta)
 
 	_check_poke()
+
+
+const PLANE_CLEARANCE := 0.15
+
+func _avoid_planes(pos: Vector3) -> Vector3:
+	var plane_manager := get_parent().get_node_or_null("PlaneManager")
+	if not plane_manager:
+		return pos
+	for plane in plane_manager.planes_data:
+		var t: Transform3D = plane["transform"]
+		var local := t.affine_inverse() * pos
+		if abs(local.x) > plane["width"] * 0.5 or abs(local.y) > plane["height"] * 0.5:
+			continue
+		if local.z < PLANE_CLEARANCE:
+			pos += t.basis.z * (PLANE_CLEARANCE - local.z)
+	return pos
 
 
 func _check_poke() -> void:
