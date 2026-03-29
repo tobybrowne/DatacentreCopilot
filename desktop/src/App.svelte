@@ -1,38 +1,39 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte'
-  import { fetchAnchors, insertAnchor, deleteAnchor, setGlbPosition, fetchUserPosition, subscribeUserPosition, fetchSpaces, getSpaceGlbUrl } from './lib/supabase.js'
+  import { fetchAnchors, insertAnchor, deleteAnchor, setGlbPosition, fetchUserPosition, subscribeUserPosition, fetchSpaces, getSpaceGlbUrl } from './lib/supabase'
   import Scene from './lib/Scene.svelte'
   import Sidebar from './lib/Sidebar.svelte'
+  import type { Anchor, Position, Space } from './lib/types'
 
   const DEMO_USER_ID = '00000000-0000-0000-0000-000000000000'
 
-  let glbUrl = null
-  let anchors = []
-  let selectedId = null
-  let pendingPosition = null  // {x,y,z} — new content anchor awaiting name
-  let mappingAnchor = null    // anchor whose glb_position is being set by clicking mesh
+  let glbUrl: string | null = null
+  let anchors: Anchor[] = []
+  let selectedId: string | null = null
+  let pendingPosition: Position | null = null  // {x,y,z} — new content anchor awaiting name
+  let mappingAnchor: Anchor | null = null       // anchor whose glb_position is being set by clicking mesh
   let newAnchorName = ''
   let saving = false
-  let error = null
+  let error: string | null = null
 
   let monitoring = false
-  let userPosition = null
-  let unsubscribeUser = null
+  let userPosition: Position | null = null
+  let unsubscribeUser: (() => void) | null = null
 
-  let spaces = []
-  let selectedSpaceId = null
+  let spaces: Space[] = []
+  let selectedSpaceId: string | null = null
 
-  async function startMonitoring() {
+  async function startMonitoring(): Promise<void> {
     monitoring = true
     try {
       userPosition = await fetchUserPosition(DEMO_USER_ID)
     } catch (e) {
-      error = e.message
+      error = (e as Error).message
     }
     unsubscribeUser = subscribeUserPosition(DEMO_USER_ID, (pos) => { userPosition = pos })
   }
 
-  function stopMonitoring() {
+  function stopMonitoring(): void {
     monitoring = false
     userPosition = null
     if (unsubscribeUser) { unsubscribeUser(); unsubscribeUser = null }
@@ -44,35 +45,35 @@
     await Promise.all([refresh(), loadSpaces()])
   })
 
-  async function refresh() {
+  async function refresh(): Promise<void> {
     try {
       anchors = await fetchAnchors(selectedSpaceId)
     } catch (e) {
-      error = e.message
+      error = (e as Error).message
     }
   }
 
-  async function loadSpaces() {
+  async function loadSpaces(): Promise<void> {
     try {
       spaces = await fetchSpaces()
     } catch (e) {
-      error = e.message
+      error = (e as Error).message
     }
   }
 
-  async function selectSpace(space) {
+  async function selectSpace(space: Space): Promise<void> {
     selectedSpaceId = space.id
     glbUrl = null  // clear while loading
     try {
-      glbUrl = getSpaceGlbUrl(space.glb_path)
+      glbUrl = getSpaceGlbUrl(space.glb_path!)
       await refresh()
     } catch (e) {
-      error = e.message
+      error = (e as Error).message
     }
   }
 
   // Mesh was clicked — behaviour depends on current mode.
-  function handleMeshClick({ detail: position }) {
+  function handleMeshClick({ detail: position }: CustomEvent<Position>): void {
     if (mappingAnchor) {
       confirmMapping(position)
     } else {
@@ -82,7 +83,7 @@
   }
 
   // Save glb_position for the anchor being mapped.
-  async function confirmMapping(position) {
+  async function confirmMapping(position: Position): Promise<void> {
     if (!mappingAnchor || saving) return
     saving = true
     try {
@@ -90,14 +91,14 @@
       await refresh()
       mappingAnchor = null
     } catch (e) {
-      error = e.message
+      error = (e as Error).message
     } finally {
       saving = false
     }
   }
 
   // Save a brand new desktop-placed content anchor.
-  async function confirmPlacement() {
+  async function confirmPlacement(): Promise<void> {
     if (!pendingPosition || saving) return
     saving = true
     try {
@@ -105,29 +106,29 @@
       await refresh()
       pendingPosition = null
     } catch (e) {
-      error = e.message
+      error = (e as Error).message
     } finally {
       saving = false
     }
   }
 
-  async function handleDelete(e) {
+  async function handleDelete(e: CustomEvent<string>): Promise<void> {
     try {
       await deleteAnchor(e.detail)
       if (selectedId === e.detail) selectedId = null
       if (mappingAnchor?.id === e.detail) mappingAnchor = null
       await refresh()
     } catch (e) {
-      error = e.message
+      error = (e as Error).message
     }
   }
 
-  function cancel() {
+  function cancel(): void {
     pendingPosition = null
     mappingAnchor = null
   }
 
-  function handleKeydown(e) {
+  function handleKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape') cancel()
     if (e.key === 'Enter' && pendingPosition) confirmPlacement()
   }

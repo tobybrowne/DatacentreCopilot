@@ -1,14 +1,22 @@
-<script>
+<script lang="ts">
   import { createEventDispatcher } from 'svelte'
+  import type { Anchor, Space } from './types'
 
-  export let anchors = []
-  export let selectedId = null
-  export let mappingAnchor = null
+  export let anchors: Anchor[] = []
+  export let selectedId: string | null = null
+  export let mappingAnchor: Anchor | null = null
   export let monitoring = false
-  export let spaces = []
-  export let selectedSpaceId = null
+  export let spaces: Space[] = []
+  export let selectedSpaceId: string | null = null
 
-  const dispatch = createEventDispatcher()
+  const dispatch = createEventDispatcher<{
+    selectspace: Space
+    select: string
+    delete: string
+    startmapping: Anchor
+    cancelmapping: void
+    togglemonitor: void
+  }>()
 
   $: unmappedRefs = anchors.filter(a => a.is_reference && !a.glb_position)
   $: mappedRefs   = anchors.filter(a => a.is_reference && a.glb_position)

@@ -1,30 +1,34 @@
-<script>
+<script lang="ts">
   import { T } from '@threlte/core'
   import { GLTF, OrbitControls, interactivity } from '@threlte/extras'
   import { createEventDispatcher } from 'svelte'
+  import type { Anchor, Position } from './types'
 
-  export let glbUrl
-  export let anchors = []
-  export let selectedId = null
-  export let pendingPosition = null
-  export let mappingAnchor = null
-  export let userPosition = null
+  export let glbUrl: string | null = null
+  export let anchors: Anchor[] = []
+  export let selectedId: string | null = null
+  export let pendingPosition: Position | null = null
+  export let mappingAnchor: Anchor | null = null
+  export let userPosition: Position | null = null
 
-  const dispatch = createEventDispatcher()
+  const dispatch = createEventDispatcher<{
+    place: Position
+    select: string
+  }>()
 
   interactivity()
 
-  function handleMeshClick(e) {
+  function handleMeshClick(e: { point?: { x: number; y: number; z: number }; detail?: { point: { x: number; y: number; z: number } } }): void {
     const point = e.point ?? e.detail?.point
     if (!point) return
     dispatch('place', { x: point.x, y: point.y, z: point.z })
   }
 
-  function handleAnchorClick(e, id) {
+  function handleAnchorClick(_e: unknown, id: string): void {
     dispatch('select', id)
   }
 
-  function sphereColor(anchor) {
+  function sphereColor(anchor: Anchor): string {
     if (mappingAnchor?.id === anchor.id) return '#ffffff'
     if (anchor.id === selectedId) return '#ff8800'
     if (anchor.is_reference) return '#ffcc00'
