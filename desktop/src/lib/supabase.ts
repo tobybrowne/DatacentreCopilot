@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import type { Anchor, Position, Space } from './types'
+import type { Anchor, Building, Position, RigidTransform, Space } from './types'
 
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL as string,
@@ -64,6 +64,39 @@ export async function fetchUserPosition(userId: string): Promise<Position | null
     .single()
   if (error) throw error
   return (data?.glb_position as Position) ?? null
+}
+
+export async function fetchBuildings(): Promise<Building[]> {
+  const { data, error } = await supabase
+    .from('buildings')
+    .select('*')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data as Building[]
+}
+
+export async function createStitchedBuilding(
+  buildingName: string,
+  targetSpaceId: string,   // reference frame, index 0, no transform
+  sourceSpaceId: string,   // index 1, gets the computed transform
+  transform: RigidTransform
+): Promise<void> {
+  const { data: building, error: buildingErr } = await supabase
+    .from('buildings')
+    .insert({ name: buildingName })
+    .select('id')
+    .single()
+  if (buildingErr) throw buildingErr
+
+  const { error: e1 } = await supabase
+    .from('building_spaces')
+    .insert({ building_id: building.id, space_id: targetSpaceId, index: 0, offset_transformation: null })
+  if (e1) throw e1
+
+  const { error: e2 } = await supabase
+    .from('building_spaces')
+    .insert({ building_id: building.id, space_id: sourceSpaceId, index: 1, offset_transformation: transform })
+  if (e2) throw e2
 }
 
 export function subscribeUserPosition(

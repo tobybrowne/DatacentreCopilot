@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
-  import type { Anchor, Space } from './types'
+  import type { Anchor, Position, Space } from './types'
 
   export let anchors: Anchor[] = []
   export let selectedId: string | null = null
@@ -8,6 +8,19 @@
   export let monitoring = false
   export let spaces: Space[] = []
   export let selectedSpaceId: string | null = null
+  export let stitchPhase: 'idle' | 'pickSource' | 'pickTarget' | 'preview' = 'idle'
+  export let stitchSourcePoints: Position[] = []
+  export let stitchTargetPoints: Position[] = []
+  export let stitchPointPlaced = false
+
+  let stitchSourceId: string | null = null
+  let stitchTargetId: string | null = null
+  let buildingName = 'Building 1'
+
+  function startStitch(): void {
+    if (stitchSourceId && stitchTargetId)
+      dispatch('startStitch', { sourceId: stitchSourceId, targetId: stitchTargetId })
+  }
 
   const dispatch = createEventDispatcher<{
     selectspace: Space
@@ -16,6 +29,11 @@
     startmapping: Anchor
     cancelmapping: void
     togglemonitor: void
+    startStitch: { sourceId: string; targetId: string }
+    cancelStitch: void
+    undoStitchPoint: 'source' | 'target'
+    continueStitch: void
+    saveStitch: string
   }>()
 
   $: unmappedRefs = anchors.filter(a => a.is_reference && !a.glb_position)
@@ -161,6 +179,73 @@
           </li>
         {/each}
       </ul>
+    {/if}
+  </section>
+  <!-- Stitch section -->
+  <section class="stitch-section">
+    <label class="section-label">Stitch Spaces</label>
+
+    {#if stitchPhase === 'idle'}
+      <select bind:value={stitchSourceId}>
+        <option value={null}>Source space…</option>
+        {#each spaces.filter(s => s.glb_path) as s (s.id)}
+          <option value={s.id}>{s.name || s.id}</option>
+        {/each}
+      </select>
+      <select bind:value={stitchTargetId}>
+        <option value={null}>Target (reference) space…</option>
+        {#each spaces.filter(s => s.glb_path && s.id !== stitchSourceId) as s (s.id)}
+          <option value={s.id}>{s.name || s.id}</option>
+        {/each}
+      </select>
+      <button
+        class="stitch-btn"
+        disabled={!stitchSourceId || !stitchTargetId}
+        on:click={startStitch}
+      >
+        Start picking points
+      </button>
+
+    {:else if stitchPhase === 'pickSource' || stitchPhase === 'pickTarget'}
+      {@const pairsDone = stitchTargetPoints.length}
+      {@const pickingSource = stitchPhase === 'pickSource'}
+      {#if stitchPointPlaced}
+        <p class="stitch-hint placed">
+          Point placed on <strong class:src-label={pickingSource} class:tgt-label={!pickingSource}>{pickingSource ? 'source' : 'target'}</strong>.
+          Continue when happy with it.
+        </p>
+      {:else}
+        <p class="stitch-hint">
+          Pair {pairsDone + 1}/3 — double-click a point on the
+          <strong class:src-label={pickingSource} class:tgt-label={!pickingSource}>
+            {pickingSource ? 'source' : 'target'}
+          </strong> mesh
+        </p>
+      {/if}
+      <div class="pairs-grid">
+        {#each [0, 1, 2] as i}
+          <span class="pair-dot src" class:filled={i < stitchSourcePoints.length} />
+          <span class="pair-dot tgt" class:filled={i < stitchTargetPoints.length} />
+        {/each}
+      </div>
+      <div class="stitch-actions">
+        <button
+          on:click={() => dispatch('undoStitchPoint', 'source')}
+          disabled={stitchSourcePoints.length === 0 && stitchTargetPoints.length === 0}
+        >Undo</button>
+        <button on:click={() => dispatch('cancelStitch')}>Cancel</button>
+      </div>
+      {#if stitchPointPlaced}
+        <button class="continue-btn" on:click={() => dispatch('continueStitch')}>Continue →</button>
+      {/if}
+
+    {:else if stitchPhase === 'preview'}
+      <p class="stitch-hint stitch-ok">Preview ready — check the alignment in the viewport.</p>
+      <input class="building-input" type="text" bind:value={buildingName} placeholder="Building name" />
+      <div class="stitch-actions">
+        <button on:click={() => dispatch('cancelStitch')}>Reset</button>
+        <button class="primary" on:click={() => dispatch('saveStitch', buildingName)}>Save stitch</button>
+      </div>
     {/if}
   </section>
 </aside>
@@ -353,5 +438,109 @@
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.3; }
+  }
+
+  .stitch-section {
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  .stitch-section select {
+    width: 100%;
+    background: #1a1a1a;
+    border: 1px solid var(--border);
+    color: var(--text, #eee);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+
+  .stitch-btn {
+    width: 100%;
+    padding: 7px 0;
+    border-radius: 4px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .stitch-btn:hover:not(:disabled) { background: var(--accent-dim); }
+  .stitch-btn:disabled { opacity: 0.4; cursor: default; }
+
+  .stitch-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin: 0;
+  }
+  .stitch-ok { color: #88ff88; }
+
+  .pairs-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: auto auto;
+    gap: 6px 12px;
+  }
+  .pair-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: transparent;
+    transition: background 0.15s, border-color 0.15s;
+    justify-self: center;
+  }
+  .pair-dot.src.filled { background: #ff4444; border-color: #ff4444; }
+  .pair-dot.tgt.filled { background: #44ffcc; border-color: #44ffcc; }
+  .src-label { color: #ff4444; }
+  .tgt-label { color: #44ffcc; }
+  .stitch-hint.placed { color: var(--text, #eee); }
+
+  .continue-btn {
+    width: 100%;
+    padding: 8px 0;
+    border-radius: 4px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .continue-btn:hover { background: var(--accent-dim); }
+
+  .stitch-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .stitch-actions button {
+    flex: 1;
+    padding: 6px 0;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .stitch-actions button:disabled { opacity: 0.4; cursor: default; }
+  .stitch-actions button.primary {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .stitch-actions button.primary:hover { background: var(--accent-dim); }
+
+  .building-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: #1a1a1a;
+    border: 1px solid var(--border);
+    color: var(--text, #eee);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 12px;
   }
 </style>

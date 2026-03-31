@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { fetchAnchors, insertAnchor, deleteAnchor, setGlbPosition, fetchUserPosition, subscribeUserPosition, fetchSpaces, getSpaceGlbUrl } from './lib/supabase'
+  import { fetchAnchors, insertAnchor, deleteAnchor, setGlbPosition, fetchUserPosition, subscribeUserPosition, fetchSpaces, getSpaceGlbUrl, createStitchedBuilding } from './lib/supabase'
+  import { computeTransform, posToV3 } from './lib/stitching'
   import Scene from './lib/Scene.svelte'
   import Sidebar from './lib/Sidebar.svelte'
-  import type { Anchor, Position, Space } from './lib/types'
+  import type { Anchor, Position, RigidTransform, Space } from './lib/types'
 
   const DEMO_USER_ID = '00000000-0000-0000-0000-000000000000'
 
@@ -22,6 +23,18 @@
 
   let spaces: Space[] = []
   let selectedSpaceId: string | null = null
+
+  // Stitch state
+  type StitchPhase = 'idle' | 'pickSource' | 'pickTarget' | 'preview'
+  let stitchPhase: StitchPhase = 'idle'
+  let stitchSourceSpace: Space | null = null
+  let stitchTargetSpace: Space | null = null
+  let stitchSourceGlbUrl: string | null = null
+  let stitchTargetGlbUrl: string | null = null
+  let stitchSourcePoints: Position[] = []
+  let stitchTargetPoints: Position[] = []
+  let stitchTransform: RigidTransform | null = null
+  let stitchPointPlaced = false  // point picked, waiting for user to press Continue
 
   async function startMonitoring(): Promise<void> {
     monitoring = true
@@ -74,11 +87,94 @@
 
   // Mesh was clicked — behaviour depends on current mode.
   function handleMeshClick({ detail: position }: CustomEvent<Position>): void {
+    if (stitchPhase === 'pickSource' && !stitchPointPlaced) {
+      stitchSourcePoints = [...stitchSourcePoints, position]
+      stitchPointPlaced = true
+      return
+    }
+    if (stitchPhase === 'pickTarget' && !stitchPointPlaced) {
+      stitchTargetPoints = [...stitchTargetPoints, position]
+      stitchPointPlaced = true
+      return
+    }
     if (mappingAnchor) {
       confirmMapping(position)
     } else {
       pendingPosition = position
       newAnchorName = ''
+    }
+  }
+
+  function handleStartStitch(e: CustomEvent<{ sourceId: string; targetId: string }>): void {
+    const { sourceId, targetId } = e.detail
+    stitchSourceSpace = spaces.find(s => s.id === sourceId) ?? null
+    stitchTargetSpace = spaces.find(s => s.id === targetId) ?? null
+    if (!stitchSourceSpace?.glb_path || !stitchTargetSpace?.glb_path) return
+    stitchSourceGlbUrl = getSpaceGlbUrl(stitchSourceSpace.glb_path)
+    stitchTargetGlbUrl = getSpaceGlbUrl(stitchTargetSpace.glb_path)
+    stitchSourcePoints = []
+    stitchTargetPoints = []
+    stitchTransform = null
+    stitchPointPlaced = false
+    stitchPhase = 'pickSource'
+  }
+
+  function handleCancelStitch(): void {
+    stitchPhase = 'idle'
+    stitchSourcePoints = []
+    stitchTargetPoints = []
+    stitchTransform = null
+    stitchPointPlaced = false
+  }
+
+  function handleStitchContinue(): void {
+    if (!stitchPointPlaced) return
+    stitchPointPlaced = false
+    if (stitchPhase === 'pickSource') {
+      stitchPhase = 'pickTarget'
+    } else if (stitchPhase === 'pickTarget') {
+      if (stitchTargetPoints.length === 3) {
+        stitchTransform = computeTransform(
+          stitchSourcePoints.map(posToV3),
+          stitchTargetPoints.map(posToV3),
+        )
+        stitchPhase = 'preview'
+      } else {
+        stitchPhase = 'pickSource'
+      }
+    }
+  }
+
+  function handleUndoStitchPoint(): void {
+    if (stitchPointPlaced) {
+      // Undo the point just placed (before continuing)
+      if (stitchPhase === 'pickSource') stitchSourcePoints = stitchSourcePoints.slice(0, -1)
+      else if (stitchPhase === 'pickTarget') stitchTargetPoints = stitchTargetPoints.slice(0, -1)
+      stitchPointPlaced = false
+    } else {
+      // Undo across the phase boundary
+      if (stitchPhase === 'pickSource' && stitchTargetPoints.length > 0) {
+        stitchTargetPoints = stitchTargetPoints.slice(0, -1)
+        stitchPhase = 'pickTarget'
+        stitchPointPlaced = true
+      } else if (stitchPhase === 'pickTarget' && stitchSourcePoints.length > 0) {
+        stitchSourcePoints = stitchSourcePoints.slice(0, -1)
+        stitchPhase = 'pickSource'
+        stitchPointPlaced = true
+      }
+    }
+  }
+
+  async function handleSaveStitch(e: CustomEvent<string>): Promise<void> {
+    if (!stitchSourceSpace || !stitchTargetSpace || !stitchTransform || saving) return
+    saving = true
+    try {
+      await createStitchedBuilding(e.detail, stitchTargetSpace.id, stitchSourceSpace.id, stitchTransform)
+      handleCancelStitch()
+    } catch (err) {
+      error = (err as Error).message
+    } finally {
+      saving = false
     }
   }
 
@@ -143,12 +239,21 @@
   {monitoring}
   {spaces}
   {selectedSpaceId}
+  {stitchPhase}
+  {stitchSourcePoints}
+  {stitchTargetPoints}
+  {stitchPointPlaced}
   on:selectspace={(e) => selectSpace(e.detail)}
   on:select={(e) => selectedId = e.detail}
   on:delete={handleDelete}
   on:startmapping={(e) => { mappingAnchor = e.detail; selectedId = e.detail.id }}
   on:cancelmapping={cancel}
   on:togglemonitor={() => monitoring ? stopMonitoring() : startMonitoring()}
+  on:startStitch={handleStartStitch}
+  on:cancelStitch={handleCancelStitch}
+  on:undoStitchPoint={() => handleUndoStitchPoint()}
+  on:continueStitch={handleStitchContinue}
+  on:saveStitch={handleSaveStitch}
 />
 
 <Scene
@@ -158,6 +263,12 @@
   {pendingPosition}
   {mappingAnchor}
   {userPosition}
+  {stitchPhase}
+  {stitchSourceGlbUrl}
+  {stitchTargetGlbUrl}
+  {stitchSourcePoints}
+  {stitchTargetPoints}
+  {stitchTransform}
   on:place={handleMeshClick}
   on:select={(e) => selectedId = e.detail}
 />

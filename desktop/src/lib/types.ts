@@ -4,6 +4,16 @@ export interface Position {
   z: number
 }
 
+export interface RigidTransform {
+  position: Position
+  quaternion: { x: number; y: number; z: number; w: number }
+}
+
+export interface Building {
+  id: string
+  name: string | null
+}
+
 export interface Space {
   id: string
   name: string

@@ -1,8 +1,7 @@
 <script lang="ts">
   import { Canvas } from '@threlte/core'
   import SceneInner from './SceneInner.svelte'
-  import { createEventDispatcher } from 'svelte'
-  import type { Anchor, Position } from './types'
+  import type { Anchor, Position, RigidTransform } from './types'
 
   export let glbUrl: string | null = null
   export let anchors: Anchor[] = []
@@ -10,10 +9,13 @@
   export let pendingPosition: Position | null = null
   export let userPosition: Position | null = null
 
-  const dispatch = createEventDispatcher<{
-    place: Position
-    select: string
-  }>()
+  // stitch mode
+  export let stitchPhase: 'idle' | 'pickSource' | 'pickTarget' | 'preview' = 'idle'
+  export let stitchSourceGlbUrl: string | null = null
+  export let stitchTargetGlbUrl: string | null = null
+  export let stitchSourcePoints: Position[] = []
+  export let stitchTargetPoints: Position[] = []
+  export let stitchTransform: RigidTransform | null = null
 </script>
 
 <div class="canvas-wrap">
@@ -24,6 +26,12 @@
       {selectedId}
       {pendingPosition}
       {userPosition}
+      {stitchPhase}
+      {stitchSourceGlbUrl}
+      {stitchTargetGlbUrl}
+      {stitchSourcePoints}
+      {stitchTargetPoints}
+      {stitchTransform}
       on:place
       on:select
     />
