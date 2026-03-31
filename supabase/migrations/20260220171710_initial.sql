@@ -63,3 +63,17 @@ CREATE TABLE anchors (
   space_id UUID NOT NULL REFERENCES spaces(id) ON DELETE CASCADE
 );
 
+CREATE TABLE buildings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE building_spaces (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  building_id UUID NOT NULL REFERENCES buildings(id) ON DELETE CASCADE,
+  space_id UUID NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  position jsonb, -- the transformation between this space and space 0
+  index int NOT NULL -- the index of this space within the building, used for ordering
+);
