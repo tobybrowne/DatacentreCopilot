@@ -12,6 +12,15 @@ export interface RigidTransform {
 export interface Building {
   id: string
   name: string | null
+  draft: boolean
+}
+
+export interface BuildingSpace {
+  id: string
+  building_id: string
+  space_id: string
+  index: number
+  offset_transformation: RigidTransform | null
 }
 
 export interface Space {

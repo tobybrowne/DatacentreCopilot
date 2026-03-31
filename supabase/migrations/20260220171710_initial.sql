@@ -67,13 +67,16 @@ CREATE TABLE buildings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT,
   created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
+  updated_at TIMESTAMP DEFAULT NOW(),
+  draft boolean NOT NULL DEFAULT true -- whether this building is still being stitched
 );
 
 CREATE TABLE building_spaces (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   building_id UUID NOT NULL REFERENCES buildings(id) ON DELETE CASCADE,
   space_id UUID NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
-  position jsonb, -- the transformation between this space and space 0
+  offset_transformation jsonb, -- the transformation between this space and space 0
   index int NOT NULL -- the index of this space within the building, used for ordering
 );
+
+-- once the three points are added to the source it swaps to the target immediately, should stay and let the user move along

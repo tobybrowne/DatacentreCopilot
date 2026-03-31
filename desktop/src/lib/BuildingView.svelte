@@ -1,0 +1,632 @@
+<script lang="ts">
+  import { onMount, createEventDispatcher } from 'svelte'
+  import { fetchSpaces, fetchDraftBuildings, fetchCompletedBuildings, getSpaceGlbUrl, createDraftBuilding, updateBuildingSpaceTransform, finalizeDraftBuilding, deleteBuilding } from './supabase'
+  import { computeTransform, posToV3 } from './stitching'
+  import Scene from './Scene.svelte'
+  import type { Building, BuildingSpace, Position, RigidTransform, Space } from './types'
+
+  const dispatch = createEventDispatcher<{ back: void }>()
+
+  type Phase = 'setup' | 'view' | 'pickSource' | 'pickTarget' | 'preview' | 'complete'
+
+  interface SpaceEntry {
+    space: Space
+    glbUrl: string
+    transform: RigidTransform | null  // null = reference (index 0)
+  }
+
+  // Setup state
+  let allSpaces: Space[] = []
+  let draftBuildings: (Building & { building_spaces: BuildingSpace[] })[] = []
+  let completedBuildings: (Building & { building_spaces: BuildingSpace[] })[] = []
+  let buildingName = ''
+  let orderedSpaceIds: string[] = []  // user-chosen order; index 0 = reference
+
+  // Build-up state
+  let phase: Phase = 'setup'
+  let builtSpaces: SpaceEntry[] = []   // spaces confirmed so far (index 0 is reference)
+  let currentIdx = 1                    // index into orderedSpaceIds being stitched now
+  let activeBuildingId: string | null = null
+
+  // Current stitch point picking
+  let srcPoints: Position[] = []
+  let tgtPoints: Position[] = []
+  let pointPlaced = false
+  let currentTransform: RigidTransform | null = null
+
+  let saving = false
+  let error: string | null = null
+
+  onMount(async () => {
+    try {
+      [allSpaces, draftBuildings, completedBuildings] = await Promise.all([
+        fetchSpaces(), fetchDraftBuildings(), fetchCompletedBuildings()
+      ])
+    } catch (e) { error = (e as Error).message }
+  })
+
+  // ── Derived ──
+  $: glbSpaces = allSpaces.filter(s => s.glb_path)
+  $: unselectedSpaces = glbSpaces.filter(s => !orderedSpaceIds.includes(s.id))
+  $: pickingSource = phase === 'pickSource'
+  $: pairsDone = tgtPoints.length
+  $: currentSpace = orderedSpaceIds[currentIdx] ? allSpaces.find(s => s.id === orderedSpaceIds[currentIdx]) ?? null : null
+  $: currentSourceGlbUrl = currentSpace?.glb_path ? getSpaceGlbUrl(currentSpace.glb_path) : null
+
+  // Only show the most recently confirmed space as the stitch target
+  $: lastBuilt = builtSpaces[builtSpaces.length - 1]
+  $: mergedSpaces = (phase === 'view' || phase === 'complete')
+    ? builtSpaces.map(e => ({ url: e.glbUrl, transform: e.transform }))
+    : lastBuilt ? [{ url: lastBuilt.glbUrl, transform: lastBuilt.transform }] : []
+
+  // Scene stitchPhase: only show idle when setup/view/complete
+  $: scenePhase = (phase === 'setup' || phase === 'view' || phase === 'complete') ? 'idle' : phase as any
+
+  function addSpace(spaceId: string): void {
+    if (!orderedSpaceIds.includes(spaceId)) orderedSpaceIds = [...orderedSpaceIds, spaceId]
+  }
+
+  function removeSpace(spaceId: string): void {
+    orderedSpaceIds = orderedSpaceIds.filter(id => id !== spaceId)
+  }
+
+  function moveUp(i: number): void {
+    if (i === 0) return
+    const ids = [...orderedSpaceIds]
+    ;[ids[i-1], ids[i]] = [ids[i], ids[i-1]]
+    orderedSpaceIds = ids
+  }
+
+  async function startBuilding(): Promise<void> {
+    if (!buildingName.trim() || orderedSpaceIds.length < 2) return
+    try {
+      activeBuildingId = await createDraftBuilding(buildingName, orderedSpaceIds)
+    } catch (e) {
+      error = (e as Error).message
+      return
+    }
+    const refSpace = allSpaces.find(s => s.id === orderedSpaceIds[0])!
+    builtSpaces = [{ space: refSpace, glbUrl: getSpaceGlbUrl(refSpace.glb_path!), transform: null }]
+    currentIdx = 1
+    srcPoints = []
+    tgtPoints = []
+    pointPlaced = false
+    currentTransform = null
+    phase = 'pickSource'
+  }
+
+  async function resumeBuilding(draft: Building & { building_spaces: BuildingSpace[] }): Promise<void> {
+    const sorted = [...draft.building_spaces].sort((a, b) => a.index - b.index)
+    orderedSpaceIds = sorted.map(bs => bs.space_id)
+    buildingName = draft.name ?? ''
+    activeBuildingId = draft.id
+    builtSpaces = sorted
+      .filter(bs => bs.index === 0 || bs.offset_transformation !== null)
+      .map(bs => {
+        const space = allSpaces.find(s => s.id === bs.space_id)!
+        return { space, glbUrl: getSpaceGlbUrl(space.glb_path!), transform: bs.offset_transformation }
+      })
+    currentIdx = builtSpaces.length
+    srcPoints = []
+    tgtPoints = []
+    pointPlaced = false
+    currentTransform = null
+    phase = currentIdx >= orderedSpaceIds.length ? 'complete' : 'pickSource'
+  }
+
+  async function discardDraft(draft: Building & { building_spaces: BuildingSpace[] }): Promise<void> {
+    try {
+      await deleteBuilding(draft.id)
+      draftBuildings = draftBuildings.filter(d => d.id !== draft.id)
+    } catch (e) {
+      error = (e as Error).message
+    }
+  }
+
+  async function deleteCompletedBuilding(building: Building & { building_spaces: BuildingSpace[] }): Promise<void> {
+    try {
+      await deleteBuilding(building.id)
+      completedBuildings = completedBuildings.filter(b => b.id !== building.id)
+      if (activeBuildingId === building.id) resetBuilding()
+    } catch (e) {
+      error = (e as Error).message
+    }
+  }
+
+  function viewBuilding(building: Building & { building_spaces: BuildingSpace[] }): void {
+    const sorted = [...building.building_spaces].sort((a, b) => a.index - b.index)
+    builtSpaces = sorted.map(bs => {
+      const space = allSpaces.find(s => s.id === bs.space_id)!
+      return { space, glbUrl: getSpaceGlbUrl(space.glb_path!), transform: bs.offset_transformation }
+    })
+    buildingName = building.name ?? ''
+    activeBuildingId = building.id
+    phase = 'view'
+  }
+
+  function handleMeshClick({ detail: position }: CustomEvent<Position>): void {
+    if (phase === 'pickSource' && !pointPlaced) {
+      srcPoints = [...srcPoints, position]
+      pointPlaced = true
+    } else if (phase === 'pickTarget' && !pointPlaced) {
+      tgtPoints = [...tgtPoints, position]
+      pointPlaced = true
+    }
+  }
+
+  function continueStitch(): void {
+    if (!pointPlaced) return
+    pointPlaced = false
+    if (phase === 'pickSource') {
+      phase = 'pickTarget'
+    } else if (phase === 'pickTarget') {
+      if (tgtPoints.length === 3) {
+        currentTransform = computeTransform(srcPoints.map(posToV3), tgtPoints.map(posToV3))
+        phase = 'preview'
+      } else {
+        phase = 'pickSource'
+      }
+    }
+  }
+
+  function undoStitch(): void {
+    if (pointPlaced) {
+      if (phase === 'pickSource') srcPoints = srcPoints.slice(0, -1)
+      else if (phase === 'pickTarget') tgtPoints = tgtPoints.slice(0, -1)
+      pointPlaced = false
+    } else {
+      if (phase === 'pickSource' && tgtPoints.length > 0) {
+        tgtPoints = tgtPoints.slice(0, -1)
+        phase = 'pickTarget'
+        pointPlaced = false
+      } else if (phase === 'pickTarget' && srcPoints.length > 0) {
+        srcPoints = srcPoints.slice(0, -1)
+        phase = 'pickSource'
+        pointPlaced = false
+      }
+    }
+  }
+
+  async function confirmStitch(): Promise<void> {
+    if (!currentTransform || !currentSpace || !activeBuildingId) return
+    try {
+      await updateBuildingSpaceTransform(activeBuildingId, currentSpace.id, currentTransform)
+    } catch (e) {
+      error = (e as Error).message
+      return
+    }
+    builtSpaces = [...builtSpaces, {
+      space: currentSpace,
+      glbUrl: currentSourceGlbUrl!,
+      transform: currentTransform,
+    }]
+    currentIdx++
+    srcPoints = []
+    tgtPoints = []
+    pointPlaced = false
+    currentTransform = null
+    if (currentIdx >= orderedSpaceIds.length) {
+      phase = 'complete'
+    } else {
+      phase = 'pickSource'
+    }
+  }
+
+  function resetBuilding(): void {
+    // Draft stays in DB and can be resumed later
+    phase = 'setup'
+    builtSpaces = []
+    srcPoints = []
+    tgtPoints = []
+    pointPlaced = false
+    currentTransform = null
+    activeBuildingId = null
+    orderedSpaceIds = []
+    buildingName = ''
+    Promise.all([fetchDraftBuildings(), fetchCompletedBuildings()])
+      .then(([drafts, completed]) => { draftBuildings = drafts; completedBuildings = completed })
+      .catch(() => {})
+  }
+
+  async function saveBuilding(): Promise<void> {
+    if (saving || !activeBuildingId) return
+    saving = true
+    try {
+      await finalizeDraftBuilding(activeBuildingId)
+      draftBuildings = draftBuildings.filter(d => d.id !== activeBuildingId)
+      completedBuildings = await fetchCompletedBuildings()
+      phase = 'setup'
+      builtSpaces = []
+      orderedSpaceIds = []
+      buildingName = ''
+      activeBuildingId = null
+    } catch (e) {
+      error = (e as Error).message
+    } finally {
+      saving = false
+    }
+  }
+</script>
+
+<!-- sidebar -->
+<aside>
+  <div class="header">
+    <button class="back-btn" on:click={() => dispatch('back')}>← Back</button>
+    <span class="logo">Building Manager</span>
+  </div>
+
+  <!-- ── Setup ── -->
+  {#if phase === 'setup'}
+    {#if draftBuildings.length > 0}
+      <section>
+        <label class="section-label">Resume draft</label>
+        <ul class="pool-list">
+          {#each draftBuildings as draft (draft.id)}
+            {@const stitched = draft.building_spaces.filter(bs => bs.index === 0 || bs.offset_transformation !== null).length}
+            {@const total = draft.building_spaces.length}
+            <li class="draft-item">
+              <div class="draft-info">
+                <span class="draft-name">{draft.name || 'Unnamed'}</span>
+                <span class="draft-progress">{stitched}/{total} spaces</span>
+              </div>
+              <div class="draft-actions">
+                <button class="primary small" on:click={() => resumeBuilding(draft)}>Resume</button>
+                <button class="discard-btn" on:click={() => discardDraft(draft)}>×</button>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
+    <section>
+      <label class="section-label">Building name</label>
+      <input type="text" bind:value={buildingName} placeholder="e.g. Top Floor" />
+    </section>
+
+    <section class="spaces-pool">
+      <label class="section-label">Add spaces <span class="muted">(click to add in order)</span></label>
+      {#if unselectedSpaces.length === 0}
+        <p class="hint">All spaces added.</p>
+      {:else}
+        <ul class="pool-list">
+          {#each unselectedSpaces as s (s.id)}
+            <li class="pool-item" on:click={() => addSpace(s.id)}>
+              <span>{s.name || s.id}</span>
+              <span class="add-icon">+</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+
+    {#if orderedSpaceIds.length > 0}
+      <section class="order-section">
+        <label class="section-label">Stitch order</label>
+        <ul class="order-list">
+          {#each orderedSpaceIds as id, i (id)}
+            {@const s = allSpaces.find(sp => sp.id === id)}
+            <li class="order-item">
+              <div class="order-left">
+                {#if i === 0}
+                  <span class="ref-badge">ref</span>
+                {:else}
+                  <button class="up-btn" on:click={() => moveUp(i)} disabled={i === 1}>↑</button>
+                {/if}
+                <span class="order-name">{s?.name || id}</span>
+              </div>
+              <button class="remove-btn" on:click={() => removeSpace(id)}>×</button>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
+    {#if completedBuildings.length > 0}
+      <section>
+        <label class="section-label">Buildings</label>
+        <ul class="pool-list">
+          {#each completedBuildings as b (b.id)}
+            <li class="pool-item">
+              <span class="building-name" on:click={() => viewBuilding(b)}>{b.name || 'Unnamed'}</span>
+              <span class="space-count">{b.building_spaces.length}</span>
+              <button class="discard-btn" on:click|stopPropagation={() => deleteCompletedBuilding(b)}>×</button>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
+    <section>
+      <button
+        class="primary" style="width:100%"
+        disabled={!buildingName.trim() || orderedSpaceIds.length < 2}
+        on:click={startBuilding}
+      >
+        Start stitching →
+      </button>
+    </section>
+
+  <!-- ── View ── -->
+  {:else if phase === 'view'}
+    <section>
+      <label class="section-label">Viewing</label>
+      <p class="hint space-name">{buildingName}</p>
+    </section>
+    <section>
+      <label class="section-label">Spaces</label>
+      <ul class="order-list">
+        {#each builtSpaces as entry, i (entry.space.id)}
+          <li class="order-item">
+            {#if i === 0}<span class="ref-badge">ref</span>{/if}
+            <span class="order-name">{entry.space.name || entry.space.id}</span>
+          </li>
+        {/each}
+      </ul>
+    </section>
+    <section>
+      <button style="width:100%" on:click={resetBuilding}>← Back</button>
+    </section>
+
+  <!-- ── Picking ── -->
+  {:else if phase === 'pickSource' || phase === 'pickTarget'}
+    <section>
+      <label class="section-label">
+        Stitching {currentIdx}/{orderedSpaceIds.length - 1}
+      </label>
+      <p class="hint space-name">{currentSpace?.name || ''}</p>
+    </section>
+
+    <section>
+      <label class="section-label">Pairs</label>
+      <div class="pairs-grid">
+        {#each [0, 1, 2] as i}
+          <span class="pair-dot src" class:filled={i < srcPoints.length} />
+          <span class="pair-dot tgt" class:filled={i < tgtPoints.length} />
+        {/each}
+      </div>
+    </section>
+
+    <section>
+      {#if pointPlaced}
+        <p class="hint placed">
+          Point on <strong class:src-label={pickingSource} class:tgt-label={!pickingSource}>
+            {pickingSource ? 'new scan' : 'merged model'}
+          </strong> placed.
+        </p>
+        <button class="primary" style="width:100%" on:click={continueStitch}>Continue →</button>
+      {:else}
+        <p class="hint">
+          Pair {pairsDone + 1}/3 — double-click a point on the
+          <strong class:src-label={pickingSource} class:tgt-label={!pickingSource}>
+            {pickingSource ? 'new scan' : 'merged model'}
+          </strong>
+        </p>
+      {/if}
+    </section>
+
+    <section class="row-section">
+      <button on:click={undoStitch} disabled={srcPoints.length === 0 && tgtPoints.length === 0}>Undo</button>
+      <button on:click={resetBuilding}>Cancel</button>
+    </section>
+
+  <!-- ── Preview ── -->
+  {:else if phase === 'preview'}
+    <section>
+      <label class="section-label">Preview — {currentIdx}/{orderedSpaceIds.length - 1}</label>
+      <p class="hint">Red dots should overlap cyan. Happy with the alignment?</p>
+    </section>
+
+    <section class="row-section">
+      <button on:click={() => { phase = 'pickSource'; srcPoints = []; tgtPoints = []; pointPlaced = false; currentTransform = null }}>Redo</button>
+      <button class="primary" on:click={confirmStitch}>
+        {currentIdx < orderedSpaceIds.length - 1 ? 'Next scan →' : 'Finish →'}
+      </button>
+    </section>
+
+  <!-- ── Complete ── -->
+  {:else if phase === 'complete'}
+    <section>
+      <label class="section-label">All scans stitched</label>
+      <p class="hint placed">{builtSpaces.length} spaces ready to save as "{buildingName}".</p>
+    </section>
+
+    <section class="row-section">
+      <button on:click={resetBuilding}>Reset</button>
+      <button class="primary" on:click={saveBuilding} disabled={saving}>
+        {saving ? 'Saving…' : 'Save building'}
+      </button>
+    </section>
+  {/if}
+</aside>
+
+<Scene
+  stitchPhase={scenePhase}
+  stitchSourceGlbUrl={currentSourceGlbUrl}
+  {mergedSpaces}
+  stitchSourcePoints={srcPoints}
+  stitchTargetPoints={tgtPoints}
+  stitchTransform={currentTransform}
+  on:place={handleMeshClick}
+/>
+
+{#if error}
+  <div class="error-toast" on:click={() => error = null}>{error}</div>
+{/if}
+
+<style>
+  aside {
+    width: 280px;
+    min-width: 280px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  .back-btn {
+    padding: 3px 8px;
+    font-size: 11px;
+    border-radius: 4px;
+    color: var(--text-muted);
+    border-color: var(--border);
+    flex-shrink: 0;
+  }
+  .back-btn:hover { color: var(--text); }
+
+  .logo {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.02em;
+  }
+
+  section {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .row-section { flex-direction: row; }
+  .row-section button { flex: 1; }
+
+  .section-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+  }
+  .muted { text-transform: none; letter-spacing: 0; font-size: 10px; }
+
+  .hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0; }
+  .hint.placed { color: var(--text); }
+  .hint.space-name { font-weight: 600; color: var(--accent); font-size: 13px; }
+
+  .src-label { color: #ff4444; }
+  .tgt-label { color: #44ffcc; }
+
+  /* Space pool */
+  .spaces-pool { overflow: hidden; }
+  .pool-list { list-style: none; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+  .pool-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.1s;
+  }
+  .pool-item:hover { background: #202020; }
+  .add-icon { color: var(--accent); font-size: 16px; line-height: 1; }
+  .space-count { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+  .building-name { flex: 1; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .building-name:hover { color: var(--accent); }
+
+  /* Order list */
+  .order-section { overflow: hidden; }
+  .order-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  .order-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 0;
+    font-size: 13px;
+  }
+  .order-left { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+  .order-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .ref-badge {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+  .up-btn {
+    padding: 1px 5px;
+    font-size: 11px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .remove-btn {
+    padding: 1px 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+    border-color: transparent;
+    background: transparent;
+    flex-shrink: 0;
+  }
+  .remove-btn:hover { color: var(--danger); }
+
+  /* Pairs dots */
+  .pairs-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: auto auto;
+    gap: 6px 12px;
+  }
+  .pair-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: transparent;
+    transition: background 0.15s, border-color 0.15s;
+    justify-self: center;
+  }
+  .pair-dot.src.filled { background: #ff4444; border-color: #ff4444; }
+  .pair-dot.tgt.filled { background: #44ffcc; border-color: #44ffcc; }
+
+  .draft-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 4px;
+    font-size: 13px;
+    gap: 8px;
+  }
+  .draft-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+  .draft-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .draft-progress { font-size: 11px; color: var(--text-muted); }
+  .draft-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  button.small { padding: 3px 8px; font-size: 11px; }
+  .discard-btn {
+    padding: 1px 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+    border-color: transparent;
+    background: transparent;
+  }
+  .discard-btn:hover { color: var(--danger); }
+
+  .error-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #ff444488;
+    border: 1px solid var(--danger);
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    z-index: 200;
+  }
+</style>

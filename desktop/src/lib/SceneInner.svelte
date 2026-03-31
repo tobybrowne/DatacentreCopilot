@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { T, useTask } from '@threlte/core'
+  import { T } from '@threlte/core'
   import { GLTF, OrbitControls, interactivity } from '@threlte/extras'
   import { createEventDispatcher } from 'svelte'
   import * as THREE from 'three'
+  import TransformedGltf from './TransformedGltf.svelte'
   import type { Anchor, Position, RigidTransform } from './types'
 
   export let glbUrl: string | null = null
@@ -14,19 +15,20 @@
 
   export let stitchPhase: 'idle' | 'pickSource' | 'pickTarget' | 'preview' = 'idle'
   export let stitchSourceGlbUrl: string | null = null
-  export let stitchTargetGlbUrl: string | null = null
+  // All spaces already stitched into the building (shown as the "target" model)
+  export let mergedSpaces: Array<{ url: string; transform: RigidTransform | null }> = []
   export let stitchSourcePoints: Position[] = []
   export let stitchTargetPoints: Position[] = []
   export let stitchTransform: RigidTransform | null = null
 
-  const dispatch = createEventDispatcher<{
-    place: Position
-    select: string
-  }>()
+  // allows for this component to emit events to the parent
+  // parents can use on:place and on:select to listen for these events
+  // so the anchor specific or stitching specific logic can be handled in the parent component instead of here
+  const dispatch = createEventDispatcher<{ place: Position; select: string }>()
 
   interactivity()
 
-  // Group ref for applying the computed transform to source mesh in preview
+  // Source group ref for applying transform in preview
   let sourceGroup: THREE.Group | undefined
 
   $: if (sourceGroup && stitchTransform && stitchPhase === 'preview') {
@@ -35,7 +37,7 @@
     sourceGroup.quaternion.set(q.x, q.y, q.z, q.w)
   }
 
-  // Source points transformed into target space for the preview overlay
+  // Source points transformed into target space for preview overlap check
   $: transformedSourcePoints = (stitchPhase === 'preview' && stitchTransform)
     ? stitchSourcePoints.map(p => {
         const v = new THREE.Vector3(p.x, p.y, p.z)
@@ -70,14 +72,15 @@
   }
 </script>
 
+
+<!-- generic scene setting, define lighting and add axis helper at 0,0,0 -->
 <T.AmbientLight intensity={0.6} />
 <T.DirectionalLight position={[5, 10, 5]} intensity={1} castShadow />
 
 <T.PerspectiveCamera makeDefault position={[0, 2, 5]} fov={60}>
-  <OrbitControls minDistance={0.5} />
+  <OrbitControls minDistance={0.5} screenSpacePanning={true} />
 </T.PerspectiveCamera>
 
-<!-- World origin marker -->
 <T.Mesh position={[0, 0, 0]}>
   <T.SphereGeometry args={[0.04, 12, 12]} />
   <T.MeshStandardMaterial color="#ff0066" emissive="#ff0066" emissiveIntensity={0.8} />
@@ -90,12 +93,13 @@
     <GLTF url={glbUrl} on:dblclick={handleMeshClick} />
   {/if}
 
+  {#each mergedSpaces as space (space.url)}
+    <TransformedGltf url={space.url} transform={space.transform} />
+  {/each}
+
   {#each anchors.filter(a => a.glb_position) as anchor (anchor.id)}
     {@const pos = anchor.glb_position}
-    <T.Mesh
-      position={[pos.x, pos.y, pos.z]}
-      on:click={(e) => handleAnchorClick(e, anchor.id)}
-    >
+    <T.Mesh position={[pos.x, pos.y, pos.z]} on:click={(e) => handleAnchorClick(e, anchor.id)}>
       <T.SphereGeometry args={[0.06, 16, 16]} />
       <T.MeshStandardMaterial color={sphereColor(anchor)} emissiveIntensity={0.3} />
     </T.Mesh>
@@ -118,20 +122,25 @@
   {/if}
 {/if}
 
-<!-- ── Stitch: pick source points ── -->
-{#if stitchPhase === 'pickSource' && stitchSourceGlbUrl}
-  <GLTF url={stitchSourceGlbUrl} on:dblclick={handleMeshClick} />
-  {#each stitchSourcePoints as pt}
-    <T.Mesh position={[pt.x, pt.y, pt.z]}>
-      <T.SphereGeometry args={[0.05, 12, 12]} />
-      <T.MeshStandardMaterial color="#ff4444" emissive="#ff4444" emissiveIntensity={0.6} />
-    </T.Mesh>
-  {/each}
+<!-- ── Stitch: pick source points (show new space only) ── -->
+  {#if stitchPhase === 'pickSource' && stitchSourceGlbUrl}
+    <!-- display GLB, use handleMeshClick to allow for adding stitch points -->
+    <GLTF url={stitchSourceGlbUrl} on:dblclick={handleMeshClick} />
+
+    <!-- display the stitch sphere -->
+    {#each stitchSourcePoints as pt}
+      <T.Mesh position={[pt.x, pt.y, pt.z]}>
+        <T.SphereGeometry args={[0.05, 12, 12]} />
+        <T.MeshStandardMaterial color="#ff4444" emissive="#ff4444" emissiveIntensity={0.6} />
+      </T.Mesh>
+    {/each}
 {/if}
 
-<!-- ── Stitch: pick target points ── -->
-{#if stitchPhase === 'pickTarget' && stitchTargetGlbUrl}
-  <GLTF url={stitchTargetGlbUrl} on:dblclick={handleMeshClick} />
+<!-- ── Stitch: pick target points (show full merged model so far) ── -->
+{#if stitchPhase === 'pickTarget'}
+  {#each mergedSpaces as space (space.url)}
+    <TransformedGltf url={space.url} transform={space.transform} clickable={true} on:dblclick={handleMeshClick} />
+  {/each}
   {#each stitchTargetPoints as pt}
     <T.Mesh position={[pt.x, pt.y, pt.z]}>
       <T.SphereGeometry args={[0.05, 12, 12]} />
@@ -140,20 +149,19 @@
   {/each}
 {/if}
 
-<!-- ── Stitch: preview (both meshes, source transformed) ── -->
+<!-- ── Stitch: preview (merged model + new space with computed transform) ── -->
 {#if stitchPhase === 'preview'}
-  <!-- Target at origin (reference) -->
-  {#if stitchTargetGlbUrl}
-    <GLTF url={stitchTargetGlbUrl} />
-  {/if}
-  <!-- Source with computed transform applied -->
+  {#each mergedSpaces as space (space.url)}
+    <TransformedGltf url={space.url} transform={space.transform} />
+  {/each}
+
   {#if stitchSourceGlbUrl}
     <T.Group bind:ref={sourceGroup}>
       <GLTF url={stitchSourceGlbUrl} />
     </T.Group>
   {/if}
 
-  <!-- Target points (cyan) at original positions -->
+  <!-- Target points (cyan) -->
   {#each stitchTargetPoints as pt}
     <T.Mesh position={[pt.x, pt.y, pt.z]}>
       <T.SphereGeometry args={[0.06, 12, 12]} />
@@ -161,7 +169,7 @@
     </T.Mesh>
   {/each}
 
-  <!-- Source points transformed into target space — should overlap the cyan ones -->
+  <!-- Source points transformed into target space (should overlap cyan) -->
   {#each transformedSourcePoints as pt}
     <T.Mesh position={[pt.x, pt.y, pt.z]}>
       <T.SphereGeometry args={[0.06, 12, 12]} />

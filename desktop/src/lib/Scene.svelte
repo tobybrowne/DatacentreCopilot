@@ -12,7 +12,7 @@
   // stitch mode
   export let stitchPhase: 'idle' | 'pickSource' | 'pickTarget' | 'preview' = 'idle'
   export let stitchSourceGlbUrl: string | null = null
-  export let stitchTargetGlbUrl: string | null = null
+  export let mergedSpaces: Array<{ url: string; transform: RigidTransform | null }> = []
   export let stitchSourcePoints: Position[] = []
   export let stitchTargetPoints: Position[] = []
   export let stitchTransform: RigidTransform | null = null
@@ -28,7 +28,7 @@
       {userPosition}
       {stitchPhase}
       {stitchSourceGlbUrl}
-      {stitchTargetGlbUrl}
+      {mergedSpaces}
       {stitchSourcePoints}
       {stitchTargetPoints}
       {stitchTransform}

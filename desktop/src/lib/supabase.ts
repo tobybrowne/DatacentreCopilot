@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import type { Anchor, Building, Position, RigidTransform, Space } from './types'
+import type { Anchor, Building, BuildingSpace, Position, RigidTransform, Space } from './types'
 
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL as string,
@@ -66,37 +66,75 @@ export async function fetchUserPosition(userId: string): Promise<Position | null
   return (data?.glb_position as Position) ?? null
 }
 
-export async function fetchBuildings(): Promise<Building[]> {
+export async function fetchCompletedBuildings(): Promise<(Building & { building_spaces: BuildingSpace[] })[]> {
   const { data, error } = await supabase
     .from('buildings')
-    .select('*')
+    .select('*, building_spaces(*)')
+    .eq('draft', false)
     .order('created_at', { ascending: false })
   if (error) throw error
-  return data as Building[]
+  return data as (Building & { building_spaces: BuildingSpace[] })[]
 }
 
-export async function createStitchedBuilding(
-  buildingName: string,
-  targetSpaceId: string,   // reference frame, index 0, no transform
-  sourceSpaceId: string,   // index 1, gets the computed transform
-  transform: RigidTransform
-): Promise<void> {
+export async function fetchDraftBuildings(): Promise<(Building & { building_spaces: BuildingSpace[] })[]> {
+  const { data, error } = await supabase
+    .from('buildings')
+    .select('*, building_spaces(*)')
+    .eq('draft', true)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data as (Building & { building_spaces: BuildingSpace[] })[]
+}
+
+// Creates a draft building with all spaces pre-inserted (transforms null until stitched).
+export async function createDraftBuilding(
+  name: string,
+  orderedSpaceIds: string[]
+): Promise<string> {
   const { data: building, error: buildingErr } = await supabase
     .from('buildings')
-    .insert({ name: buildingName })
+    .insert({ name, draft: true })
     .select('id')
     .single()
   if (buildingErr) throw buildingErr
 
-  const { error: e1 } = await supabase
-    .from('building_spaces')
-    .insert({ building_id: building.id, space_id: targetSpaceId, index: 0, offset_transformation: null })
-  if (e1) throw e1
+  const rows = orderedSpaceIds.map((spaceId, index) => ({
+    building_id: building.id,
+    space_id: spaceId,
+    index,
+    offset_transformation: null,
+  }))
 
-  const { error: e2 } = await supabase
+  const { error } = await supabase.from('building_spaces').insert(rows)
+  if (error) throw error
+
+  return building.id
+}
+
+export async function updateBuildingSpaceTransform(
+  buildingId: string,
+  spaceId: string,
+  transform: RigidTransform
+): Promise<void> {
+  const { error } = await supabase
     .from('building_spaces')
-    .insert({ building_id: building.id, space_id: sourceSpaceId, index: 1, offset_transformation: transform })
-  if (e2) throw e2
+    .update({ offset_transformation: transform })
+    .eq('building_id', buildingId)
+    .eq('space_id', spaceId)
+  if (error) throw error
+}
+
+export async function finalizeDraftBuilding(buildingId: string): Promise<void> {
+  const { error } = await supabase
+    .from('buildings')
+    .update({ draft: false })
+    .eq('id', buildingId)
+  if (error) throw error
+}
+
+export async function deleteBuilding(buildingId: string): Promise<void> {
+  const { error } = await supabase.from('buildings').delete().eq('id', buildingId)
+  if (error) throw error
 }
 
 export function subscribeUserPosition(
