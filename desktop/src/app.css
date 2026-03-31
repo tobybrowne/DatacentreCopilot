@@ -19,11 +19,7 @@ body {
   font-size: 14px;
   height: 100vh;
   overflow: hidden;
-}
-
-#app {
   display: flex;
-  height: 100vh;
 }
 
 button {
