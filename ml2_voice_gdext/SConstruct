@@ -1,0 +1,52 @@
+#!/usr/bin/env python
+"""
+Build script for the ML2 Voice Intent GDExtension.
+
+Uses godot-cpp from the godot_openxr_vendors checkout.
+Only targets Android arm64 (ML2).
+
+Usage:
+  scons platform=android target=template_release arch=arm64
+  scons platform=android target=template_debug arch=arm64
+"""
+import os
+from pathlib import Path
+
+# godot-cpp lives in the vendor plugin repo
+godot_cpp_path = os.path.expanduser("~/godot_openxr_vendors/thirdparty/godot-cpp")
+
+env = SConscript(os.path.join(godot_cpp_path, "SConstruct"))
+
+env.Append(CPPPATH=["src/"])
+
+sources = Glob("src/*.cpp")
+
+# Static link libgcc/libstdc++ for compatibility (matches vendor plugin)
+if env["platform"] in ["linux", "android"]:
+    env.Append(
+        LINKFLAGS=[
+            "-static-libgcc",
+            "-static-libstdc++",
+        ]
+    )
+
+# Output path mirrors the .gdextension paths
+binary_path = os.path.expanduser(
+    "~/entangl-copilot/app/addons/ml2_voice/bin"
+)
+
+project_name = "ml2voice"
+
+library = env.SharedLibrary(
+    "{}/{}/{}/{}/lib{}{}".format(
+        binary_path,
+        env["platform"],
+        env["target"],
+        env["arch"],
+        project_name,
+        env["SHLIBSUFFIX"],
+    ),
+    source=sources,
+)
+
+Default(library)
