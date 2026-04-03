@@ -4,15 +4,22 @@ var xr_interface: XRInterface
 
 @onready var procedure_panel = $XROrigin3D/ProcedurePanel
 @onready var step_viewer = $XROrigin3D/StepViewer
+@onready var space_label = $XROrigin3D/SpaceLabel
 @onready var gesture_manager: GestureManager = $XROrigin3D/GestureManager
 @onready var anchor_manager: AnchorManager = $XROrigin3D/AnchorManager
 @onready var space_manager: SpaceManager = $XROrigin3D/SpaceManager
+@onready var voice_manager: VoiceManager = $XROrigin3D/VoiceManager
 
 const ANCHOR_DELETE_RADIUS := 0.10   # metres — how close to an anchor to target it for delete
 
 # Tracking indicator
 var _tracking_dot: MeshInstance3D
 var _tracking_dot_mat: StandardMaterial3D
+
+# Space name label
+var _space_label: Label3D
+var _current_space_name := ""
+const LOOK_UP_THRESHOLD := 0.4  # radians (~23 degrees up)
 
 # -- ML2 localization extension (commented out — events unreliable, using OpenXR core state instead)
 # var _loc_ext = null  # OpenXRMlLocalizationMapExtension singleton, null if unavailable
@@ -23,6 +30,8 @@ var _tracking_dot_mat: StandardMaterial3D
 
 # UUID poll timer
 var _uuid_timer := 0.0
+var _space_label_timer := 0.0
+const SPACE_LABEL_INTERVAL := 3.0
 
 # Anchor pinch state
 var _spaces_synced := false
@@ -45,11 +54,18 @@ var _progress_arc_mat:  StandardMaterial3D  = null
 func _ready():
 	# bind signals to functions
 	procedure_panel.get_panel().connect("procedure_selected", _on_procedure_selected)
-	procedure_panel.visible = true
+	procedure_panel.visible = false
+	step_viewer.visible = false
 	gesture_manager.pinch_started.connect(_on_pinch_started)
 	gesture_manager.pinch_held.connect(_on_pinch_held)
 	gesture_manager.pinch_completed.connect(_on_pinch_completed)
 	gesture_manager.pinch_ended.connect(_on_pinch_ended)
+	voice_manager.next_step.connect(func(): step_viewer.get_panel().next_step())
+	voice_manager.previous_step.connect(func(): step_viewer.get_panel().prev_step())
+	voice_manager.confirm.connect(func(): pass)
+	voice_manager.cancel.connect(func(): pass)
+	voice_manager.start_recording.connect(_on_start_recording)
+	voice_manager.stop_recording.connect(_on_stop_recording)
 
 	if OS.get_name() == "Android":
 		OS.request_permissions()
@@ -61,6 +77,7 @@ func _ready():
 		if Engine.has_singleton("OpenXRMlLocalizationMapExtension"):
 			var ext = Engine.get_singleton("OpenXRMlLocalizationMapExtension")
 			ext.localization_changed.connect(_on_localization_changed.bind(ext))
+
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		get_viewport().transparent_bg = true
 		get_viewport().use_xr = true
@@ -82,9 +99,31 @@ func _ready():
 func _process(delta: float) -> void:
 	_update_tracking_indicator(delta)
 	# _poll_localization_uuid(delta)
+	_poll_space_label(delta)
+
+func _poll_space_label(delta: float) -> void:
+	_space_label_timer += delta
+	if _space_label_timer < SPACE_LABEL_INTERVAL:
+		return
+	_space_label_timer = 0.0
+	var ext = Engine.get_singleton("OpenXRMlLocalizationMapExtension") if Engine.has_singleton("OpenXRMlLocalizationMapExtension") else null
+	print("Current UUID: ", ext.get_localization_map_uuid() if ext else "(no ext)")
+	var current_space: Space = await space_manager.get_current_space()
+	print("Space label value: ", current_space.name if current_space else "(none)")
+	if current_space and space_label:
+		var label := space_label.get_panel().get_node_or_null("MarginContainer/Label") as Label
+		if label:
+			label.text = current_space.name
 	
 
 func _on_localization_changed(_state: int, _confidence: int, _error_flags: int, _ext: Object) -> void:
+	var current_space: Space = await space_manager.get_current_space()
+	print("Space label value: ", current_space.name if current_space else "(none)")
+	if current_space and space_label:
+		var label := space_label.get_panel().get_node_or_null("MarginContainer/Label") as Label
+		if label:
+			label.text = current_space.name
+
 	if _spaces_synced:
 		return
 	_spaces_synced = true
@@ -301,6 +340,34 @@ func _clear_progress_indicator() -> void:
 		_progress_arc_mesh = null
 		_progress_bg_mat   = null
 		_progress_arc_mat  = null
+
+
+# ── Gesture recording ─────────────────────────────────────────────────────────
+
+var _gesture_replayer: GestureReplayer = null
+
+func _on_start_recording() -> void:
+	# Remove any existing replayer.
+	if _gesture_replayer:
+		_gesture_replayer.queue_free()
+		_gesture_replayer = null
+	gesture_manager.start_recording()
+	print("Gesture recording started")
+
+func _on_stop_recording() -> void:
+	if not gesture_manager.is_recording():
+		return
+	var frames := gesture_manager.stop_recording()
+	print("Gesture recording stopped: ", frames.size(), " frames")
+	if frames.is_empty():
+		return
+
+	# Spawn replayer 1m in front of the camera.
+	var camera := $XROrigin3D/XRCamera3D as Camera3D
+	_gesture_replayer = GestureReplayer.new()
+	add_child(_gesture_replayer)
+	_gesture_replayer.global_transform = Transform3D(Basis.IDENTITY, camera.global_position + -camera.global_basis.z)
+	_gesture_replayer.play(frames, true)
 
 
 # ── Signals ───────────────────────────────────────────────────────────────────

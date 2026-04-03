@@ -22,10 +22,16 @@ var _pinching := {"left": false, "right": false}
 var _hold_time := {"left": 0.0, "right": 0.0}
 var _fired := {"left": false, "right": false}
 
+var _recording := false
+var _recording_origin := Transform3D()
+var _frames: Array[HandPoseRec] = []
+
 
 func _process(delta: float) -> void:
 	for hand in _TRACKERS:
 		_check_hand(hand, delta)
+	if _recording:
+		_record_frame()
 
 
 func _check_hand(hand: String, delta: float) -> void:
@@ -67,3 +73,45 @@ func _end(hand: String) -> void:
 		_hold_time[hand] = 0.0
 		_fired[hand] = false
 		pinch_ended.emit(hand)
+
+
+# ---- Hand pose recording ----
+
+func start_recording() -> void:
+	_frames.clear()
+	# Capture the camera (head) transform as the recording origin.
+	# All joints will be stored relative to this so the recording is portable.
+	var camera := get_viewport().get_camera_3d()
+	if camera:
+		_recording_origin = camera.global_transform
+	else:
+		_recording_origin = Transform3D()
+	_recording = true
+
+func stop_recording() -> Array[HandPoseRec]:
+	_recording = false
+	var result := _frames.duplicate()
+	_frames.clear()
+	return result
+
+func is_recording() -> bool:
+	return _recording
+
+func _record_frame() -> void:
+	var pose := HandPoseRec.new()
+	pose.timestamp_msec = Time.get_ticks_msec()
+	var inv_origin := _recording_origin.affine_inverse()
+	_capture_hand_joints("left", pose.left_joints, inv_origin)
+	_capture_hand_joints("right", pose.right_joints, inv_origin)
+	_frames.append(pose)
+
+func _capture_hand_joints(hand: String, joints: Array[Transform3D], inv_origin: Transform3D) -> void:
+	var tracker := XRServer.get_tracker(_TRACKERS[hand])
+	if not tracker or not tracker is XRHandTracker:
+		return
+
+	var ht := tracker as XRHandTracker
+	for joint_idx in HandPoseRec.JOINT_COUNT:
+		if ht.get_hand_joint_flags(joint_idx) & 4:  # has tracking data
+			joints[joint_idx] = inv_origin * ht.get_hand_joint_transform(joint_idx)
+
