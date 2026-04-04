@@ -9,6 +9,7 @@ var _detecting := false
 var _beginning := false
 var _plane_nodes: Array[MeshInstance3D] = []
 var planes_data: Array = []
+var RENDER_PLANES := false
 
 # Color per semantic type
 const COLORS := {
@@ -30,6 +31,7 @@ var _plane_shader: Shader = null
 
 
 func _ready() -> void:
+	# NOTE: we use the deprecated XR_EXT_plane_detection because the newer XR_EXT_spatial_plane_tracking is not supported by the ML2
 	if not Engine.has_singleton("OpenXRExtPlaneDetectionExtension"):
 		push_warning("PlaneManager: OpenXRExtPlaneDetectionExtension not available")
 		return
@@ -81,34 +83,36 @@ func _refresh_planes() -> void:
 	var planes: Array = _ext.get_planes()
 	planes_data = planes
 
-	# Remove excess nodes
-	while _plane_nodes.size() > planes.size():
-		var node: MeshInstance3D = _plane_nodes.pop_back()
-		node.queue_free()
+	# Add/Remove nodes to match plane data
+	if RENDER_PLANES:
+		# Remove excess nodes
+		while _plane_nodes.size() > planes.size():
+			var node: MeshInstance3D = _plane_nodes.pop_back()
+			node.queue_free()
 
-	# Add missing nodes
-	while _plane_nodes.size() < planes.size():
-		var mi := MeshInstance3D.new()
-		mi.mesh = QuadMesh.new()
-		get_parent().add_child(mi)
-		_plane_nodes.append(mi)
+		# Add missing nodes
+		while _plane_nodes.size() < planes.size():
+			var mi := MeshInstance3D.new()
+			mi.mesh = QuadMesh.new()
+			get_parent().add_child(mi)
+			_plane_nodes.append(mi)
 
-	for i in planes.size():
-		var plane: Dictionary = planes[i]
-		var mi: MeshInstance3D = _plane_nodes[i]
-		var sem: int = plane["semantic_type"]
-		var w: float = plane["width"]
-		var h: float = plane["height"]
+		for i in planes.size():
+			var plane: Dictionary = planes[i]
+			var mi: MeshInstance3D = _plane_nodes[i]
+			var sem: int = plane["semantic_type"]
+			var w: float = plane["width"]
+			var h: float = plane["height"]
 
-		(mi.mesh as QuadMesh).size = Vector2(w, h)
-		mi.global_transform = plane["transform"]
+			(mi.mesh as QuadMesh).size = Vector2(w, h)
+			mi.global_transform = plane["transform"]
 
-		var mat := ShaderMaterial.new()
-		mat.shader = _plane_shader
-		mat.set_shader_parameter("fill_color", COLORS.get(sem, COLORS[0]))
-		mat.set_shader_parameter("edge_color", EDGE_COLORS.get(sem, EDGE_COLORS[0]))
-		mat.set_shader_parameter("edge_width", 0.04)
-		mi.material_override = mat
+			var mat := ShaderMaterial.new()
+			mat.shader = _plane_shader
+			mat.set_shader_parameter("fill_color", COLORS.get(sem, COLORS[0]))
+			mat.set_shader_parameter("edge_color", EDGE_COLORS.get(sem, EDGE_COLORS[0]))
+			mat.set_shader_parameter("edge_width", 0.04)
+			mi.material_override = mat
 
 	print("PlaneManager: updated ", planes.size(), " planes")
 
