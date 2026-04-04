@@ -1,0 +1,22 @@
+pluginManagement {
+    plugins {
+        id 'com.android.library' version '8.6.1'
+        id 'org.jetbrains.kotlin.android' version '2.1.20'
+    }
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "CVCameraPlugin"
+include ':plugin'
