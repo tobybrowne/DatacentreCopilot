@@ -5,8 +5,13 @@
 [ext_resource type="PackedScene" uid="uid://b4in1gm7dioen" path="res://assets/hands/RightHandHumanoid.gltf" id="3_right"]
 [ext_resource type="PackedScene" path="res://ui/procedure_panel/procedure_panel_3d.tscn" id="5_docspanel"]
 [ext_resource type="PackedScene" path="res://ui/step_viewer/step_viewer_3d.tscn" id="6_stepviewer"]
+[ext_resource type="PackedScene" uid="uid://b_spacelabel3d" path="res://ui/space_label/space_label_3d.tscn" id="12_spacelabel"]
 [ext_resource type="Script" uid="uid://daxqqllngyuo0" path="res://scripts/GestureManager.gd" id="7_gesturemgr"]
+[ext_resource type="Script" path="res://scripts/VoiceManager.gd" id="13_voicemgr"]
 [ext_resource type="Script" path="res://scripts/PlaneManager.gd" id="10_planemgr"]
+[ext_resource type="Script" path="res://scripts/WorldMeshManager.gd" id="14_worldmeshmgr"]
+[ext_resource type="Script" path="res://scripts/CVCameraManager.gd" id="15_cvcamermgr"]
+[ext_resource type="Script" path="res://scripts/FovTester.gd" id="11_fovtester"]
 [ext_resource type="Script" uid="uid://dqghhykvqv8y7" path="res://scripts/AnchorManager.gd" id="8_anchormgr"]
 [ext_resource type="Script" uid="uid://daochuruug7v7" path="res://scripts/SpaceManager.gd" id="9_spacemgr"]
 
@@ -48,9 +53,10 @@ show_when_tracked = true
 hand_tracker = &"/user/hand_tracker/right"
 
 [node name="ProcedurePanel" parent="XROrigin3D" unique_id=1171545323 instance=ExtResource("5_docspanel")]
-distance = 1.2
 
 [node name="StepViewer" parent="XROrigin3D" unique_id=1171545324 instance=ExtResource("6_stepviewer")]
+
+[node name="SpaceLabel" parent="XROrigin3D" unique_id=1171545328 instance=ExtResource("12_spacelabel")]
 
 [node name="GestureManager" type="Node" parent="XROrigin3D" unique_id=1171545325]
 script = ExtResource("7_gesturemgr")
@@ -61,8 +67,20 @@ script = ExtResource("8_anchormgr")
 [node name="SpaceManager" type="Node" parent="XROrigin3D" unique_id=1171545327]
 script = ExtResource("9_spacemgr")
 
+[node name="VoiceManager" type="Node" parent="XROrigin3D"]
+script = ExtResource("13_voicemgr")
+
 [node name="PlaneManager" type="Node" parent="XROrigin3D"]
 script = ExtResource("10_planemgr")
+
+; [node name="WorldMeshManager" type="Node3D" parent="XROrigin3D"]
+; script = ExtResource("14_worldmeshmgr")
+
+[node name="CVCameraManager" type="Node" parent="XROrigin3D"]
+script = ExtResource("15_cvcamermgr")
+
+; [node name="FovTester" type="Node3D" parent="XROrigin3D"]
+; script = ExtResource("11_fovtester")
 
 [editable path="XROrigin3D/LeftHand/LeftHandHumanoid"]
 [editable path="XROrigin3D/RightHand/RightHandHumanoid"]

@@ -9,6 +9,7 @@ var xr_interface: XRInterface
 @onready var anchor_manager: AnchorManager = $XROrigin3D/AnchorManager
 @onready var space_manager: SpaceManager = $XROrigin3D/SpaceManager
 @onready var voice_manager: VoiceManager = $XROrigin3D/VoiceManager
+@onready var world_mesh_manager: WorldMeshManager = $XROrigin3D/WorldMeshManager
 
 const ANCHOR_DELETE_RADIUS := 0.10   # metres — how close to an anchor to target it for delete
 

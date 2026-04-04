@@ -32,7 +32,7 @@ project/assembly_name="EntanglCopilot"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/godot-xr-tools/plugin.cfg", "res://addons/supabase/plugin.cfg")
+enabled=PackedStringArray("res://addons/cv_camera/plugin.cfg", "res://addons/godot-xr-tools/plugin.cfg", "res://addons/supabase/plugin.cfg")
 
 [physics]
 
@@ -55,3 +55,4 @@ shaders/enabled=true
 openxr/extensions/magic_leap/spatial_anchors=true
 openxr/extensions/magic_leap/localization_map=true
 openxr/extensions/magic_leap/plane_detection=true
+openxr/extensions/magic_leap/world_mesh_detection=true
