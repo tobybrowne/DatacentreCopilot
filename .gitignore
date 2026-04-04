@@ -16,6 +16,11 @@ node_modules/
 addons/
 build/
 dist/
+.gradle/
+
+*.os
+.sconsign.dblite
+*.bin
 
 .env
 .svelte-kit/
@@ -29,3 +34,9 @@ export_presets.cfg
 
 # big files
 *.glb
+
+# just some tester code
+recastnavigation-1.6.0/
+
+# old part of the project, not used anymore (could be helpful at some point)
+room_finder/
