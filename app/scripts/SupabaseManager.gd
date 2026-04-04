@@ -1,8 +1,14 @@
 extends Node
 
+## Set to false to disable all Supabase calls (offline / local-only testing).
+@export var enabled := false
+
 var auth_user = null
 
 func sign_in(email, password):
+	if not enabled:
+		print("SupabaseManager: offline mode — skipping sign_in")
+		return false
 	var auth_task = await Supabase.auth.sign_in(email, password).completed
 
 	if auth_task.error == null:
@@ -15,6 +21,8 @@ func sign_in(email, password):
 
 
 func get_procedures() -> Array[Procedure]:
+	if not enabled:
+		return []
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("procedures").select()
 	).completed
@@ -32,6 +40,8 @@ func get_procedures() -> Array[Procedure]:
 		return []
 
 func get_anchors() -> Array[Anchor]:
+	if not enabled:
+		return []
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("anchors").select()
 	).completed
@@ -49,6 +59,8 @@ func get_anchors() -> Array[Anchor]:
 		return []
 
 func get_spaces() -> Array[Space]:
+	if not enabled:
+		return []
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("spaces").select()
 	).completed
@@ -66,6 +78,8 @@ func get_spaces() -> Array[Space]:
 		return []
 
 func get_space_blob(space: Space) -> PackedByteArray:
+	if not enabled:
+		return PackedByteArray()
 	var task = await Supabase.storage.from("spaces_bucket").download(space.blob_path).completed
 
 	if task.error == null and task.data != null:
@@ -78,6 +92,8 @@ func get_space_blob(space: Space) -> PackedByteArray:
 		return PackedByteArray()
 
 func upsert_space(space: Space) -> bool:
+	if not enabled:
+		return false
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("spaces").insert([{
 			"id": space.id,
@@ -95,6 +111,8 @@ func upsert_space(space: Space) -> bool:
 
 
 func insert_anchor(anchor: Anchor) -> bool:
+	if not enabled:
+		return false
 	var row := {
 		"name": anchor.name,
 		"ml2_id": anchor.ml2_id,
@@ -113,6 +131,8 @@ func insert_anchor(anchor: Anchor) -> bool:
 		return false
 
 func update_anchor_glb_position(anchor_id: String, glb_position: Vector3) -> bool:
+	if not enabled:
+		return false
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("anchors").update({
 			"glb_position": {
@@ -131,6 +151,8 @@ func update_anchor_glb_position(anchor_id: String, glb_position: Vector3) -> boo
 		return false
 
 func update_user_glb_position(glb_position: Vector3) -> bool:
+	if not enabled:
+		return false
 	# if auth_user == null:
 	# 	return false
 
@@ -155,6 +177,8 @@ func update_user_glb_position(glb_position: Vector3) -> bool:
 
 
 func remove_anchor(anchor_id: String) -> bool:
+	if not enabled:
+		return false
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("anchors").delete().eq("id", anchor_id)
 	).completed
