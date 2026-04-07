@@ -10,11 +10,20 @@ extends Node3D
 @export var panel_scene: PackedScene
 
 @export var follow_speed: float = 2.0
-@export var distance: float = 0.8
-@export var height_offset: float = -0.15
+@export var locked_to_head: bool = false
+@export var distance: float = 1.2
+# Floating mode offsets (metres, world space)
+@export var height_offset: float = 0.0
 @export var lateral_offset: float = 0.0
+# Locked-to-head screen position: (0,0) = centre, (1,1) = top-right corner of visible FOV
+@export var screen_position: Vector2 = Vector2(0.0, 0.0)
+# ML2 waveguide shows only a portion of what the projection matrix covers
+@export var fov_scale: Vector2 = Vector2(22.8, 24.7)
 @export var viewport_size: Vector2i = Vector2i(800, 800)
 @export var quad_size: Vector2 = Vector2(0.4, 0.4)
+@export var background_color: Color = Color(1, 1, 1, 1)
+@export var touchable: bool = true
+
 
 var _camera: XRCamera3D
 var _viewport: SubViewport
@@ -41,6 +50,7 @@ func _ready() -> void:
 
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = _viewport.get_texture()
+	mat.albedo_color = background_color
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 
@@ -63,31 +73,45 @@ func _process(delta: float) -> void:
 	if not _camera:
 		return
 
-	var cam_basis := _camera.global_transform.basis
-	var cam_pos := _camera.global_position
+	if locked_to_head:
+		# uses the cameras projection matrix (given by ML2 at runtime)
+		# to positions things relative to the users FOV (great for HUD stuff)
+		var cam := _camera.global_transform
+		var x_off: float = screen_position.x * tan(deg_to_rad(fov_scale.x)) * distance
+		var y_off: float = screen_position.y * tan(deg_to_rad(fov_scale.y)) * distance
+		global_position = cam.origin \
+			+ cam.basis.x * x_off \
+			+ cam.basis.y * y_off \
+			+ cam.basis.z * (-distance)
+		global_basis = cam.basis
 
-	var forward := -cam_basis.z
-	forward.y = 0.0
-	if forward.length_squared() < 0.001:
-		return
-	forward = forward.normalized()
+	else:
+		var cam_basis := _camera.global_transform.basis
+		var cam_pos := _camera.global_position
 
-	var right := cam_basis.x
-	right.y = 0.0
-	right = right.normalized()
+		var forward := -cam_basis.z
+		forward.y = 0.0
+		if forward.length_squared() < 0.001:
+			return
+		forward = forward.normalized()
 
-	var target_pos := cam_pos \
-		+ forward * distance \
-		+ right * lateral_offset \
-		+ Vector3(0.0, height_offset, 0.0)
+		var right := cam_basis.x
+		right.y = 0.0
+		right = right.normalized()
 
-	target_pos = _avoid_planes(target_pos)
-	global_position = global_position.lerp(target_pos, follow_speed * delta)
+		var target_pos := cam_pos \
+			+ forward * distance \
+			+ right * lateral_offset \
+			+ Vector3(0.0, height_offset, 0.0)
 
-	var target_y := atan2(-forward.x, -forward.z)
-	rotation.y = lerp_angle(rotation.y, target_y, follow_speed * delta)
+		target_pos = _avoid_planes(target_pos)
+		global_position = global_position.lerp(target_pos, follow_speed * delta)
 
-	_check_poke()
+		var target_y := atan2(-forward.x, -forward.z)
+		rotation.y = lerp_angle(rotation.y, target_y, follow_speed * delta)
+
+	if touchable:
+		_check_poke()
 
 
 const PLANE_CLEARANCE := 0.15

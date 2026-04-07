@@ -6,3 +6,10 @@
 [node name="ProcedurePanel3D" type="Node3D"]
 script = ExtResource("1_script")
 panel_scene = ExtResource("2_scene")
+background_color = Color(1, 1, 1, 1)
+quad_size = Vector2(0.06, 0.06)
+distance = 0.3
+locked_to_head = true
+touchable = false
+screen_position = Vector2(0.6, 0.6)
+; height_offset = 0.1
