@@ -79,4 +79,16 @@ CREATE TABLE building_spaces (
   index int NOT NULL -- the index of this space within the building, used for ordering
 );
 
--- once the three points are added to the source it swaps to the target immediately, should stay and let the user move along
+-- recordings of gesturs to accompany certain steps 
+CREATE TABLE gesture_recordings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  procedure_id UUID NOT NULL REFERENCES procedures(id) ON DELETE CASCADE,
+  step_uuid UUID NOT NULL, -- the step this gesture recording corresponds to
+  recording_path TEXT NOT NULL, -- path to the gesture recording file in Supabase storage (.json)
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+)
+
+-- create private bucket for storing gesture recordings
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('gesture_recordings_bucket', 'gesture_recordings_bucket', true);
