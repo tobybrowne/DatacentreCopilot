@@ -14,7 +14,7 @@ import time
 import numpy as np
 from PIL import Image
 
-from room_finder import get_device, load_fb_model, get_norm_transform, embed_pil
+from room_finder_core import get_device, load_fb_model, get_norm_transform, embed_pil
 
 
 from dataclasses import dataclass

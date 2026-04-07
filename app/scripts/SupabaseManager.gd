@@ -1,7 +1,7 @@
 extends Node
 
 ## Set to false to disable all Supabase calls (offline / local-only testing).
-@export var enabled := false
+@export var enabled := true
 
 var auth_user = null
 
@@ -153,11 +153,8 @@ func update_anchor_glb_position(anchor_id: String, glb_position: Vector3) -> boo
 func update_user_glb_position(glb_position: Vector3) -> bool:
 	if not enabled:
 		return false
-	# if auth_user == null:
-	# 	return false
-
 	# temp dummy user id
-	var auth_user_id := '00000000-0000-0000-0000-000000000000';
+	var auth_user_id := '00000000-0000-0000-0000-000000000000'
 
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("users").update({
@@ -174,6 +171,34 @@ func update_user_glb_position(glb_position: Vector3) -> bool:
 	else:
 		print("Error updating user glb_position: ", task.error.message)
 		return false
+
+
+func get_building_spaces_for_space(space_id: String) -> Array[BuildingSpace]:
+	if not enabled:
+		return []
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("building_spaces").select().eq("space_id", space_id)
+	).completed
+	if task.error != null or task.data == null or task.data.is_empty():
+		if task.error != null:
+			print("get_building_spaces_for_space error: ", task.error.message)
+		return []
+	var building_id: String = task.data[0].get("building_id", "")
+	if building_id.is_empty():
+		return []
+
+	var task2 = await Supabase.database.query(
+		SupabaseQuery.new().from("building_spaces").select().eq("building_id", building_id)
+	).completed
+	if task2.error == null and task2.data != null:
+		var result: Array[BuildingSpace] = []
+		for row in task2.data:
+			result.append(BuildingSpace.from_dict(row))
+		return result
+	else:
+		if task2.error != null:
+			print("get_building_spaces_for_space error: ", task2.error.message)
+		return []
 
 
 func remove_anchor(anchor_id: String) -> bool:

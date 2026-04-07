@@ -106,7 +106,7 @@
     if (!pendingPosition || saving) return
     saving = true
     try {
-      await insertAnchor({ name: newAnchorName, glbPosition: pendingPosition })
+      await insertAnchor({ name: newAnchorName, glbPosition: pendingPosition, spaceId: selectedSpaceId! })
       await refresh()
       pendingPosition = null
     } catch (e) {
@@ -194,9 +194,10 @@
       <input type="text" bind:value={newAnchorName} placeholder="Anchor name (optional)" autofocus />
       <div class="dialog-actions">
         <button on:click={cancel}>Cancel</button>
-        <button class="primary" on:click={confirmPlacement} disabled={saving}>
+        <button class="primary" on:click={confirmPlacement} disabled={saving || !selectedSpaceId}>
           {saving ? 'Saving…' : 'Place'}
         </button>
+        {#if !selectedSpaceId}<p class="warn">Select a space first</p>{/if}
       </div>
     </div>
   </div>

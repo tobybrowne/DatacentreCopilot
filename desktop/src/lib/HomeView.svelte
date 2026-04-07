@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
-  const dispatch = createEventDispatcher<{ navigate: 'anchors' | 'buildings' }>()
+  const dispatch = createEventDispatcher<{ navigate: 'anchors' | 'buildings' | 'navigate' }>()
 </script>
 
 <div class="home">
@@ -17,6 +17,11 @@
         <span class="card-icon">⬢</span>
         <span class="card-title">Building Manager</span>
         <span class="card-desc">Stitch multiple room scans together into a single building</span>
+      </button>
+      <button class="card" on:click={() => dispatch('navigate', 'navigate')}>
+        <span class="card-icon">⟐</span>
+        <span class="card-title">Navigate</span>
+        <span class="card-desc">Find routes between points in a stitched building</span>
       </button>
     </div>
   </div>

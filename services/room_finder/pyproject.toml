@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Room finder training, evaluation, and inference service"
 requires-python = ">=3.12"
 dependencies = [
-    "room-finder",
+    "room-finder-core",
     "fastapi>=0.115.0",
     "matplotlib>=3.10.8",
     "opencv-python>=4.13.0.92",
@@ -18,4 +18,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-room-finder = { path = "../../room_finder" }
+room-finder-core = { path = "../../room_finder" }

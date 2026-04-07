@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-from room_finder import *
+from room_finder_core import *
 import pickle
 from enum import Enum
 from datetime import datetime

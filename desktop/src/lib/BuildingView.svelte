@@ -1,9 +1,13 @@
 <script lang="ts">
   import { onMount, createEventDispatcher } from 'svelte'
-  import { fetchSpaces, fetchDraftBuildings, fetchCompletedBuildings, getSpaceGlbUrl, createDraftBuilding, updateBuildingSpaceTransform, finalizeDraftBuilding, deleteBuilding } from './supabase'
+  import { fetchSpaces, fetchDraftBuildings, fetchCompletedBuildings, getSpaceGlbUrl, createDraftBuilding, updateBuildingSpaceTransform, finalizeDraftBuilding, deleteBuilding, upsertCentroidAnchor, fetchAnchors } from './supabase'
   import { computeTransform, posToV3 } from './stitching'
+  import { computeCentroids } from './centroid'
   import Scene from './Scene.svelte'
-  import type { Building, BuildingSpace, Position, RigidTransform, Space } from './types'
+  import type { Anchor, Building, BuildingSpace, Position, RigidTransform, Space } from './types'
+  import * as THREE from 'three'
+  import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+  import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 
   const dispatch = createEventDispatcher<{ back: void }>()
 
@@ -141,6 +145,7 @@
     })
     buildingName = building.name ?? ''
     activeBuildingId = building.id
+    loadBuildingAnchors(builtSpaces)
     phase = 'view'
   }
 
@@ -228,11 +233,113 @@
       .catch(() => {})
   }
 
+  let buildingAnchors: Anchor[] = []
+
+  async function loadBuildingAnchors(spaces: SpaceEntry[]): Promise<void> {
+    const all = await Promise.all(spaces.map(e => fetchAnchors(e.space.id)))
+    const flat = all.flat()
+    // Transform each anchor's glb_position into building frame using the space's offset transform
+    buildingAnchors = flat
+      .filter(a => a.glb_position)
+      .map(a => {
+        const entry = spaces.find(e => e.space.id === a.space_id)
+        if (!entry?.transform) return a  // reference space — identity, no transform needed
+        const { position: p, quaternion: q } = entry.transform
+        const v = new THREE.Vector3(a.glb_position!.x, a.glb_position!.y, a.glb_position!.z)
+        v.applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w))
+        v.add(new THREE.Vector3(p.x, p.y, p.z))
+        return { ...a, glb_position: { x: v.x, y: v.y, z: v.z } }
+      })
+  }
+
+  let recomputingCentroids = false
+  let voxelSize = 0.5
+  let overlapPenalty = 1
+  let pointClouds: Array<{ points: import('./types').Position[]; color: string }> = []
+
+  const SPACE_COLORS = ['#ff6644', '#44aaff', '#44ff88', '#ffcc00', '#ff44cc', '#00ffff']
+
+  async function recomputeCentroids(): Promise<void> {
+    if (recomputingCentroids || builtSpaces.length === 0) return
+    recomputingCentroids = true
+    pointClouds = []
+    try {
+      const entries = builtSpaces
+        .filter(e => e.space.glb_path)
+        .map(e => {
+          const bs = (activeBuildingId
+            ? [...draftBuildings, ...completedBuildings].find(b => b.id === activeBuildingId)?.building_spaces ?? []
+            : []
+          ).find(bs => bs.space_id === e.space.id)
+          return bs ? { bs, glbUrl: getSpaceGlbUrl(e.space.glb_path!) } : null
+        })
+        .filter(Boolean) as { bs: import('./types').BuildingSpace; glbUrl: string }[]
+
+      const { centroids, voronoiPoints } = await computeCentroids(entries, voxelSize, overlapPenalty)
+
+      // Colour each space's Voronoi region distinctly
+      pointClouds = [...voronoiPoints.entries()].map(([spaceId, points], i) => ({
+        points,
+        color: SPACE_COLORS[i % SPACE_COLORS.length],
+      }))
+
+      await Promise.all([...centroids.entries()].map(([spaceId, pos]) =>
+        upsertCentroidAnchor(spaceId, pos)
+      ))
+      await loadBuildingAnchors(builtSpaces)
+    } catch (e) {
+      error = (e as Error).message
+    } finally {
+      recomputingCentroids = false
+    }
+  }
+
+  let downloading = false
+
+  async function downloadMergedGlb(): Promise<void> {
+    if (downloading || builtSpaces.length === 0) return
+    downloading = true
+    try {
+      const loader = new GLTFLoader()
+      const root = new THREE.Group()
+
+      for (const entry of builtSpaces) {
+        const gltf = await new Promise<any>((resolve, reject) =>
+          loader.load(entry.glbUrl, resolve, undefined, reject)
+        )
+        const scene = gltf.scene as THREE.Group
+        if (entry.transform) {
+          const { position: p, quaternion: q } = entry.transform
+          scene.position.set(p.x, p.y, p.z)
+          scene.quaternion.set(q.x, q.y, q.z, q.w)
+        }
+        root.add(scene)
+      }
+
+      const exporter = new GLTFExporter()
+      const buffer = await new Promise<ArrayBuffer>((resolve, reject) =>
+        exporter.parse(root, resolve as any, reject, { binary: true })
+      )
+      const blob = new Blob([buffer], { type: 'model/gltf-binary' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${buildingName || 'building'}.glb`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      error = (e as Error).message
+    } finally {
+      downloading = false
+    }
+  }
+
   async function saveBuilding(): Promise<void> {
     if (saving || !activeBuildingId) return
     saving = true
     try {
       await finalizeDraftBuilding(activeBuildingId)
+      await recomputeCentroids()
       draftBuildings = draftBuildings.filter(d => d.id !== activeBuildingId)
       completedBuildings = await fetchCompletedBuildings()
       phase = 'setup'
@@ -365,6 +472,20 @@
       </ul>
     </section>
     <section>
+      <button class="primary" style="width:100%" on:click={downloadMergedGlb} disabled={downloading}>
+        {downloading ? 'Exporting…' : '↓ Download GLB'}
+      </button>
+      <label class="section-label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        Voxel size: {voxelSize.toFixed(2)}m
+        <input type="range" min="0.1" max="2" step="0.05" bind:value={voxelSize} style="flex:1" />
+      </label>
+      <label class="section-label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        Overlap penalty:
+        <input type="number" min="0" step="0.5" bind:value={overlapPenalty} style="width:70px" />
+      </label>
+      <button style="width:100%" on:click={recomputeCentroids} disabled={recomputingCentroids}>
+        {recomputingCentroids ? 'Computing…' : '⟳ Recompute centroids'}
+      </button>
       <button style="width:100%" on:click={resetBuilding}>← Back</button>
     </section>
 
@@ -431,6 +552,11 @@
       <p class="hint placed">{builtSpaces.length} spaces ready to save as "{buildingName}".</p>
     </section>
 
+    <section>
+      <button class="primary" style="width:100%" on:click={downloadMergedGlb} disabled={downloading}>
+        {downloading ? 'Exporting…' : '↓ Download GLB'}
+      </button>
+    </section>
     <section class="row-section">
       <button on:click={resetBuilding}>Reset</button>
       <button class="primary" on:click={saveBuilding} disabled={saving}>
@@ -444,6 +570,8 @@
   stitchPhase={scenePhase}
   stitchSourceGlbUrl={currentSourceGlbUrl}
   {mergedSpaces}
+  anchors={buildingAnchors}
+  {pointClouds}
   stitchSourcePoints={srcPoints}
   stitchTargetPoints={tgtPoints}
   stitchTransform={currentTransform}

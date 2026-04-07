@@ -10,6 +10,7 @@ func get_current_space() -> Space:
 	var uuid: String = ext.get_localization_map_uuid()
 	if uuid.is_empty():
 		return null
+
 	var spaces: Array[Space] = await SupabaseManager.get_spaces()
 	for space in spaces:
 		if space.id == uuid:

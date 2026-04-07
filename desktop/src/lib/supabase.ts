@@ -30,12 +30,13 @@ export async function fetchAnchors(spaceId: string | null = null): Promise<Ancho
   return data as Anchor[]
 }
 
-export async function insertAnchor({ name, glbPosition }: { name: string; glbPosition: Position }): Promise<Anchor> {
+export async function insertAnchor({ name, glbPosition, spaceId }: { name: string; glbPosition: Position; spaceId: string }): Promise<Anchor> {
   const { data, error } = await supabase
     .from('anchors')
     .insert({
       name: name || 'Unnamed',
       glb_position: glbPosition,
+      space_id: spaceId,
     })
     .select()
     .single()
@@ -56,6 +57,18 @@ export async function deleteAnchor(id: string): Promise<void> {
   if (error) throw error
 }
 
+export async function upsertCentroidAnchor(spaceId: string, glbPosition: Position): Promise<void> {
+  // Delete any existing centroid anchor for this space, then insert fresh.
+  await supabase.from('anchors').delete().eq('space_id', spaceId).eq('name', '__centroid__')
+  const { error } = await supabase.from('anchors').insert({
+    name: '__centroid__',
+    glb_position: glbPosition,
+    space_id: spaceId,
+    is_reference: false,
+  })
+  if (error) throw error
+}
+
 export async function fetchUserPosition(userId: string): Promise<Position | null> {
   const { data, error } = await supabase
     .from('users')
@@ -64,6 +77,16 @@ export async function fetchUserPosition(userId: string): Promise<Position | null
     .single()
   if (error) throw error
   return (data?.glb_position as Position) ?? null
+}
+
+export async function fetchBuildingById(id: string): Promise<Building & { building_spaces: BuildingSpace[] }> {
+  const { data, error } = await supabase
+    .from('buildings')
+    .select('*, building_spaces(*)')
+    .eq('id', id)
+    .single()
+  if (error) throw error
+  return data as Building & { building_spaces: BuildingSpace[] }
 }
 
 export async function fetchCompletedBuildings(): Promise<(Building & { building_spaces: BuildingSpace[] })[]> {

@@ -20,6 +20,7 @@
   export let stitchSourcePoints: Position[] = []
   export let stitchTargetPoints: Position[] = []
   export let stitchTransform: RigidTransform | null = null
+  export let pointClouds: Array<{ points: Position[]; color: string }> = []
 
   // allows for this component to emit events to the parent
   // parents can use on:place and on:select to listen for these events
@@ -103,6 +104,14 @@
       <T.SphereGeometry args={[0.06, 16, 16]} />
       <T.MeshStandardMaterial color={sphereColor(anchor)} emissiveIntensity={0.3} />
     </T.Mesh>
+  {/each}
+
+  {#each pointClouds as cloud}
+    {@const geo = new THREE.BufferGeometry()}
+    {@const _ = geo.setAttribute('position', new THREE.Float32BufferAttribute(cloud.points.flatMap(p => [p.x, p.y, p.z]), 3))}
+    <T.Points geometry={geo}>
+      <T.PointsMaterial color={cloud.color} size={0.03} sizeAttenuation={true} />
+    </T.Points>
   {/each}
 
   {#if userPosition}

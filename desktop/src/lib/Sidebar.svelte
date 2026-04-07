@@ -177,7 +177,7 @@
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;
   }
 
   .header {
@@ -216,10 +216,7 @@
     gap: 8px;
   }
 
-  .list-section { overflow: hidden; }
-  .flex1 { flex: 1; }
-  .list-section ul { overflow-y: auto; max-height: 200px; list-style: none; }
-  .flex1 ul { max-height: none; flex: 1; }
+  .list-section ul { list-style: none; }
 
   .unmapped-section {
     background: #ffcc0009;
@@ -249,8 +246,8 @@
 
   .hint-text { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 
-  .spaces-section { overflow: hidden; max-height: 260px; }
-  .spaces-list { list-style: none; overflow-y: auto; max-height: 200px; display: flex; flex-direction: column; gap: 2px; }
+  .spaces-section { }
+  .spaces-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
 
   .space-item {
     display: flex;

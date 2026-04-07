@@ -1053,7 +1053,7 @@ wheels = [
 ]
 
 [[package]]
-name = "room-finder"
+name = "room-finder-core"
 version = "0.1.0"
 source = { directory = "../../room_finder" }
 dependencies = [
@@ -1085,7 +1085,7 @@ dependencies = [
     { name = "opencv-python" },
     { name = "python-multipart" },
     { name = "requests" },
-    { name = "room-finder" },
+    { name = "room-finder-core" },
     { name = "scikit-learn" },
     { name = "torch" },
     { name = "torchvision" },
@@ -1100,7 +1100,7 @@ requires-dist = [
     { name = "opencv-python", specifier = ">=4.13.0.92" },
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "requests", specifier = ">=2.33.1" },
-    { name = "room-finder", directory = "../../room_finder" },
+    { name = "room-finder-core", directory = "../../room_finder" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "torch", specifier = ">=2.11.0" },
     { name = "torchvision", specifier = ">=0.26.0" },

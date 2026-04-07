@@ -98,9 +98,10 @@ func _ready():
 
 
 func _process(delta: float) -> void:
-	_update_tracking_indicator(delta)
+	# _update_tracking_indicator(delta)
 	# _poll_localization_uuid(delta)
-	_poll_space_label(delta)
+	# _poll_space_label(delta)
+	pass
 
 func _poll_space_label(delta: float) -> void:
 	_space_label_timer += delta
@@ -111,38 +112,31 @@ func _poll_space_label(delta: float) -> void:
 	print("Current UUID: ", ext.get_localization_map_uuid() if ext else "(no ext)")
 	var current_space: Space = await space_manager.get_current_space()
 	print("Space label value: ", current_space.name if current_space else "(none)")
-	if current_space and space_label:
-		var label := space_label.get_panel().get_node_or_null("MarginContainer/Label") as Label
-		if label:
-			label.text = current_space.name
-	
+
 
 func _on_localization_changed(_state: int, _confidence: int, _error_flags: int, _ext: Object) -> void:
-	var current_space: Space = await space_manager.get_current_space()
-	print("Space label value: ", current_space.name if current_space else "(none)")
-	if current_space and space_label:
-		var label := space_label.get_panel().get_node_or_null("MarginContainer/Label") as Label
-		if label:
-			label.text = current_space.name
+	print("Localisation Changed")
+	# var current_space: Space = await space_manager.get_current_space()
+	# print("Space label value: ", current_space.name if current_space else "(none)")
 
-	if _spaces_synced:
-		return
-	_spaces_synced = true
+	# if _spaces_synced:
+	# 	return
+	# _spaces_synced = true
 
-	var local_spaces: Array[Space] = space_manager.get_all_local_spaces()
-	var db_spaces: Array[Space] = await SupabaseManager.get_spaces()
-	var db_ids := db_spaces.map(func(s): return s.id)
+	# var local_spaces: Array[Space] = space_manager.get_all_local_spaces()
+	# var db_spaces: Array[Space] = await SupabaseManager.get_spaces()
+	# var db_ids := db_spaces.map(func(s): return s.id)
 
-	for space in local_spaces:
-		if space.id in db_ids:
-			print("Space already in DB: ", space.name, " (", space.id, ")")
-		else:
-			print("Exporting new space: ", space.id)
-			var exported: Space = await space_manager.export_space(space)
-			if exported:
-				print("Exported space: ", exported.id)
-			else:
-				print("Failed to export space: ", space.id)
+	# for space in local_spaces:
+	# 	if space.id in db_ids:
+	# 		print("Space already in DB: ", space.name, " (", space.id, ")")
+	# 	else:
+	# 		print("Exporting new space: ", space.id)
+	# 		var exported: Space = await space_manager.export_space(space)
+	# 		if exported:
+	# 			print("Exported space: ", exported.id)
+	# 		else:
+	# 			print("Failed to export space: ", space.id)
 
 
 func _poll_localization_uuid(delta: float) -> void:
@@ -158,44 +152,10 @@ func _poll_localization_uuid(delta: float) -> void:
 # ── Tracking indicator ─────────────────────────────────────────────────────────
 
 func _create_tracking_indicator() -> void:
-	var camera := $XROrigin3D/XRCamera3D
-	_tracking_dot_mat = StandardMaterial3D.new()
-	_tracking_dot_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_tracking_dot_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.004
-	sphere.height = 0.008
-
-	_tracking_dot = MeshInstance3D.new()
-	_tracking_dot.mesh = sphere
-	_tracking_dot.material_override = _tracking_dot_mat
-	_tracking_dot.position = Vector3(0.11, 0.07, -0.3)
-	camera.add_child(_tracking_dot)
+	pass
 
 func _update_tracking_indicator(_delta: float) -> void:
-	if not _tracking_dot_mat:
-		return
-	if not xr_interface:
-		_tracking_dot_mat.albedo_color = Color(0.5, 0.5, 0.5)
-		return
-	var confidence := XRPose.XR_TRACKING_CONFIDENCE_NONE
-	var head_tracker := XRServer.get_tracker("head")
-
-	# print("Head tracker: ", head_tracker, " all trackers: ", XRServer.get_trackers(XRServer.TRACKER_ANY))
-	if head_tracker:
-		var pose: XRPose = head_tracker.get_pose("default")
-		# print("Head pose: ", pose)
-		if pose:
-			confidence = pose.tracking_confidence
-			# print("Tracking confidence: ", confidence)
-	match confidence:
-		XRPose.XR_TRACKING_CONFIDENCE_HIGH:
-			_tracking_dot_mat.albedo_color = Color(0.0, 1.0, 0.2)
-		XRPose.XR_TRACKING_CONFIDENCE_LOW:
-			_tracking_dot_mat.albedo_color = Color(1.0, 0.55, 0.0)
-		_:
-			_tracking_dot_mat.albedo_color = Color(1.0, 0.2, 0.2)
+	pass
 
 # -- ML2 localization extension indicator (commented out — use when events are reliable)
 # func _update_tracking_indicator(_delta: float) -> void:
