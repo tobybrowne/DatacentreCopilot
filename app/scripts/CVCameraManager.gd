@@ -34,12 +34,12 @@ func _ready() -> void:
 func _on_camera_opened() -> void:
 	print("CVCamera: ready, saving frames to %s" % ProjectSettings.globalize_path(SAVE_DIR))
 
-	_cv_camera.setNoiseReduction(false)  
+	_cv_camera.setNoiseReduction(true)  
 	# _cv_camera.setExposure(2.0, 1600)
 
 
 	_timer = Timer.new()
-	_timer.wait_time = 5.0
+	_timer.wait_time = 2.0
 	_timer.autostart = true
 	_timer.timeout.connect(func(): _cv_camera.captureFrame())
 	add_child(_timer)
@@ -59,6 +59,7 @@ func _on_frame_available(data: PackedByteArray) -> void:
 	else:
 		print("CVCamera: saved %s" % filename)
 
+	image.resize(640, 480, Image.INTERPOLATE_BILINEAR)
 	frame_captured.emit(image)
 
 func _on_camera_closed() -> void:

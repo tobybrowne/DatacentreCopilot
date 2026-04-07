@@ -1,0 +1,21 @@
+[project]
+name = "room-finder-service"
+version = "0.1.0"
+description = "Room finder training, evaluation, and inference service"
+requires-python = ">=3.12"
+dependencies = [
+    "room-finder",
+    "fastapi>=0.115.0",
+    "matplotlib>=3.10.8",
+    "opencv-python>=4.13.0.92",
+    "python-multipart>=0.0.9",
+    "requests>=2.33.1",
+    "scikit-learn>=1.8.0",
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+    "tqdm>=4.67.3",
+    "uvicorn>=0.30.0",
+]
+
+[tool.uv.sources]
+room-finder = { path = "../../room_finder" }

@@ -22,6 +22,9 @@ dist/
 .sconsign.dblite
 *.bin
 
+*.pyc
+*.egg-info/
+
 .env
 .svelte-kit/
 .svelte/
@@ -37,6 +40,3 @@ export_presets.cfg
 
 # just some tester code
 recastnavigation-1.6.0/
-
-# old part of the project, not used anymore (could be helpful at some point)
-room_finder/
