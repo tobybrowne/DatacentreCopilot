@@ -7,7 +7,9 @@
 </script>
 
 <NavigateView
+  buildingId={data.buildingId}
   buildingName={data.buildingName}
   spaces={data.spaces}
+  existingNavMesh={data.existingNavMesh}
   on:back={() => goto('/navigate')}
 />

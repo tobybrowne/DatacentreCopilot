@@ -3,13 +3,16 @@
   import { Canvas } from '@threlte/core'
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
   import * as THREE from 'three'
-  import { init as initRecast, NavMeshQuery, type NavMesh } from 'recast-navigation'
+  import { init as initRecast, NavMeshQuery, exportNavMesh, importNavMesh, type NavMesh } from 'recast-navigation'
   import { threeToSoloNavMesh, NavMeshHelper } from '@recast-navigation/three'
   import NavigateSceneInner from './NavigateSceneInner.svelte'
   import type { Position, RigidTransform } from './types'
+  import { saveNavMesh } from './supabase'
 
+  export let buildingId: string | null = null
   export let buildingName: string
   export let spaces: Array<{ url: string; transform: RigidTransform | null }>
+  export let existingNavMesh: { url: string; buildSettings: Record<string, unknown> } | null = null
 
   const dispatch = createEventDispatcher<{ back: void }>()
 
@@ -30,8 +33,24 @@
   let navYShift = 0
   let pathGeometry: THREE.TubeGeometry | null = null
   let pathLength = 0
-  let showNavMesh = false
-  let showParams = false
+  let showNavMesh = true
+  let showParams = true
+  let saveState: 'idle' | 'saving' | 'saved' | 'error' = 'idle'
+  let saveError: string | null = null
+
+  async function handleSaveNavMesh(): Promise<void> {
+    if (!navMesh || !buildingId) return
+    saveState = 'saving'
+    saveError = null
+    try {
+      const data = exportNavMesh(navMesh)
+      await saveNavMesh(buildingId, data, { ...params, navYShift } as unknown as Record<string, unknown>)
+      saveState = 'saved'
+    } catch (e) {
+      saveError = (e as Error).message
+      saveState = 'error'
+    }
+  }
 
   // Navmesh generation parameters — all editable before building
   let params = {
@@ -41,7 +60,7 @@
     walkableSlopeAngle: 35,
     walkableHeight: 20,
     walkableClimb: 3,
-    walkableRadius: 2,
+    walkableRadius: 0.1,
     maxEdgeLen: 40,
     maxSimplificationError: 1.3,
     minRegionArea: 8,
@@ -188,9 +207,48 @@
     return meshes
   }
 
+  async function loadExistingNavMesh(): Promise<void> {
+    if (!existingNavMesh) return
+    phase = 'loading'
+    loadingMsg = 'Loading saved navmesh…'
+    try {
+      const res = await fetch(existingNavMesh.url)
+      if (!res.ok) throw new Error(`Failed to fetch navmesh: ${res.status}`)
+      const buffer = await res.arrayBuffer()
+      const result = importNavMesh(new Uint8Array(buffer))
+      if (!result.navMesh) throw new Error('Failed to import navmesh')
+      navMesh = result.navMesh
+
+      // Restore build settings
+      const bs = existingNavMesh.buildSettings
+      navYShift = typeof bs.navYShift === 'number' ? bs.navYShift : 0
+      for (const key of Object.keys(params) as (keyof typeof params)[]) {
+        if (key in bs && typeof bs[key] === 'number') (params as Record<string, number>)[key] = bs[key] as number
+      }
+
+      navQuery = new NavMeshQuery(navMesh)
+      navQuery.defaultQueryHalfExtents = { x: 2, y: 4, z: 2 }
+
+      const helper = new NavMeshHelper(navMesh, {
+        navMeshMaterial: new THREE.MeshStandardMaterial({ color: '#00d4ff', opacity: 0.4, transparent: true, side: THREE.DoubleSide }),
+      })
+      helper.mesh.position.y = -navYShift
+      navMeshDebugMesh = helper.mesh
+
+      phase = 'pickStart'
+    } catch (e) {
+      error = (e as Error).message
+      phase = 'error'
+    }
+  }
+
   onMount(async () => {
     await initRecast()
-    await buildNavMesh()
+    if (existingNavMesh) {
+      await loadExistingNavMesh()
+    } else {
+      await buildNavMesh()
+    }
   })
 
   function handlePlace({ detail: pos }: CustomEvent<Position>): void {
@@ -365,6 +423,22 @@
         <input type="number" step="0.1" min="0" bind:value={params.detailSampleMaxError} />
       </div>
       <button class="primary" style="width:100%;margin-top:4px" on:click={buildNavMesh}>Rebuild</button>
+    </section>
+  {/if}
+
+  {#if buildingId && navMesh}
+    <section>
+      <button
+        class="primary"
+        style="width:100%"
+        disabled={saveState === 'saving'}
+        on:click={handleSaveNavMesh}
+      >
+        {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved ✓' : 'Save navmesh'}
+      </button>
+      {#if saveState === 'error'}
+        <p class="hint danger">{saveError}</p>
+      {/if}
     </section>
   {/if}
 </aside>

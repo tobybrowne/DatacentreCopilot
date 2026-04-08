@@ -1,4 +1,4 @@
-import { fetchBuildingById, fetchSpaces, getSpaceGlbUrl } from '$lib/supabase'
+import { fetchBuildingById, fetchSpaces, getSpaceGlbUrl, getNavMeshUrl, supabase } from '$lib/supabase'
 import type { PageLoad } from './$types'
 import type { RigidTransform } from '$lib/types'
 
@@ -22,8 +22,25 @@ export const load: PageLoad = async ({ params }) => {
       }
     })
 
+  let existingNavMesh: { url: string; buildSettings: Record<string, unknown> } | null = null
+  if ((building as any).navmesh_id) {
+    const { data: nm } = await supabase
+      .from('navmeshes')
+      .select('navmesh_path, build_settings')
+      .eq('id', (building as any).navmesh_id)
+      .single()
+    if (nm?.navmesh_path) {
+      existingNavMesh = {
+        url: getNavMeshUrl(nm.navmesh_path),
+        buildSettings: nm.build_settings ?? {},
+      }
+    }
+  }
+
   return {
+    buildingId: params.id,
     buildingName: building.name ?? 'Building',
     spaces: spaceEntries,
+    existingNavMesh,
   }
 }

@@ -15,6 +15,13 @@ export async function fetchSpaces(): Promise<Space[]> {
   return data as Space[]
 }
 
+export function getNavMeshUrl(navMeshPath: string): string {
+  const { data } = supabase.storage
+    .from('spaces_bucket')
+    .getPublicUrl(navMeshPath)
+  return data.publicUrl
+}
+
 export function getSpaceGlbUrl(glbPath: string): string {
   const { data } = supabase.storage
     .from('spaces_bucket')
@@ -153,6 +160,47 @@ export async function finalizeDraftBuilding(buildingId: string): Promise<void> {
     .update({ draft: false })
     .eq('id', buildingId)
   if (error) throw error
+}
+
+export async function saveNavMesh(
+  buildingId: string,
+  data: Uint8Array,
+  buildSettings: Record<string, unknown>
+): Promise<void> {
+  const path = `navmeshes/${buildingId}.bin`
+
+  const { error: uploadError } = await supabase.storage
+    .from('spaces_bucket')
+    .upload(path, data, { upsert: true, contentType: 'application/octet-stream' })
+  if (uploadError) throw uploadError
+
+  const { data: building, error: buildingError } = await supabase
+    .from('buildings')
+    .select('navmesh_id')
+    .eq('id', buildingId)
+    .single()
+  if (buildingError) throw buildingError
+
+  if (building.navmesh_id) {
+    const { error } = await supabase
+      .from('navmeshes')
+      .update({ navmesh_path: path, build_settings: buildSettings, updated_at: new Date().toISOString() })
+      .eq('id', building.navmesh_id)
+    if (error) throw error
+  } else {
+    const { data: navmesh, error: insertError } = await supabase
+      .from('navmeshes')
+      .insert({ navmesh_path: path, build_settings: buildSettings })
+      .select('id')
+      .single()
+    if (insertError) throw insertError
+
+    const { error: updateError } = await supabase
+      .from('buildings')
+      .update({ navmesh_id: navmesh.id })
+      .eq('id', buildingId)
+    if (updateError) throw updateError
+  }
 }
 
 export async function deleteBuilding(buildingId: string): Promise<void> {

@@ -63,12 +63,21 @@ CREATE TABLE anchors (
   space_id UUID NOT NULL REFERENCES spaces(id) ON DELETE CASCADE
 );
 
+CREATE TABLE navmeshes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  navmesh_path TEXT NOT NULL, -- path to the navmesh file in supabase storage
+  build_settings jsonb NOT NULL, -- the settings used to build this navmesh
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE buildings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW(),
-  draft boolean NOT NULL DEFAULT true -- whether this building is still being stitched
+  draft boolean NOT NULL DEFAULT true, -- whether this building is still being stitched
+  navmesh_id UUID REFERENCES navmeshes(id) ON DELETE CASCADE -- path to the navmesh file for this space in supabase storage
 );
 
 CREATE TABLE building_spaces (
@@ -76,7 +85,7 @@ CREATE TABLE building_spaces (
   building_id UUID NOT NULL REFERENCES buildings(id) ON DELETE CASCADE,
   space_id UUID NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
   offset_transformation jsonb, -- the transformation between this space and space 0
-  index int NOT NULL -- the index of this space within the building, used for ordering
+  index int NOT NULL, -- the index of this space within the building, used for ordering
 );
 
 -- recordings of gesturs to accompany certain steps 
@@ -86,8 +95,8 @@ CREATE TABLE gesture_recordings (
   step_uuid UUID NOT NULL, -- the step this gesture recording corresponds to
   recording_path TEXT NOT NULL, -- path to the gesture recording file in Supabase storage (.json)
   created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW(),
-)
+  updated_at TIMESTAMP DEFAULT NOW()
+);
 
 -- create private bucket for storing gesture recordings
 INSERT INTO storage.buckets (id, name, public)
