@@ -1,8 +1,6 @@
-extends Control
+extends BasePanel
 
 @onready var _item_list: VBoxContainer = $VBoxContainer/ScrollContainer/ItemList
-
-signal procedure_selected(procedure: Procedure)
 
 
 func _ready() -> void:
@@ -31,25 +29,24 @@ func _add_row(procedure: Procedure) -> void:
 	var title := Label.new()
 	title.text = procedure.title
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_size_override("font_size", 26)
+	title.add_theme_font_size_override("font_size", FONT_BODY)
 	hbox.add_child(title)
 
 	var time := Label.new()
 	time.text = _format_time(procedure.created_at)
-	time.add_theme_font_size_override("font_size", 22)
+	time.add_theme_font_size_override("font_size", FONT_SMALL)
 	hbox.add_child(time)
 
-	# Visual feedback
-	row.mouse_entered.connect(func(): row.modulate = Color(1.4, 1.4, 1.4))
-	row.mouse_exited.connect(func(): row.modulate = Color(1.0, 1.0, 1.0))
+	row.mouse_entered.connect(func(): row.modulate = COLOR_ROW_HOVER)
+	row.mouse_exited.connect(func(): row.modulate = Color.WHITE)
 	row.gui_input.connect(_on_row_input.bind(procedure, row))
 	_item_list.add_child(row)
 
 
 func _on_row_input(event: InputEvent, procedure: Procedure, row: PanelContainer) -> void:
 	if event is InputEventMouseButton and event.pressed:
-		row.modulate = Color(0.6, 1.0, 0.6)
-		procedure_selected.emit(procedure)
+		row.modulate = COLOR_ROW_PRESS
+		navigate_to.emit("step_viewer", { "procedure": procedure })
 
 
 func _format_time(iso: String) -> String:

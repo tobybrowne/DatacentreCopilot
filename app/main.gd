@@ -1,12 +1,15 @@
 extends Node3D
 
+enum AppMode { NONE, ANCHOR_EDITING, NAVIGATING }
+var _app_mode := AppMode.NONE
+
 var xr_interface: XRInterface
 
-@onready var procedure_panel = $XROrigin3D/ProcedurePanel
-@onready var step_viewer = $XROrigin3D/StepViewer
+@onready var ui_panel: ViewportPanel3D = $XROrigin3D/UIPanel
 @onready var space_label = $XROrigin3D/SpaceLabel
 @onready var gesture_manager: GestureManager = $XROrigin3D/GestureManager
 @onready var anchor_manager: AnchorManager = $XROrigin3D/AnchorManager
+@onready var location_manager: LocationManager = $XROrigin3D/LocationManager
 @onready var space_manager: SpaceManager = $XROrigin3D/SpaceManager
 @onready var voice_manager: VoiceManager = $XROrigin3D/VoiceManager
 @onready var world_mesh_manager: WorldMeshManager = $XROrigin3D/WorldMeshManager
@@ -53,16 +56,23 @@ var _progress_arc_mat:  StandardMaterial3D  = null
 
 
 func _ready():
-	# bind signals to functions
-	procedure_panel.get_panel().connect("procedure_selected", _on_procedure_selected)
-	procedure_panel.visible = false
-	step_viewer.visible = false
+	PanelRouter.push("start_menu")
+	PanelRouter.action_requested.connect(_on_panel_action)
+	location_manager.space_picker_needed.connect(func(spaces: Array[Space]):
+		PanelRouter.push("space_picker", { "spaces": spaces, "mode": "navigate" }))
+	location_manager.navigation_ready.connect(func(space_id: String):
+		_enter_nav_mode_for_id(space_id))
+	ui_panel.visible = true
 	gesture_manager.pinch_started.connect(_on_pinch_started)
 	gesture_manager.pinch_held.connect(_on_pinch_held)
 	gesture_manager.pinch_completed.connect(_on_pinch_completed)
 	gesture_manager.pinch_ended.connect(_on_pinch_ended)
-	voice_manager.next_step.connect(func(): step_viewer.get_panel().next_step())
-	voice_manager.previous_step.connect(func(): step_viewer.get_panel().prev_step())
+	voice_manager.next_step.connect(func():
+		var sv := ui_panel.get_panel() as StepViewer
+		if sv: sv.next_step())
+	voice_manager.previous_step.connect(func():
+		var sv := ui_panel.get_panel() as StepViewer
+		if sv: sv.prev_step())
 	voice_manager.confirm.connect(func(): pass)
 	voice_manager.cancel.connect(func(): pass)
 	voice_manager.start_recording.connect(_on_start_recording)
@@ -182,27 +192,26 @@ func _update_tracking_indicator(_delta: float) -> void:
 # ── Gesture signals ────────────────────────────────────────────────────────────
 
 func _on_pinch_started(hand: String, position: Vector3) -> void:
-	if step_viewer.visible:
-		var panel := step_viewer.get_panel() as StepViewer
-		if panel:
-			if hand == "left":
-				panel.prev_step()
-			elif hand == "right":
-				panel.next_step()
+	var step_viewer := ui_panel.get_panel() as StepViewer
+	if step_viewer:
+		if hand == "left":
+			step_viewer.prev_step()
+		elif hand == "right":
+			step_viewer.next_step()
 
-	if hand == "right":
+	if hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
 		var near: Anchor = anchor_manager.get_anchor_near(position, ANCHOR_DELETE_RADIUS)
 		_anchor_mode   = "delete" if near != null else "create"
 		_anchor_target = near
 
 
 func _on_pinch_held(hand: String, position: Vector3, duration: float) -> void:
-	if hand == "right":
+	if hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
 		_update_progress_indicator(position, minf(duration / gesture_manager.hold_time, 1.0))
 
 
 func _on_pinch_completed(hand: String, position: Vector3) -> void:
-	if hand == "right":
+	if hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
 		_clear_progress_indicator()
 		if _anchor_mode == "create":
 			anchor_manager.place_anchor(Transform3D(Basis.IDENTITY, position))
@@ -213,7 +222,7 @@ func _on_pinch_completed(hand: String, position: Vector3) -> void:
 
 
 func _on_pinch_ended(hand: String) -> void:
-	if hand == "right":
+	if hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
 		_clear_progress_indicator()
 		_anchor_mode   = ""
 		_anchor_target = null
@@ -331,10 +340,63 @@ func _on_stop_recording() -> void:
 	_gesture_replayer.play(frames, true)
 
 
-# ── Signals ───────────────────────────────────────────────────────────────────
+# ── Panel actions ─────────────────────────────────────────────────────────────
 
-func _on_procedure_selected(procedure: Procedure):
-	print("Switching to: ", procedure.id)
-	procedure_panel.visible = false
-	step_viewer.visible = true
-	(step_viewer.get_panel() as StepViewer).setup(procedure.steps)
+func _on_panel_action(action: String, data: Dictionary) -> void:
+	match action:
+		"localise_space":
+			_localise_space(data.get("space") as Space)
+		"localise_space_load_anchors":
+			_enter_anchor_editing(data.get("space") as Space)
+		"start_nav_for_space":
+			_enter_nav_mode(data.get("space") as Space)
+		"navigate":
+			location_manager.request_navigation(data.get("building_id", ""))
+		"update_space":
+			pass  # TODO
+
+
+func _ensure_space_local(space: Space) -> bool:
+	var local_ids := space_manager.get_all_local_spaces().map(func(s: Space): return s.id)
+	if space.id in local_ids:
+		return true
+	print("main: space not local — importing")
+	var ok := await space_manager.import_space(space)
+	if not ok:
+		push_warning("main: import failed for space ", space.id)
+	return ok
+
+
+func _localise_space(space: Space) -> void:
+	if not space:
+		return
+	if not await _ensure_space_local(space):
+		return
+	await location_manager.localize_to_space(space.id)
+
+
+func _enter_nav_mode(space: Space) -> void:
+	if not space:
+		return
+	print("main: entering nav mode for '", space.name, "' (", space.id, ")")
+	if not await _ensure_space_local(space):
+		return
+	_app_mode = AppMode.NAVIGATING
+	location_manager.calibrate_to_space(space.id)
+
+
+func _enter_nav_mode_for_id(space_id: String) -> void:
+	print("main: entering nav mode for space ", space_id, " (coarse detected)")
+	_app_mode = AppMode.NAVIGATING
+	location_manager.calibrate_to_space(space_id)
+
+
+func _enter_anchor_editing(space: Space) -> void:
+	if not space:
+		return
+	print("main: entering anchor editing mode for '", space.name, "' (", space.id, ")")
+	await _localise_space(space)
+	_app_mode = AppMode.ANCHOR_EDITING
+	for anchor in location_manager.get_space_anchors(space.id):
+		anchor_manager.load_anchor(anchor.ml2_id)
+

@@ -6,6 +6,10 @@ class_name LocationManager
 
 ## Emitted once after the first successful calibration and building offsets are loaded.
 signal calibrated
+## Emitted when navigation is requested but the user's space within the building is unknown.
+signal space_picker_needed(spaces: Array[Space])
+## Emitted when the current coarse space is already within the requested building.
+signal navigation_ready(space_id: String)
 
 var _anchor_manager: AnchorManager
 
@@ -58,12 +62,6 @@ func _ready() -> void:
 		return
 	_anchor_manager.anchor_tracked.connect(_on_anchor_tracked)
 	_create_tracking_indicator()
-
-	var xr := XRServer.find_interface("OpenXR") as OpenXRInterface
-	if xr:
-		xr.session_begun.connect(_load_and_calibrate)
-		if xr.is_initialized():
-			_load_and_calibrate()
 
 	if Engine.has_singleton("OpenXRMlLocalizationMapExtension"):
 		var ext := Engine.get_singleton("OpenXRMlLocalizationMapExtension")
@@ -287,6 +285,76 @@ func _ref_anchor_count(space_id: String) -> int:
 	return count
 
 
+## Localise into a space without running Kabsch calibration.
+## Populates anchor registries only — caller is responsible for loading ML2 anchors.
+func localize_to_space(space_id: String) -> void:
+	_request_localization(space_id)
+	await _load_anchors(space_id)
+	print("LocationManager: localize_to_space ", space_id)
+
+
+## Called when the user wants to navigate within a building.
+## If the current coarse space is already in the building, proceeds (TODO: start nav mode).
+## Otherwise emits space_picker_needed so the UI can ask the user to pick a space.
+func request_navigation(building_id: String) -> void:
+	print("LocationManager: request_navigation building=", building_id)
+	var spaces: Array[Space] = await SupabaseManager.get_spaces_for_building(building_id)
+	print("LocationManager: building has ", spaces.size(), " spaces, coarse=", current_coarse_space)
+	var space_ids := spaces.map(func(s: Space): return s.id)
+	if current_coarse_space in space_ids:
+		navigation_ready.emit(current_coarse_space)
+	else:
+		space_picker_needed.emit(spaces)
+
+
+func get_space_anchors(space_id: String) -> Array[Anchor]:
+	var result: Array[Anchor] = []
+	for anchor in _all_anchors.values():
+		if anchor.space_id == space_id and anchor.ml2_id:
+			result.append(anchor)
+	return result
+
+
+## Localise into a space AND run Kabsch calibration as reference anchors track in.
+func calibrate_to_space(space_id: String) -> void:
+	_request_localization(space_id)
+	await _load_anchors(space_id)
+	_ref_anchors.clear()
+	_kabsch_src.clear()
+	_kabsch_nodes.clear()
+	_calibrated = false
+	for anchor in _all_anchors.values():
+		if anchor.space_id != space_id:
+			continue
+		if anchor.is_reference and anchor.glb_position != null and anchor.ml2_id:
+			_ref_anchors[anchor.ml2_id] = anchor
+			_anchor_manager.load_anchor(anchor.ml2_id)
+		elif not anchor.is_reference and anchor.ml2_id:
+			_anchor_manager.load_anchor(anchor.ml2_id)
+	print("LocationManager: calibrate_to_space ", space_id, " — ", _ref_anchors.size(), " ref anchors")
+
+
+func _request_localization(space_id: String) -> void:
+	if Engine.has_singleton("OpenXRMlLocalizationMapExtension"):
+		var ext := Engine.get_singleton("OpenXRMlLocalizationMapExtension")
+		if ext.has_method("request_localization"):
+			ext.request_localization(space_id)
+
+
+func _load_anchors(space_id: String) -> void:
+	var all_anchors: Array[Anchor] = await SupabaseManager.get_anchors()
+	_all_anchors.clear()
+	_ref_anchors.clear()
+	_current_space_id = space_id
+	var next_num := 1
+	for anchor in all_anchors:
+		_all_anchors[anchor.id] = anchor
+		if anchor.name.is_valid_int():
+			next_num = max(next_num, anchor.name.to_int() + 1)
+	_anchor_manager.set_next_num(next_num)
+	_anchor_manager.set_anchor_registry(_all_anchors)
+
+
 func get_current_space_id() -> String:
 	if Engine.has_singleton("OpenXRMlLocalizationMapExtension"):
 		return Engine.get_singleton("OpenXRMlLocalizationMapExtension").get_localization_map_uuid()
@@ -393,7 +461,7 @@ func _place_virtual_marker(anchor: Anchor, space_id: String) -> void:
 	var local_pos := _to_local(anchor.glb_position, space_id)
 	var is_other_space := space_id != _current_space_id
 	var color := Color(0.5, 0.3, 1.0) if is_other_space else Color(1.0, 0.55, 0.0)
-	var marker := _make_marker(color, anchor.name)
+	var marker := _anchor_manager._make_marker(color, anchor.name)
 	marker.position = local_pos
 	get_parent().add_child(marker)
 	_marker_nodes.append(marker)
@@ -405,8 +473,6 @@ func _on_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bool)
 	var uuid_str := str(ml2_uuid)
 
 	if is_new:
-		var new_anchor: Anchor = _all_anchors.get(uuid_str)
-		anchor_node.add_child(_make_marker(Color(0.2, 0.8, 1.0), new_anchor.name if new_anchor else ""))
 		if _calibrated:
 			await get_tree().process_frame
 			_write_glb_position(uuid_str, anchor_node.position)
@@ -421,21 +487,14 @@ func _on_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bool)
 		_kabsch_src.append(ref.glb_position)
 		_kabsch_nodes.append(anchor_node)
 		print("LocationManager: Kabsch pair #", _kabsch_src.size(), " for ", uuid_str)
-		anchor_node.add_child(_make_marker(Color(1.0, 0.85, 0.0), _all_anchors.get(
-			_ref_anchors[uuid_str].id, Anchor.new()).name))
 		_try_calibrate()
 	else:
-		# Content anchor — show marker if already calibrated, else defer
+		# Content anchor — reposition if already calibrated
 		if _calibrated:
 			var anchor: Anchor = _get_anchor_by_ml2(uuid_str)
 			if anchor and anchor.glb_position:
 				var local_pos := _to_local(anchor.glb_position, anchor.space_id)
 				anchor_node.position = local_pos
-			anchor_node.add_child(_make_marker(Color(0.2, 0.8, 1.0),
-				_get_anchor_by_ml2(uuid_str).name if _get_anchor_by_ml2(uuid_str) else ""))
-		else:
-			# Will be visualised once calibration runs
-			pass
 
 
 func _get_anchor_by_ml2(ml2_id: String) -> Anchor:
@@ -443,42 +502,3 @@ func _get_anchor_by_ml2(ml2_id: String) -> Anchor:
 		if anchor.ml2_id == ml2_id:
 			return anchor
 	return null
-
-
-# ── Marker ────────────────────────────────────────────────────────────────────
-
-func _make_marker(color: Color = Color(0.2, 0.8, 1.0), label: String = "") -> Node3D:
-	var root := Node3D.new()
-
-	var mi := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.05
-	sphere.height = 0.10
-	mi.mesh = sphere
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.emission_enabled = true
-	mat.emission = color
-	mat.emission_energy_multiplier = 2.0
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mi.material_override = mat
-	root.add_child(mi)
-
-	var light := OmniLight3D.new()
-	light.light_color = color
-	light.light_energy = 0.5
-	light.omni_range = 0.5
-	root.add_child(light)
-
-	if label != "":
-		var lbl := Label3D.new()
-		lbl.text = label
-		lbl.position = Vector3(0, 0.10, 0)
-		lbl.font_size = 128
-		lbl.pixel_size = 0.0005
-		lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-		lbl.no_depth_test = true
-		lbl.modulate = color
-		root.add_child(lbl)
-
-	return root

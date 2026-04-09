@@ -11,11 +11,7 @@ var _route_nodes: Array[Node3D] = []
 
 
 func _ready() -> void:
-	var lm := get_parent().get_node_or_null("LocationManager") as LocationManager
-	if not lm:
-		push_warning("RouteManager: LocationManager not found")
-		return
-	lm.calibrated.connect(_on_calibrated.bind(lm))
+	pass
 
 
 func _on_calibrated(lm: LocationManager) -> void:

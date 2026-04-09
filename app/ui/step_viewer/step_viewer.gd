@@ -1,5 +1,5 @@
 class_name StepViewer
-extends Control
+extends BasePanel
 
 @onready var _counter: Label = $MarginContainer/VBoxContainer/StepCounter
 @onready var _text: Label = $MarginContainer/VBoxContainer/StepText
@@ -8,10 +8,12 @@ var _steps: Array[String] = []
 var _current: int = 0
 
 
-func setup(steps: Array[String]) -> void:
-	_steps = steps
-	_current = 0
-	_refresh()
+func init(data: Dictionary) -> void:
+	var procedure: Procedure = data.get("procedure")
+	if procedure:
+		_steps = procedure.steps
+		_current = 0
+		_refresh()
 
 
 func next_step() -> void:

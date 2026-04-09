@@ -17,6 +17,7 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+PanelRouter="*res://ui/panel_router.gd"
 XRToolsUserSettings="*uid://bqgb8i74tm0t"
 XRToolsRumbleManager="*uid://by853dk86g1qw"
 Supabase="*uid://ocnh0cal4jt1"

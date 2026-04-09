@@ -7,6 +7,7 @@
 class_name ViewportPanel3D
 extends Node3D
 
+@export var use_router: bool = false
 @export var panel_scene: PackedScene
 
 @export var follow_speed: float = 2.0
@@ -40,7 +41,11 @@ func _ready() -> void:
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(_viewport)
 
-	if panel_scene:
+	if use_router:
+		PanelRouter.panel_changed.connect(_swap_panel)
+		if not PanelRouter.current().is_empty():
+			_swap_panel(PanelRouter.current(), {})
+	elif panel_scene:
 		_panel = panel_scene.instantiate()
 		_on_panel_ready(_panel)
 		_viewport.add_child(_panel)
@@ -60,7 +65,25 @@ func _ready() -> void:
 	add_child(_mesh_instance)
 
 
-# Override in subclass to wire signals or configure the panel after instantiation
+# Called when a new panel is loaded via the router
+func _swap_panel(panel_id: String, data: Dictionary) -> void:
+	if _panel:
+		_panel.queue_free()
+		_panel = null
+	var scene := PanelRouter.get_scene(panel_id)
+	if not scene:
+		return
+	_panel = scene.instantiate()
+	if _panel.has_signal("navigate_to"):
+		_panel.navigate_to.connect(func(id: String, d: Dictionary): PanelRouter.push(id, d))
+	if _panel.has_signal("close_requested"):
+		_panel.close_requested.connect(PanelRouter.pop)
+	_viewport.add_child(_panel)
+	if _panel.has_method("init"):
+		_panel.init(data)
+
+
+# Override in subclass to wire signals or configure the panel after instantiation (non-router mode)
 func _on_panel_ready(_p: Control) -> void:
 	pass
 

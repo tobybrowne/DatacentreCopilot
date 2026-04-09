@@ -93,22 +93,59 @@ func get_anchor_near(pos: Vector3, radius: float) -> Anchor:
 	return null
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+func _get_anchor_by_ml2(ml2_id: String) -> Anchor:
+	for anchor in _all_anchors.values():
+		if anchor.ml2_id == ml2_id:
+			return anchor
+	return null
+
+
+func _make_marker(color: Color = Color(0.2, 0.8, 1.0), label: String = "") -> Node3D:
+	var root := Node3D.new()
+
+	var mi := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.05
+	sphere.height = 0.10
+	mi.mesh = sphere
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.emission_enabled = true
+	mat.emission = color
+	mat.emission_energy_multiplier = 2.0
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mi.material_override = mat
+	root.add_child(mi)
+
+	var light := OmniLight3D.new()
+	light.light_color = color
+	light.light_energy = 0.5
+	light.omni_range = 0.5
+	root.add_child(light)
+
+	if label != "":
+		var lbl := Label3D.new()
+		lbl.text = label
+		lbl.position = Vector3(0, 0.10, 0)
+		lbl.font_size = 128
+		lbl.pixel_size = 0.0005
+		lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		lbl.no_depth_test = true
+		lbl.modulate = color
+		root.add_child(lbl)
+
+	return root
+
+
 # ── Callbacks ─────────────────────────────────────────────────────────────────
 
 func _on_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bool) -> void:
 	var uuid_str := str(ml2_uuid)
-	print("AnchorManager: tracked ", ml2_uuid, " (new=", is_new, ")")
+	print("AnchorManager: tracked ", uuid_str, " (new=", is_new, ")")
 	_tracked_nodes[uuid_str] = anchor_node
 	_retry_uuids.erase(uuid_str)
-
-	# if not is_localized:
-	# 	var map_uuid := ""
-	# 	if Engine.has_singleton("OpenXRMlLocalizationMapExtension"):
-	# 		map_uuid = Engine.get_singleton("OpenXRMlLocalizationMapExtension").get_localization_map_uuid()
-	# 	is_localized = true
-	# 	localized_space_uuid = map_uuid
-	# 	print("AnchorManager: LOCALIZED — space UUID: ", map_uuid)
-	# 	space_localized.emit(map_uuid)
 
 	if is_new:
 		var location_manager: LocationManager = get_parent().get_node_or_null("LocationManager")
@@ -118,8 +155,19 @@ func _on_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bool)
 		new_anchor.is_reference = true
 		new_anchor.space_id = location_manager.get_current_space_id() if location_manager else ""
 		_next_num += 1
-		_all_anchors[uuid_str] = new_anchor
+		_all_anchors[new_anchor.id] = new_anchor
 		SupabaseManager.insert_anchor(new_anchor)
+		# Newly created — no glb_position yet, show as incomplete (cyan)
+		anchor_node.add_child(_make_marker(Color(0.2, 0.8, 1.0), new_anchor.name))
+	else:
+		var anchor := _get_anchor_by_ml2(uuid_str)
+		var label := anchor.name if anchor else ""
+		var color: Color
+		if anchor and anchor.glb_position != null:
+			color = Color(1.0, 0.85, 0.0)  # yellow — fully completed (has glb_position)
+		else:
+			color = Color(0.2, 0.8, 1.0)   # cyan — incomplete (no glb_position yet)
+		anchor_node.add_child(_make_marker(color, label))
 
 	anchor_tracked.emit(anchor_node, ml2_uuid, is_new)
 

@@ -201,6 +201,52 @@ func get_building_spaces_for_space(space_id: String) -> Array[BuildingSpace]:
 		return []
 
 
+func get_buildings() -> Array[Building]:
+	if not enabled:
+		return []
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("buildings").select()
+	).completed
+	if task.error == null and task.data != null:
+		var result: Array[Building] = []
+		for row in task.data:
+			result.append(Building.from_dict(row))
+		return result
+	if task.error != null:
+		print("get_buildings error: ", task.error.message)
+	return []
+
+
+func get_spaces_for_building(building_id: String) -> Array[Space]:
+	if not enabled:
+		return []
+	var bs_task = await Supabase.database.query(
+		SupabaseQuery.new().from("building_spaces").select().eq("building_id", building_id)
+	).completed
+	if bs_task.error != null or bs_task.data == null or bs_task.data.is_empty():
+		return []
+	var ids := PackedStringArray()
+	for row in bs_task.data:
+		var sid: String = row.get("space_id", "")
+		if not sid.is_empty():
+			ids.append(sid)
+	if ids.is_empty():
+		return []
+	# Fetch all spaces and filter client-side (plugin's In() filter has a key-case bug)
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("spaces").select()
+	).completed
+	if task.error == null and task.data != null:
+		var result: Array[Space] = []
+		for row in task.data:
+			if row.get("id", "") in ids:
+				result.append(Space.from_dict(row))
+		return result
+	if task.error != null:
+		print("get_spaces_for_building error: ", task.error.message)
+	return []
+
+
 func get_routes() -> Array[Route]:
 	if not enabled:
 		return []
