@@ -24,6 +24,7 @@ extends Node3D
 @export var quad_size: Vector2 = Vector2(0.4, 0.4)
 @export var background_color: Color = Color(1, 1, 1, 1)
 @export var touchable: bool = true
+@export var ray_enabled: bool = true
 
 
 var _camera: XRCamera3D
@@ -31,6 +32,7 @@ var _viewport: SubViewport
 var _mesh_instance: MeshInstance3D
 var _panel: Control
 var _pressing := false
+var _ray_pressing := {"left": false, "right": false}
 
 
 func _ready() -> void:
@@ -135,6 +137,8 @@ func _process(delta: float) -> void:
 
 	if touchable:
 		_check_poke()
+	if ray_enabled:
+		_check_ray()
 
 
 const PLANE_CLEARANCE := 0.15
@@ -196,6 +200,80 @@ func _check_poke() -> void:
 		release.button_index = MOUSE_BUTTON_LEFT
 		release.pressed = false
 		_viewport.push_input(release)
+
+
+func _check_ray() -> void:
+	var gm := get_parent().get_node_or_null("GestureManager") as GestureManager
+	if not gm:
+		return
+
+	for hand in ["left", "right"]:
+		if not gm.ray_active[hand]:
+			_release_ray(hand)
+			continue
+
+		var hw := _ray_world_hit(gm.ray_origins[hand], gm.ray_directions[hand])
+		if hw == Vector3.INF:
+			_release_ray(hand)
+			continue
+
+		var uv := _world_hit_to_panel_uv(hw)
+		if uv.x < 0.0:
+			_release_ray(hand)
+			continue
+
+		gm.set_hit_point(hand, hw)
+
+		var motion := InputEventMouseMotion.new()
+		motion.position = uv
+		_viewport.push_input(motion)
+
+		if gm.is_ray_pinching(hand) and not _ray_pressing[hand]:
+			_ray_pressing[hand] = true
+			var press := InputEventMouseButton.new()
+			press.position = uv
+			press.button_index = MOUSE_BUTTON_LEFT
+			press.pressed = true
+			_viewport.push_input(press)
+		elif not gm.is_ray_pinching(hand) and _ray_pressing[hand]:
+			_ray_pressing[hand] = false
+			var release := InputEventMouseButton.new()
+			release.position = uv
+			release.button_index = MOUSE_BUTTON_LEFT
+			release.pressed = false
+			_viewport.push_input(release)
+
+
+func _release_ray(hand: String) -> void:
+	if _ray_pressing[hand]:
+		_ray_pressing[hand] = false
+		var release := InputEventMouseButton.new()
+		release.button_index = MOUSE_BUTTON_LEFT
+		release.pressed = false
+		_viewport.push_input(release)
+
+
+func _ray_world_hit(ray_origin: Vector3, ray_dir: Vector3) -> Vector3:
+	var panel_normal := _mesh_instance.global_transform.basis.z
+	var panel_center := _mesh_instance.global_position
+	var denom := ray_dir.dot(panel_normal)
+	if abs(denom) < 0.001:
+		return Vector3.INF
+	var t := (panel_center - ray_origin).dot(panel_normal) / denom
+	if t < 0.0:
+		return Vector3.INF
+	return ray_origin + ray_dir * t
+
+
+func _world_hit_to_panel_uv(hit_world: Vector3) -> Vector2:
+	var local := _mesh_instance.global_transform.affine_inverse() * hit_world
+	var half_w := quad_size.x * 0.5
+	var half_h := quad_size.y * 0.5
+	if abs(local.x) > half_w or abs(local.y) > half_h:
+		return Vector2(-1.0, -1.0)
+	var uv_x := (local.x + half_w) / quad_size.x
+	var uv_y := 1.0 - (local.y + half_h) / quad_size.y
+	return Vector2(uv_x * _viewport.size.x, uv_y * _viewport.size.y)
 
 
 func _project_to_panel(tip_world: Vector3) -> Vector2:
