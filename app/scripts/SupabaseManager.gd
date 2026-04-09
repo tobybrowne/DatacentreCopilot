@@ -201,6 +201,26 @@ func get_building_spaces_for_space(space_id: String) -> Array[BuildingSpace]:
 		return []
 
 
+func get_routes() -> Array[Route]:
+	if not enabled:
+		return []
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("routes").select()
+	).completed
+
+	if task.error == null and task.data != null:
+		var result: Array[Route] = []
+		for row in task.data:
+			result.append(Route.from_dict(row))
+		return result
+	else:
+		if task.error != null:
+			print("get_routes error: ", task.error.message)
+		else:
+			print("get_routes error: null response (check Supabase connection)")
+		return []
+
+
 func remove_anchor(anchor_id: String) -> bool:
 	if not enabled:
 		return false

@@ -27,10 +27,6 @@
   let recastInputDebug: THREE.Group | null = null
   let startPos: Position | null = null
   let endPos: Position | null = null
-  // Recast bug: dtNavMeshCreateParams.bmin is not set from polyMesh, so verts are
-  // stored as (world_y - bmin.y). We shift all input up by -bmin.y before building
-  // so bmin.y≈0 and the missing offset is harmless. Query coordinates are adjusted here.
-  let navYShift = 0
   let pathGeometry: THREE.TubeGeometry | null = null
   let pathLength = 0
   let showNavMesh = true
@@ -44,7 +40,7 @@
     saveError = null
     try {
       const data = exportNavMesh(navMesh)
-      await saveNavMesh(buildingId, data, { ...params, navYShift } as unknown as Record<string, unknown>)
+      await saveNavMesh(buildingId, data, { ...params } as unknown as Record<string, unknown>)
       saveState = 'saved'
     } catch (e) {
       saveError = (e as Error).message
@@ -91,21 +87,12 @@
     })
     console.log('[NavMesh] input meshes:', meshes.length, 'verts:', totalVerts, 'bounds:', inputBox.min, inputBox.max)
 
-    // Shift all vertices so bmin.y ≈ 0. Recast's JS port does not copy bmin into
-    // dtNavMeshCreateParams, so tile verts end up as (world_y - bmin.y). Making
-    // bmin.y = 0 neutralises the bug; we un-shift outputs back to world space below.
-    navYShift = -inputBox.min.y
-    meshes.forEach(m => {
-      const pos = m.geometry.attributes.position
-      for (let i = 0; i < pos.count; i++) pos.setY(i, pos.getY(i) + navYShift)
-      pos.needsUpdate = true
-    })
-
     recastInputDebug = null
 
-    // Strip triangles where every vertex is above boundsYMax (in shifted space).
+    // Strip triangles where every vertex is above boundsYMax metres above the floor.
     // Using bounds[] instead would clip walls and treat the cut edge as a new walkable surface.
     const { boundsYMax, ...recastParams } = params
+    const yMax = inputBox.min.y + boundsYMax
     const clipped = meshes.map(m => {
       const pos = m.geometry.attributes.position
       const idx = m.geometry.index
@@ -117,8 +104,8 @@
         const ia = idx ? idx.getX(t * 3)     : t * 3
         const ib = idx ? idx.getX(t * 3 + 1) : t * 3 + 1
         const ic = idx ? idx.getX(t * 3 + 2) : t * 3 + 2
-        // Keep triangle if any vertex is at or below boundsYMax
-        if (pos.getY(ia) > boundsYMax && pos.getY(ib) > boundsYMax && pos.getY(ic) > boundsYMax) continue
+        // Keep triangle if any vertex is at or below yMax
+        if (pos.getY(ia) > yMax && pos.getY(ib) > yMax && pos.getY(ic) > yMax) continue
         for (const vi of [ia, ib, ic]) {
           if (remap[vi] === -1) {
             remap[vi] = outPos.length / 3
@@ -142,18 +129,14 @@
     navQuery = new NavMeshQuery(navMesh)
     navQuery.defaultQueryHalfExtents = { x: 2, y: 4, z: 2 }
 
-    // Probe in shifted space — floor is now near y=0
     const cx = (inputBox.min.x + inputBox.max.x) / 2
     const cz = (inputBox.min.z + inputBox.max.z) / 2
-    const floorProbe = navQuery.findClosestPoint({ x: cx, y: 0.5, z: cz })
-    console.log('[NavMesh] floor probe result (shifted):', floorProbe,
-      '→ world Y:', floorProbe.point ? (floorProbe.point.y - navYShift).toFixed(3) : 'n/a')
+    const floorProbe = navQuery.findClosestPoint({ x: cx, y: inputBox.min.y + 0.5, z: cz })
+    console.log('[NavMesh] floor probe result:', floorProbe)
 
     const helper = new NavMeshHelper(navMesh, {
       navMeshMaterial: new THREE.MeshStandardMaterial({ color: '#00d4ff', opacity: 0.4, transparent: true, side: THREE.DoubleSide }),
     })
-    // Un-shift the helper mesh from Recast space back to world space
-    helper.mesh.position.y = -navYShift
     navMeshDebugMesh = helper.mesh
 
     const navBox = new THREE.Box3().setFromObject(helper.mesh)
@@ -221,7 +204,6 @@
 
       // Restore build settings
       const bs = existingNavMesh.buildSettings
-      navYShift = typeof bs.navYShift === 'number' ? bs.navYShift : 0
       for (const key of Object.keys(params) as (keyof typeof params)[]) {
         if (key in bs && typeof bs[key] === 'number') (params as Record<string, number>)[key] = bs[key] as number
       }
@@ -232,7 +214,6 @@
       const helper = new NavMeshHelper(navMesh, {
         navMeshMaterial: new THREE.MeshStandardMaterial({ color: '#00d4ff', opacity: 0.4, transparent: true, side: THREE.DoubleSide }),
       })
-      helper.mesh.position.y = -navYShift
       navMeshDebugMesh = helper.mesh
 
       phase = 'pickStart'
@@ -264,11 +245,8 @@
   function computePath(): void {
     if (!navQuery || !startPos || !endPos) return
 
-    // Snap both points to the nearest NavMesh polygon before pathfinding.
-    // navmesh coords are in shifted space (bmin.y ≈ 0), so shift input Y up.
-    const shift = (p: Position) => ({ x: p.x, y: p.y + navYShift, z: p.z })
-    const { point: snappedStart, success: startOk } = navQuery.findClosestPoint(shift(startPos))
-    const { point: snappedEnd,   success: endOk   } = navQuery.findClosestPoint(shift(endPos))
+    const { point: snappedStart, success: startOk } = navQuery.findClosestPoint(startPos)
+    const { point: snappedEnd,   success: endOk   } = navQuery.findClosestPoint(endPos)
 
     if (!startOk || !endOk) {
       error = 'One or both points are too far from any walkable surface. Try clicking closer to the floor.'
@@ -284,8 +262,7 @@
       return
     }
 
-    // Un-shift path Y from Recast space back to world space
-    const elevated = path.map(p => new THREE.Vector3(p.x, p.y - navYShift + 0.05, p.z))
+    const elevated = path.map(p => new THREE.Vector3(p.x, p.y + 0.05, p.z))
     const curve = new THREE.CatmullRomCurve3(elevated)
     pathGeometry = new THREE.TubeGeometry(curve, elevated.length * 4, 0.04, 8, false)
 

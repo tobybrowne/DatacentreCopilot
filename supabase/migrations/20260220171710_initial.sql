@@ -98,6 +98,13 @@ CREATE TABLE gesture_recordings (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE routes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  start_anchor_id UUID NOT NULL REFERENCES anchors(id) ON DELETE CASCADE,
+  end_anchor_id UUID NOT NULL REFERENCES anchors(id) ON DELETE CASCADE,
+  waypoints jsonb NOT NULL -- the actual route data (list of waypoints - in building space coords)
+);
+
 -- create private bucket for storing gesture recordings
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('gesture_recordings_bucket', 'gesture_recordings_bucket', true);

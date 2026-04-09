@@ -1,0 +1,10 @@
+{
+  "name": "nav-service",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@recast-navigation/three": "^0.43.0",
+    "recast-navigation": "^0.43.0",
+    "three": "^0.155.0"
+  }
+}

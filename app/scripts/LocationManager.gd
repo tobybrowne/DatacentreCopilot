@@ -4,6 +4,9 @@ class_name LocationManager
 ## Handles calibration, anchor placement, and building-wide anchor visualisation.
 ## Must be a child of XROrigin3D. Depends on AnchorManager for ML2 tracking.
 
+## Emitted once after the first successful calibration and building offsets are loaded.
+signal calibrated
+
 var _anchor_manager: AnchorManager
 
 # All anchors from DB, keyed by ml2_id (for reference lookup) or supabase id
@@ -331,6 +334,8 @@ func _try_calibrate() -> void:
 	_current_space_id = get_current_space_id()
 	await _load_building_offsets(_current_space_id)
 
+	calibrated.emit()
+
 	# Clear any previously placed markers
 	for node in _marker_nodes:
 		if is_instance_valid(node):
@@ -356,6 +361,13 @@ func _try_calibrate() -> void:
 		var node: Node3D = _pending_save[uuid]
 		_write_glb_position(uuid, node.position)
 	_pending_save.clear()
+
+
+func world_to_local(building_pos: Vector3) -> Vector3:
+	## Convert a building-world-space position into headset local space.
+	## building_pos is in the coordinate system of the navmesh (all space transforms applied).
+	var current_offset: Transform3D = _space_offsets.get(_current_space_id, Transform3D.IDENTITY)
+	return _calibration * (current_offset.affine_inverse() * building_pos)
 
 
 func _to_local(glb_pos: Vector3, space_id: String) -> Vector3:
