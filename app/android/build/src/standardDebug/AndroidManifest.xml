@@ -18,7 +18,9 @@
         <!-- Godot's mergeOnlyAttributes on the activity in src/debug/ blocks
              child elements from lower-priority manifests, so we must provide
              the complete set of intent-filters here. -->
-        <activity android:name=".GodotApp">
+        <activity android:name=".GodotApp"
+            android:exported="true"
+            tools:replace="android:exported">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -20,12 +20,10 @@ dist/
 # Un-ignore specific Android build source files (build/ above would hide these)
 !app/android/build/
 app/android/build/*
-!app/android/build/build.gradle
 !app/android/build/src/
 app/android/build/src/*
 !app/android/build/src/main/
 app/android/build/src/main/*
-!app/android/build/src/main/AndroidManifest.xml
 !app/android/build/src/standardDebug/
 app/android/build/src/standardDebug/*
 !app/android/build/src/standardDebug/AndroidManifest.xml
