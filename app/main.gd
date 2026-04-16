@@ -387,13 +387,13 @@ func _localise_space(space: Space) -> void:
 func _set_mode(new_mode: AppMode) -> void:
 	if _app_mode == new_mode:
 		return
-	# Teardown old mode
 	_anchor_mode = ""
 	_anchor_target = null
 	_clear_progress_indicator()
 	location_manager.clear_markers()
 	anchor_manager.clear_markers()
 	_app_mode = new_mode
+	ui_panel.visible = new_mode == AppMode.NONE
 	print("main: mode → ", AppMode.keys()[new_mode])
 
 
