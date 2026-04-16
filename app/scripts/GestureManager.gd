@@ -116,7 +116,7 @@ func _update_ray(delta: float) -> void:
 			_ray_dir_smooth[hand] = Vector3.ZERO
 			continue
 		var ht := tracker as XRHandTracker
-		if not (ht.get_hand_joint_flags(0) & 4):
+		if not ht.has_tracking_data or not (ht.get_hand_joint_flags(0) & 4):
 			_ray_dir_smooth[hand] = Vector3.ZERO
 			continue
 
@@ -190,7 +190,7 @@ func _check_hand(hand: String, delta: float) -> void:
 		return
 
 	var ht := tracker as XRHandTracker
-	if not (ht.get_hand_joint_flags(5) & 4) or not (ht.get_hand_joint_flags(10) & 4):
+	if not ht.has_tracking_data or not (ht.get_hand_joint_flags(5) & 4) or not (ht.get_hand_joint_flags(10) & 4):
 		_end(hand)
 		return
 
