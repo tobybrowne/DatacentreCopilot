@@ -7,7 +7,7 @@
 script = ExtResource("1_script")
 panel_scene = ExtResource("2_scene")
 follow_speed = 3.0
-distance = 1.2
+distance = 1.4
 height_offset = 0.2
 viewport_size = Vector2i(400, 120)
 quad_size = Vector2(0.35, 0.105)
