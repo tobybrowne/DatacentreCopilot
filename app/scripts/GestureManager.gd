@@ -42,6 +42,7 @@ var ray_directions := {"left": Vector3.ZERO, "right": Vector3.ZERO}
 var ray_active := {"left": false, "right": false}
 
 var _ray_dir_smooth := {"left": Vector3.ZERO, "right": Vector3.ZERO}
+var _ray_visual_origins := {"left": Vector3.ZERO, "right": Vector3.ZERO}
 var _hit_points := {"left": Vector3.INF, "right": Vector3.INF}
 
 var _ray_line: MeshInstance3D
@@ -137,10 +138,11 @@ func _update_ray(delta: float) -> void:
 			var shoulder := camera.global_position + camera.global_basis * Vector3(side * shoulder_side, -shoulder_drop, 0.0)
 			blend_origin = wrist_pos.lerp(shoulder, shoulder_blend)
 			raw_dir = (aim_point - blend_origin).normalized()
+			_ray_visual_origins[hand] = wrist_pos
 		else:
 			raw_dir = palm_xform.basis.z
 			blend_origin = palm_xform.origin - palm_xform.basis.z * ray_back_offset
-
+			_ray_visual_origins[hand] = palm_xform.origin
 
 		if raw_dir.length_squared() < 0.001:
 			continue
@@ -164,13 +166,13 @@ func _update_ray_visuals() -> void:
 			continue
 
 		var has_hit: bool = _hit_points[hand] != Vector3.INF
-		var ray_end: Vector3 = _hit_points[hand] if has_hit else ray_origins[hand] + ray_directions[hand] * 2.0
+		var ray_end: Vector3 = _hit_points[hand] if has_hit else _ray_visual_origins[hand] + ray_directions[hand] * 2.0
 		var pinching := is_ray_pinching(hand)
 		var ray_color := Color(0.4, 0.85, 1.0, 1.0) if pinching else Color(1.0, 1.0, 1.0, 0.7)
 
 		_ray_immediate.surface_begin(Mesh.PRIMITIVE_LINES)
 		_ray_immediate.surface_set_color(Color(ray_color.r, ray_color.g, ray_color.b, 0.0))
-		_ray_immediate.surface_add_vertex(ray_origins[hand])
+		_ray_immediate.surface_add_vertex(_ray_visual_origins[hand])
 		_ray_immediate.surface_set_color(ray_color)
 		_ray_immediate.surface_add_vertex(ray_end)
 		_ray_immediate.surface_end()
