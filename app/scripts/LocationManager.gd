@@ -212,6 +212,7 @@ func _on_localization_changed(state: int, _confidence: int, _error_flags: int) -
 					current_coarse_space = new_uuid
 					_setup_space_for_calibration(new_uuid)
 		0: # NOT_LOCALIZED
+			_current_space_id = ""
 			if _relocalising:
 				_relocalising = false
 				if _tracking_label:
@@ -225,30 +226,6 @@ func _on_localization_changed(state: int, _confidence: int, _error_flags: int) -
 
 
 # ── Load ──────────────────────────────────────────────────────────────────────
-
-func _load_and_calibrate() -> void:
-	# Warm up the write connection so the first anchor insert doesn't stall.
-	SupabaseManager.update_user_glb_position(Vector3.ZERO)
-
-	var spaces: Array[Space] = await SupabaseManager.get_spaces()
-	for space in spaces:
-		_space_names[space.id] = space.name
-
-	var all_anchors: Array[Anchor] = await SupabaseManager.get_anchors()
-	print("LocationManager: fetched ", all_anchors.size(), " anchors")
-
-	var next_num := 1
-	for anchor in all_anchors:
-		_all_anchors[anchor.id] = anchor
-		if anchor.name.is_valid_int():
-			next_num = max(next_num, anchor.name.to_int() + 1)
-	_anchor_manager.set_next_num(next_num)
-	_anchor_manager.set_anchor_registry(_all_anchors)
-
-	# Determine current space from localization, then load anchors for it
-	var current_space_id := get_current_space_id()
-	_setup_space_for_calibration(current_space_id)
-
 
 func _setup_space_for_calibration(space_id: String) -> void:
 	_ref_anchors.clear()
@@ -264,17 +241,27 @@ func _setup_space_for_calibration(space_id: String) -> void:
 		if anchor.is_reference:
 			if anchor.glb_position != null:
 				_ref_anchors[anchor.ml2_id] = anchor
-				_anchor_manager.load_anchor(anchor.ml2_id)
+				var already_tracked: Node3D = _anchor_manager.tracked_nodes.get(anchor.ml2_id)
+				if already_tracked:
+					# Anchor is already tracked — inject Kabsch pair directly
+					_kabsch_src.append(anchor.glb_position)
+					_kabsch_nodes.append(already_tracked)
+				else:
+					print("Calling Anchor Manager for Tracking!")
+					_anchor_manager.load_anchor(anchor.ml2_id)
 			else:
 				print("LocationManager: ref anchor ", anchor.id, " has no glb_position — skipping")
 		else:
 			if anchor.ml2_id != null:
-				_anchor_manager.load_anchor(anchor.ml2_id)
+				if not _anchor_manager.tracked_nodes.has(anchor.ml2_id):
+					_anchor_manager.load_anchor(anchor.ml2_id)
 			else:
 				_desktop_content.append(anchor)
 
 	print("LocationManager: setup space ", _space_names.get(space_id, space_id),
-			" — ", _ref_anchors.size(), " ref anchors loaded")
+			" — ", _ref_anchors.size(), " ref anchors, ", _kabsch_src.size(), " already tracked")
+	if _kabsch_src.size() >= 3:
+		_try_calibrate()
 
 
 func _ref_anchor_count(space_id: String) -> int:
@@ -288,8 +275,10 @@ func _ref_anchor_count(space_id: String) -> int:
 ## Localise into a space without running Kabsch calibration.
 ## Populates anchor registries only — caller is responsible for loading ML2 anchors.
 func localize_to_space(space_id: String) -> void:
-	_request_localization(space_id)
+	if _current_space_id != space_id:
+		_request_localization(space_id)
 	await _load_anchors(space_id)
+	_current_space_id = space_id
 	print("LocationManager: localize_to_space ", space_id)
 
 
@@ -317,21 +306,17 @@ func get_space_anchors(space_id: String) -> Array[Anchor]:
 
 ## Localise into a space AND run Kabsch calibration as reference anchors track in.
 func calibrate_to_space(space_id: String) -> void:
-	_request_localization(space_id)
+	if _current_space_id != space_id:
+		print("Current_space_id does not match requested space_id — requesting localization")
+		_request_localization(space_id)
+	print("Current_space_id does match requested space_id — loading anchors")
 	await _load_anchors(space_id)
-	_ref_anchors.clear()
-	_kabsch_src.clear()
-	_kabsch_nodes.clear()
-	_calibrated = false
-	for anchor in _all_anchors.values():
-		if anchor.space_id != space_id:
-			continue
-		if anchor.is_reference and anchor.glb_position != null and anchor.ml2_id:
-			_ref_anchors[anchor.ml2_id] = anchor
-			_anchor_manager.load_anchor(anchor.ml2_id)
-		elif not anchor.is_reference and anchor.ml2_id:
-			_anchor_manager.load_anchor(anchor.ml2_id)
-	print("LocationManager: calibrate_to_space ", space_id, " — ", _ref_anchors.size(), " ref anchors")
+	if _current_space_id == space_id:
+		# Already confirmed localized — set up immediately.
+		_setup_space_for_calibration(space_id)
+	# else: _on_localization_changed(LOCALIZED) will call _setup_space_for_calibration
+	# once new_uuid differs from _current_space_id (still "" or old space).
+	print("LocationManager: calibrate_to_space ", space_id, " — confirmed=", _current_space_id == space_id)
 
 
 func _request_localization(space_id: String) -> void:
@@ -345,7 +330,6 @@ func _load_anchors(space_id: String) -> void:
 	var all_anchors: Array[Anchor] = await SupabaseManager.get_anchors()
 	_all_anchors.clear()
 	_ref_anchors.clear()
-	_current_space_id = space_id
 	var next_num := 1
 	for anchor in all_anchors:
 		_all_anchors[anchor.id] = anchor
@@ -471,6 +455,8 @@ func _place_virtual_marker(anchor: Anchor, space_id: String) -> void:
 
 func _on_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bool) -> void:
 	var uuid_str := str(ml2_uuid)
+
+	print("ANCHOR TRACKED!")
 
 	if is_new:
 		if _calibrated:

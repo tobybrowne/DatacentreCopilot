@@ -13,10 +13,13 @@ var _next_num := 1
 
 # Registry populated by LocationManager so get_anchor_near() can resolve UUIDs.
 var _all_anchors: Dictionary = {}   # supabase_id → Anchor
-var _tracked_nodes: Dictionary = {} # ml2_uuid → Node3D
+var tracked_nodes: Dictionary = {} # ml2_uuid → Node3D (public so LocationManager can inject already-tracked anchors into Kabsch)
 
 var _retry_uuids: Dictionary = {}   # ml2_uuid → retry_count
+var _storage_pending: Array[String] = []  # UUIDs waiting for storage to become ready
+var _storage_retry_timer := 0.0
 const RETRY_DELAY := 3.0
+const STORAGE_RETRY_INTERVAL := 2.0
 
 var is_localized := false
 var localized_space_uuid := ""
@@ -41,15 +44,19 @@ func _ready() -> void:
 
 
 func _on_mgr_entered_tree() -> void:
-	var xr := XRServer.find_interface("OpenXR") as OpenXRInterface
-	if xr:
-		xr.session_begun.connect(_on_session_begun)
-		if xr.is_initialized():
-			_on_session_begun()
+	pass
 
 
-func _on_session_begun() -> void:
-	pass  # LocationManager drives loading; nothing to do here
+func _process(delta: float) -> void:
+	if _storage_pending.is_empty() or not _ml_mgr:
+		return
+	_storage_retry_timer -= delta
+	if _storage_retry_timer > 0.0:
+		return
+	_storage_retry_timer = STORAGE_RETRY_INTERVAL
+	print("AnchorManager: retrying ", _storage_pending.size(), " pending anchors")
+	for uuid in _storage_pending.duplicate():
+		_ml_mgr.call("load_anchor", StringName(uuid))
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -63,6 +70,8 @@ func set_next_num(n: int) -> void:
 func load_anchor(uuid: String) -> void:
 	if not _ml_mgr:
 		return
+	if uuid not in _storage_pending:
+		_storage_pending.append(uuid)
 	_retry_uuids[uuid] = 0
 	_ml_mgr.call("load_anchor", StringName(uuid))
 
@@ -83,8 +92,8 @@ func remove_anchor(anchor: Anchor) -> void:
 
 
 func get_anchor_near(pos: Vector3, radius: float) -> Anchor:
-	for uuid in _tracked_nodes:
-		var node: Node3D = _tracked_nodes[uuid]
+	for uuid in tracked_nodes:
+		var node: Node3D = tracked_nodes[uuid]
 		if is_instance_valid(node) and node.global_position.distance_to(pos) <= radius:
 			# Find by ml2_id
 			for anchor in _all_anchors.values():
@@ -144,8 +153,9 @@ func _make_marker(color: Color = Color(0.2, 0.8, 1.0), label: String = "") -> No
 func _on_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bool) -> void:
 	var uuid_str := str(ml2_uuid)
 	print("AnchorManager: tracked ", uuid_str, " (new=", is_new, ")")
-	_tracked_nodes[uuid_str] = anchor_node
+	tracked_nodes[uuid_str] = anchor_node
 	_retry_uuids.erase(uuid_str)
+	_storage_pending.erase(uuid_str)
 
 	if is_new:
 		var location_manager: LocationManager = get_parent().get_node_or_null("LocationManager")
@@ -174,7 +184,7 @@ func _on_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bool)
 
 func _on_anchor_untracked(uuid: StringName) -> void:
 	print("AnchorManager: untracked ", uuid)
-	_tracked_nodes.erase(str(uuid))
+	tracked_nodes.erase(str(uuid))
 	anchor_untracked.emit(uuid)
 
 
