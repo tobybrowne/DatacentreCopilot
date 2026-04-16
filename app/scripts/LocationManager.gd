@@ -403,6 +403,13 @@ func _write_glb_position(uuid: String, local_pos: Vector3) -> void:
 	SupabaseManager.update_anchor_glb_position(uuid, _calibration.affine_inverse() * local_pos)
 
 
+func clear_markers() -> void:
+	for node in _marker_nodes:
+		if is_instance_valid(node):
+			node.queue_free()
+	_marker_nodes.clear()
+
+
 func _place_virtual_marker(anchor: Anchor, space_id: String) -> void:
 	var color := Color(0.5, 0.3, 1.0) if space_id != _current_space_id else Color(1.0, 0.55, 0.0)
 	var marker := _anchor_manager._make_marker(color, anchor.name)

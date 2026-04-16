@@ -5,7 +5,7 @@
 class_name VoiceManager
 extends Node
 
-@export var intents: PackedStringArray = ["next step", "previous step", "confirm", "cancel", "start recording", "stop recording"]
+@export var intents: PackedStringArray = ["next step", "previous step", "confirm", "cancel", "start recording", "stop recording", "go home"]
 
 signal next_step
 signal previous_step
@@ -13,6 +13,7 @@ signal confirm
 signal cancel
 signal start_recording
 signal stop_recording
+signal go_home
 signal voice_error(error: String)
 
 var _voice: MLVoiceIntentManager = null
@@ -58,6 +59,9 @@ func _on_intent(intent_name: String, intent_id: int) -> void:
 		"stop recording":
 			print("VoiceManager: recognized intent '%s'" % intent_name)
 			stop_recording.emit()
+		"go home":
+			print("VoiceManager: recognized intent '%s'" % intent_name)
+			go_home.emit()
 		_:
 			push_warning("VoiceManager: unhandled intent '%s'" % intent_name)
 

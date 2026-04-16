@@ -32,6 +32,13 @@ func pop() -> void:
 		panel_changed.emit(_stack.back(), _data_stack.back())
 
 
+func pop_to_root() -> void:
+	if _stack.size() > 1:
+		_stack.resize(1)
+		_data_stack.resize(1)
+		panel_changed.emit(_stack.back(), _data_stack.back())
+
+
 func current() -> String:
 	return _stack.back() if not _stack.is_empty() else ""
 

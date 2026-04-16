@@ -75,6 +75,7 @@ func _ready():
 		if sv: sv.prev_step())
 	voice_manager.confirm.connect(func(): pass)
 	voice_manager.cancel.connect(func(): pass)
+	voice_manager.go_home.connect(func(): _set_mode(AppMode.NONE); PanelRouter.pop_to_root())
 	voice_manager.start_recording.connect(_on_start_recording)
 	voice_manager.stop_recording.connect(_on_stop_recording)
 
@@ -206,11 +207,17 @@ func _on_pinch_started(hand: String, position: Vector3) -> void:
 
 
 func _on_pinch_held(hand: String, position: Vector3, duration: float) -> void:
-	if hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
+	if hand == "left":
+		_update_progress_indicator(position, minf(duration / gesture_manager.hold_time, 1.0))
+	elif hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
 		_update_progress_indicator(position, minf(duration / gesture_manager.hold_time, 1.0))
 
 
 func _on_pinch_completed(hand: String, position: Vector3) -> void:
+	if hand == "left":
+		_set_mode(AppMode.NONE)
+		PanelRouter.pop_to_root()
+		return
 	if hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
 		_clear_progress_indicator()
 		if _anchor_mode == "create":
@@ -222,7 +229,9 @@ func _on_pinch_completed(hand: String, position: Vector3) -> void:
 
 
 func _on_pinch_ended(hand: String) -> void:
-	if hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
+	if hand == "left":
+		_clear_progress_indicator()
+	elif hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
 		_clear_progress_indicator()
 		_anchor_mode   = ""
 		_anchor_target = null
@@ -375,19 +384,32 @@ func _localise_space(space: Space) -> void:
 	await location_manager.localize_to_space(space.id)
 
 
+func _set_mode(new_mode: AppMode) -> void:
+	if _app_mode == new_mode:
+		return
+	# Teardown old mode
+	_anchor_mode = ""
+	_anchor_target = null
+	_clear_progress_indicator()
+	location_manager.clear_markers()
+	anchor_manager.clear_markers()
+	_app_mode = new_mode
+	print("main: mode → ", AppMode.keys()[new_mode])
+
+
 func _enter_nav_mode(space: Space) -> void:
 	if not space:
 		return
 	print("main: entering nav mode for '", space.name, "' (", space.id, ")")
 	if not await _ensure_space_local(space):
 		return
-	_app_mode = AppMode.NAVIGATING
+	_set_mode(AppMode.NAVIGATING)
 	location_manager.calibrate_to_space(space.id)
 
 
 func _enter_nav_mode_for_id(space_id: String) -> void:
 	print("main: entering nav mode for space ", space_id, " (coarse detected)")
-	_app_mode = AppMode.NAVIGATING
+	_set_mode(AppMode.NAVIGATING)
 	location_manager.calibrate_to_space(space_id)
 
 
@@ -396,7 +418,7 @@ func _enter_anchor_editing(space: Space) -> void:
 		return
 	print("main: entering anchor editing mode for '", space.name, "' (", space.id, ")")
 	await _localise_space(space)
-	_app_mode = AppMode.ANCHOR_EDITING
+	_set_mode(AppMode.ANCHOR_EDITING)
 	for anchor in location_manager.get_space_anchors(space.id):
 		anchor_manager.load_anchor(anchor.ml2_id)
 

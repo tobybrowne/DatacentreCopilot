@@ -91,6 +91,13 @@ func remove_anchor(anchor: Anchor) -> void:
 	SupabaseManager.remove_anchor(str(anchor.id))
 
 
+func clear_markers() -> void:
+	for node in tracked_nodes.values():
+		if is_instance_valid(node):
+			for child in node.get_children():
+				child.queue_free()
+
+
 func get_anchor_near(pos: Vector3, radius: float) -> Anchor:
 	for uuid in tracked_nodes:
 		var node: Node3D = tracked_nodes[uuid]
