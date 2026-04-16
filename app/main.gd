@@ -67,6 +67,8 @@ func _ready():
 	gesture_manager.pinch_held.connect(_on_pinch_held)
 	gesture_manager.pinch_completed.connect(_on_pinch_completed)
 	gesture_manager.pinch_ended.connect(_on_pinch_ended)
+	gesture_manager.home_gesture_held.connect(_on_home_gesture_held)
+	gesture_manager.home_gesture_completed.connect(_on_home_gesture_completed)
 	voice_manager.next_step.connect(func():
 		var sv := ui_panel.get_panel() as StepViewer
 		if sv: sv.next_step())
@@ -207,17 +209,11 @@ func _on_pinch_started(hand: String, position: Vector3) -> void:
 
 
 func _on_pinch_held(hand: String, position: Vector3, duration: float) -> void:
-	if hand == "left":
-		_update_progress_indicator(position, minf(duration / gesture_manager.hold_time, 1.0))
-	elif hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
+	if hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
 		_update_progress_indicator(position, minf(duration / gesture_manager.hold_time, 1.0))
 
 
 func _on_pinch_completed(hand: String, position: Vector3) -> void:
-	if hand == "left":
-		_set_mode(AppMode.NONE)
-		PanelRouter.pop_to_root()
-		return
 	if hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
 		_clear_progress_indicator()
 		if _anchor_mode == "create":
@@ -229,12 +225,20 @@ func _on_pinch_completed(hand: String, position: Vector3) -> void:
 
 
 func _on_pinch_ended(hand: String) -> void:
-	if hand == "left":
-		_clear_progress_indicator()
-	elif hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
+	if hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
 		_clear_progress_indicator()
 		_anchor_mode   = ""
 		_anchor_target = null
+
+
+func _on_home_gesture_held(_hand: String, position: Vector3, duration: float) -> void:
+	_update_progress_indicator(position, minf(duration / gesture_manager.hold_time, 1.0))
+
+
+func _on_home_gesture_completed(_hand: String) -> void:
+	_clear_progress_indicator()
+	_set_mode(AppMode.NONE)
+	PanelRouter.pop_to_root()
 
 
 # ── Progress ring ──────────────────────────────────────────────────────────────

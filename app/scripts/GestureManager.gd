@@ -23,6 +23,10 @@ signal pinch_ended(hand: String)
 signal pinch_held(hand: String, position: Vector3, duration: float)
 signal pinch_completed(hand: String, position: Vector3)
 
+# Home gesture: thumb + middle finger pinch (avoids conflict with index-pinch UI interaction)
+signal home_gesture_held(hand: String, position: Vector3, duration: float)
+signal home_gesture_completed(hand: String)
+
 const _TRACKERS := {
 	"left": "/user/hand_tracker/left",
 	"right": "/user/hand_tracker/right",
@@ -31,6 +35,10 @@ const _TRACKERS := {
 var _pinching := {"left": false, "right": false}
 var _hold_time := {"left": 0.0, "right": 0.0}
 var _fired := {"left": false, "right": false}
+
+var _home_pinching := {"left": false, "right": false}
+var _home_hold_time := {"left": 0.0, "right": 0.0}
+var _home_fired := {"left": false, "right": false}
 
 var _recording := false
 var _recording_origin := Transform3D()
@@ -90,6 +98,7 @@ func _process(delta: float) -> void:
 
 	for hand in _TRACKERS:
 		_check_hand(hand, delta)
+		_check_home_gesture(hand, delta)
 
 	_update_ray(delta)
 
@@ -224,6 +233,46 @@ func _end(hand: String) -> void:
 		_hold_time[hand] = 0.0
 		_fired[hand] = false
 		pinch_ended.emit(hand)
+
+
+func _check_home_gesture(hand: String, delta: float) -> void:
+	# Thumb tip (joint 5) + middle tip (joint 15)
+	var tracker := XRServer.get_tracker(_TRACKERS[hand])
+	if not tracker or not tracker is XRHandTracker:
+		_end_home(hand)
+		return
+	var ht := tracker as XRHandTracker
+	if not ht.has_tracking_data or not (ht.get_hand_joint_flags(5) & 4) or not (ht.get_hand_joint_flags(15) & 4):
+		_end_home(hand)
+		return
+
+	var thumb_pos := ht.get_hand_joint_transform(5).origin
+	var middle_pos := ht.get_hand_joint_transform(15).origin
+
+	if thumb_pos.distance_to(middle_pos) >= pinch_threshold:
+		_end_home(hand)
+		return
+
+	var pinch_pos := (thumb_pos + middle_pos) * 0.5
+
+	if not _home_pinching[hand]:
+		_home_pinching[hand] = true
+		_home_hold_time[hand] = 0.0
+		_home_fired[hand] = false
+
+	if not _home_fired[hand]:
+		_home_hold_time[hand] += delta
+		home_gesture_held.emit(hand, pinch_pos, _home_hold_time[hand])
+		if _home_hold_time[hand] >= hold_time:
+			_home_fired[hand] = true
+			home_gesture_completed.emit(hand)
+
+
+func _end_home(hand: String) -> void:
+	if _home_pinching[hand]:
+		_home_pinching[hand] = false
+		_home_hold_time[hand] = 0.0
+		_home_fired[hand] = false
 
 
 # ---- Hand pose recording ----
