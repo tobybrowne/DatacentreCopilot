@@ -26,14 +26,21 @@ extends Node3D
 @export var touchable: bool = true
 @export var ray_enabled: bool = true
 @export var tilt_degrees: float = 0.0
+@export var lazy_follow: bool = false
+@export var lazy_follow_distance: float = 0.8
+@export var lazy_follow_angle_degrees: float = 30.0
 
 
 var _camera: XRCamera3D
 var _viewport: SubViewport
 var _mesh_instance: MeshInstance3D
+var _back_mesh: MeshInstance3D
 var _panel: Control
 var _pressing := false
 var _ray_pressing := {"left": false, "right": false}
+var _placed := false
+var _stable_frames := 0
+var _last_cam_pos := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -66,6 +73,22 @@ func _ready() -> void:
 	_mesh_instance.mesh = quad
 	_mesh_instance.material_override = mat
 	add_child(_mesh_instance)
+
+	# Back face — solid colour so the panel isn't invisible from behind.
+	var back_mat := StandardMaterial3D.new()
+	back_mat.albedo_color = background_color
+	back_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	back_mat.cull_mode = BaseMaterial3D.CULL_FRONT
+
+	_back_mesh = MeshInstance3D.new()
+	_back_mesh.mesh = quad
+	_back_mesh.material_override = back_mat
+	_back_mesh.position = Vector3(0.0, 0.0, -0.001)
+	add_child(_back_mesh)
+
+	# Hide until first placement so the panel isn't visible at its default scene position.
+	_mesh_instance.visible = false
+	_back_mesh.visible = false
 
 
 # Called when a new panel is loaded via the router
@@ -131,11 +154,42 @@ func _process(delta: float) -> void:
 			+ Vector3(0.0, height_offset, 0.0)
 
 		target_pos = _avoid_planes(target_pos)
-		global_position = global_position.lerp(target_pos, follow_speed * delta)
 
 		var target_y := atan2(-forward.x, -forward.z)
-		rotation.y = lerp_angle(rotation.y, target_y, follow_speed * delta)
-		rotation.x = deg_to_rad(tilt_degrees)
+
+		if not _placed:
+			# Wait for OpenXR pose to stabilise: non-zero position AND steady for several frames.
+			if cam_pos.length() < 0.3:
+				_stable_frames = 0
+				_last_cam_pos = cam_pos
+				return
+			if cam_pos.distance_to(_last_cam_pos) < 0.02:
+				_stable_frames += 1
+			else:
+				_stable_frames = 0
+			_last_cam_pos = cam_pos
+			if _stable_frames < 10:
+				return
+			global_position = target_pos
+			rotation.y = target_y
+			rotation.x = deg_to_rad(tilt_degrees)
+			_placed = true
+			_mesh_instance.visible = true
+			_back_mesh.visible = true
+		elif not lazy_follow:
+			var t: float = clamp(follow_speed * delta, 0.0, 1.0)
+			global_position = global_position.lerp(target_pos, t)
+			rotation.y = lerp_angle(rotation.y, target_y, t)
+			rotation.x = deg_to_rad(tilt_degrees)
+		elif cam_pos.distance_to(global_position) > distance + lazy_follow_distance:
+			# Position threshold exceeded — snap to new position and rotation.
+			global_position = target_pos
+			rotation.y = target_y
+			rotation.x = deg_to_rad(tilt_degrees)
+		elif abs(wrapf(target_y - rotation.y, -PI, PI)) > deg_to_rad(lazy_follow_angle_degrees):
+			# Angle threshold exceeded — rotate to face user without moving.
+			rotation.y = target_y
+			rotation.x = deg_to_rad(tilt_degrees)
 
 	if touchable:
 		_check_poke()

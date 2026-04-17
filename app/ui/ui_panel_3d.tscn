@@ -12,3 +12,4 @@ distance = 1.0
 locked_to_head = false
 touchable = true
 height_offset = -0.2
+lazy_follow = true
