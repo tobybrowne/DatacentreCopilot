@@ -37,6 +37,7 @@ func exit() -> void:
 	progress_indicator.clear()
 	route_manager.clear_goto_route()
 	location_manager.clear_markers()
+	NoteManager.clear()
 
 
 func _on_action(action: String, data: Dictionary) -> void:

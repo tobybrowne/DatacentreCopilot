@@ -1,0 +1,18 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" uid="uid://doem5fohiy6tt" path="res://ui/viewport_panel_3d.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://ui/keyboard/keyboard_panel.tscn" id="2_panel"]
+
+[node name="KeyboardPanel3D" type="Node3D"]
+script = ExtResource("1_script")
+use_router = false
+panel_scene = ExtResource("2_panel")
+background_color = Color(1, 1, 1, 1)
+quad_size = Vector2(0.4, 0.33)
+viewport_size = Vector2i(400, 330)
+follow_speed = 3.0
+distance = 0.75
+touchable = true
+ray_enabled = true
+height_offset = -0.35
+tilt_degrees = -25.0

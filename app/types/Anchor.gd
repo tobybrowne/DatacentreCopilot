@@ -3,6 +3,7 @@ class_name Anchor
 const TYPE_REFERENCE := "reference"  # Kabsch calibration reference point
 const TYPE_CONTENT   := "content"    # placed content marker
 const TYPE_TEMP      := "temp"       # transient routing anchor, never rendered
+const TYPE_NOTE      := "note"       # sticky note anchor
 
 var id: String
 var name: String

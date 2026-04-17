@@ -237,7 +237,7 @@ func _setup_space_for_calibration(space_id: String) -> void:
 	for anchor in _all_anchors.values():
 		if anchor.space_id != space_id:
 			continue
-		if anchor.anchor_type == Anchor.TYPE_TEMP:
+		if anchor.anchor_type == Anchor.TYPE_TEMP or anchor.anchor_type == Anchor.TYPE_NOTE:
 			continue
 		elif anchor.anchor_type == Anchor.TYPE_REFERENCE:
 			if anchor.glb_position != null:
@@ -427,6 +427,14 @@ func _try_calibrate() -> void:
 	_pending_save.clear()
 
 
+func world_to_glb(world_pos: Vector3) -> Vector3:
+	return _calibration.affine_inverse() * world_pos
+
+
+func glb_to_world(glb_pos: Vector3) -> Vector3:
+	return _calibration * glb_pos
+
+
 func world_to_local(building_pos: Vector3) -> Vector3:
 	var current_offset: Transform3D = _space_offsets.get(_current_space_id, Transform3D.IDENTITY)
 	return _calibration * (current_offset.affine_inverse() * building_pos)
@@ -449,6 +457,7 @@ func clear_markers() -> void:
 		if is_instance_valid(node):
 			node.queue_free()
 	_marker_nodes.clear()
+	_anchor_manager.clear_markers()
 
 
 func _place_virtual_marker(anchor: Anchor, space_id: String) -> void:

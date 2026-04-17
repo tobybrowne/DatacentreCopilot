@@ -25,6 +25,7 @@ extends Node3D
 @export var background_color: Color = Color(1, 1, 1, 1)
 @export var touchable: bool = true
 @export var ray_enabled: bool = true
+@export var tilt_degrees: float = 0.0
 
 
 var _camera: XRCamera3D
@@ -95,7 +96,7 @@ func get_panel() -> Control:
 
 
 func _process(delta: float) -> void:
-	if not _camera:
+	if not _camera or not visible:
 		return
 
 	if locked_to_head:
@@ -134,6 +135,7 @@ func _process(delta: float) -> void:
 
 		var target_y := atan2(-forward.x, -forward.z)
 		rotation.y = lerp_angle(rotation.y, target_y, follow_speed * delta)
+		rotation.x = deg_to_rad(tilt_degrees)
 
 	if touchable:
 		_check_poke()
@@ -194,12 +196,21 @@ func _check_poke() -> void:
 			press.button_index = MOUSE_BUTTON_LEFT
 			press.pressed = true
 			_viewport.push_input(press)
+			var touch := InputEventScreenTouch.new()
+			touch.position = hit_pos
+			touch.pressed = true
+			touch.index = 0
+			_viewport.push_input(touch)
 	elif _pressing:
 		_pressing = false
 		var release := InputEventMouseButton.new()
 		release.button_index = MOUSE_BUTTON_LEFT
 		release.pressed = false
 		_viewport.push_input(release)
+		var touch_up := InputEventScreenTouch.new()
+		touch_up.pressed = false
+		touch_up.index = 0
+		_viewport.push_input(touch_up)
 
 
 func _check_ray() -> void:
@@ -235,6 +246,11 @@ func _check_ray() -> void:
 			press.button_index = MOUSE_BUTTON_LEFT
 			press.pressed = true
 			_viewport.push_input(press)
+			var touch := InputEventScreenTouch.new()
+			touch.position = uv
+			touch.pressed = true
+			touch.index = 0
+			_viewport.push_input(touch)
 		elif not gm.is_ray_pinching(hand) and _ray_pressing[hand]:
 			_ray_pressing[hand] = false
 			var release := InputEventMouseButton.new()
@@ -242,6 +258,11 @@ func _check_ray() -> void:
 			release.button_index = MOUSE_BUTTON_LEFT
 			release.pressed = false
 			_viewport.push_input(release)
+			var touch_up := InputEventScreenTouch.new()
+			touch_up.position = uv
+			touch_up.pressed = false
+			touch_up.index = 0
+			_viewport.push_input(touch_up)
 
 
 func _release_ray(hand: String) -> void:
@@ -251,6 +272,10 @@ func _release_ray(hand: String) -> void:
 		release.button_index = MOUSE_BUTTON_LEFT
 		release.pressed = false
 		_viewport.push_input(release)
+		var touch_up := InputEventScreenTouch.new()
+		touch_up.pressed = false
+		touch_up.index = 0
+		_viewport.push_input(touch_up)
 
 
 func _ray_world_hit(ray_origin: Vector3, ray_dir: Vector3) -> Vector3:

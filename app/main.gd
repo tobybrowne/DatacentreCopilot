@@ -3,6 +3,7 @@ extends Node3D
 var xr_interface: XRInterface
 
 @onready var ui_panel: ViewportPanel3D = $XROrigin3D/UIPanel
+@onready var keyboard_panel: ViewportPanel3D = $XROrigin3D/KeyboardPanel3D
 @onready var gesture_manager: GestureManager = $XROrigin3D/GestureManager
 @onready var anchor_manager: AnchorManager = $XROrigin3D/AnchorManager
 @onready var location_manager: LocationManager = $XROrigin3D/LocationManager
@@ -18,6 +19,8 @@ var _gesture_replayer: GestureReplayer = null
 
 func _ready() -> void:
 	PanelRouter.push("start_menu")
+	KeyboardManager.register(keyboard_panel)
+	NoteManager.setup(self, location_manager)
 
 	progress_indicator = ProgressIndicator.new()
 	add_child(progress_indicator)

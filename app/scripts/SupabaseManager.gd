@@ -276,6 +276,53 @@ func get_routes() -> Array[Route]:
 		return []
 
 
+func insert_note(note: StickyNote) -> StickyNote:
+	if not enabled:
+		return null
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("notes").insert([{"text": note.text, "anchor_id": note.anchor_id}])
+	).completed
+	if task.error == null and task.data != null and not task.data.is_empty():
+		note.id = task.data[0].get("id", "")
+		return note
+	if task.error != null:
+		print("insert_note error: ", task.error.message)
+	return null
+
+
+func get_notes_for_space(space_id: String) -> Array[StickyNote]:
+	if not enabled:
+		return []
+	# Fetch note-type anchors for this space, then load the text from the notes table.
+	var anchors_task = await Supabase.database.query(
+		SupabaseQuery.new().from("anchors").select().eq("space_id", space_id).eq("anchor_type", "note")
+	).completed
+	if anchors_task.error != null or anchors_task.data == null:
+		if anchors_task.error != null:
+			print("get_notes_for_space anchors error: ", anchors_task.error.message)
+		return []
+
+	var result: Array[StickyNote] = []
+	for anchor_row in anchors_task.data:
+		var anchor_id: String = anchor_row.get("id", "")
+		if anchor_id.is_empty():
+			continue
+		var pos = anchor_row.get("glb_position", null)
+		if not pos is Dictionary:
+			continue
+
+		var notes_task = await Supabase.database.query(
+			SupabaseQuery.new().from("notes").select().eq("anchor_id", anchor_id)
+		).completed
+		if notes_task.error != null or notes_task.data == null:
+			continue
+		for row in notes_task.data:
+			var note := StickyNote.from_dict(row)
+			note.glb_position = Vector3(pos.get("x", 0.0), pos.get("y", 0.0), pos.get("z", 0.0))
+			result.append(note)
+	return result
+
+
 func remove_anchor(anchor_id: String) -> bool:
 	if not enabled:
 		return false

@@ -4,6 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://c1tj181ndel56" path="res://assets/hands/LeftHandHumanoid.gltf" id="2_left"]
 [ext_resource type="PackedScene" uid="uid://b4in1gm7dioen" path="res://assets/hands/RightHandHumanoid.gltf" id="3_right"]
 [ext_resource type="PackedScene" path="res://ui/ui_panel_3d.tscn" id="5_docspanel"]
+[ext_resource type="PackedScene" path="res://ui/keyboard/keyboard_3d.tscn" id="20_kb3d"]
 [ext_resource type="PackedScene" uid="uid://b_spacelabel3d" path="res://ui/space_label/space_label_3d.tscn" id="12_spacelabel"]
 [ext_resource type="Script" uid="uid://daxqqllngyuo0" path="res://scripts/GestureManager.gd" id="7_gesturemgr"]
 [ext_resource type="Script" path="res://scripts/VoiceManager.gd" id="13_voicemgr"]
@@ -55,6 +56,9 @@ show_when_tracked = true
 hand_tracker = &"/user/hand_tracker/right"
 
 [node name="UIPanel" parent="XROrigin3D" unique_id=1171545323 instance=ExtResource("5_docspanel")]
+
+[node name="KeyboardPanel3D" parent="XROrigin3D" unique_id=1171545340 instance=ExtResource("20_kb3d")]
+visible = false
 
 [node name="SpaceLabel" parent="XROrigin3D" unique_id=1171545328 instance=ExtResource("12_spacelabel")]
 
