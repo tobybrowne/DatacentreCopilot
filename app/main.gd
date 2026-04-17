@@ -46,6 +46,10 @@ var _anchor_target: Anchor = null
 var _pending_procedure: Procedure = null
 var _procedure_nav_pending := false  # true while waiting for nav signals to resolve a procedure start
 
+const CONTEXT_HOLD_TIME := 1.5
+var _context_menu_pending := false   # pinch held past threshold in NAV/PROCEDURE mode
+var _context_menu: ContextMenu3D = null
+
 # Progress ring — two separate mesh nodes so each has a plain, reliable material
 const RING_R_IN    := 0.04
 const RING_R_OUT   := 0.08
@@ -220,6 +224,13 @@ func _on_pinch_started(hand: String, position: Vector3) -> void:
 func _on_pinch_held(hand: String, position: Vector3, duration: float) -> void:
 	if hand == "right" and _app_mode == AppMode.ANCHOR_EDITING:
 		_update_progress_indicator(position, minf(duration / gesture_manager.hold_time, 1.0))
+	elif hand == "right" and (_app_mode == AppMode.NAVIGATING or _app_mode == AppMode.PROCEDURE):
+		if _context_menu == null:
+			_update_progress_indicator(position, minf(duration / CONTEXT_HOLD_TIME, 1.0))
+		if not _context_menu_pending and duration >= CONTEXT_HOLD_TIME:
+			_context_menu_pending = true
+			_clear_progress_indicator()
+			_open_context_menu(position)
 
 
 func _on_pinch_completed(hand: String, position: Vector3) -> void:
@@ -238,6 +249,36 @@ func _on_pinch_ended(hand: String) -> void:
 		_clear_progress_indicator()
 		_anchor_mode   = ""
 		_anchor_target = null
+		return
+
+	if hand == "right" and _context_menu_pending:
+		_context_menu_pending = false
+		return
+
+	if hand == "right" and (_app_mode == AppMode.NAVIGATING or _app_mode == AppMode.PROCEDURE):
+		_clear_progress_indicator()
+
+	if hand == "right" and _context_menu != null:
+		var idx := _context_menu.get_hovered()
+		if idx >= 0:
+			var lbl: String = _context_menu._items[idx]["label"]
+			_context_menu.item_selected.emit(idx, lbl)
+			print("main: context menu selected [", idx, "] ", lbl)
+		_close_context_menu()
+
+
+func _open_context_menu(pinch_pos: Vector3) -> void:
+	_close_context_menu()
+	var options: Array[String] = ["Option A", "Option B", "Option C"]
+	_context_menu = ContextMenu3D.new()
+	add_child(_context_menu)
+	_context_menu.open(pinch_pos, options, gesture_manager)
+
+
+func _close_context_menu() -> void:
+	if _context_menu:
+		_context_menu.close()
+		_context_menu = null
 
 
 func _on_home_gesture_held(_hand: String, position: Vector3, duration: float) -> void:
@@ -410,6 +451,8 @@ func _set_mode(new_mode: AppMode) -> void:
 		return
 	_anchor_mode = ""
 	_anchor_target = null
+	_context_menu_pending = false
+	_close_context_menu()
 	_clear_progress_indicator()
 	location_manager.clear_markers()
 	anchor_manager.clear_markers()
