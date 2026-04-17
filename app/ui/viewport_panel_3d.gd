@@ -30,6 +30,32 @@ extends Node3D
 @export var lazy_follow_distance: float = 0.8
 @export var lazy_follow_angle_degrees: float = 30.0
 @export_range(0.0, 1.0) var desktop_sim_alpha: float = 0.65
+@export var corner_radius_m: float = 0.02
+
+
+const _PANEL_SHADER_CODE := """
+shader_type spatial;
+render_mode unshaded, blend_mix, cull_disabled, depth_draw_opaque;
+
+uniform sampler2D viewport_tex : source_color, filter_linear;
+uniform vec4 tint : source_color = vec4(1.0);
+uniform vec2 panel_size = vec2(1.0, 1.0);
+uniform float corner_radius = 0.02;
+
+void fragment() {
+	vec2 p = (UV - 0.5) * panel_size;
+	vec2 half_size = panel_size * 0.5;
+	vec2 d = abs(p) - (half_size - corner_radius);
+	float outside = length(max(d, 0.0));
+	float inside = min(max(d.x, d.y), 0.0);
+	float dist = outside + inside - corner_radius;
+	float mask = 1.0 - smoothstep(-0.002, 0.002, dist);
+
+	vec4 col = texture(viewport_tex, UV) * tint;
+	ALBEDO = col.rgb;
+	ALPHA = col.a * mask;
+}
+"""
 
 
 var _camera: XRCamera3D
@@ -67,14 +93,18 @@ func _ready() -> void:
 
 	_desktop_sim = not XRMode.is_active()
 
-	var mat := StandardMaterial3D.new()
-	mat.albedo_texture = _viewport.get_texture()
-	mat.albedo_color = background_color
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var shader := Shader.new()
+	shader.code = _PANEL_SHADER_CODE
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	mat.set_shader_parameter("viewport_tex", _viewport.get_texture())
+	mat.set_shader_parameter("panel_size", quad_size)
+	mat.set_shader_parameter("corner_radius", corner_radius_m)
+	var tint := background_color
 	if _desktop_sim:
 		# Rough AR feel on desktop: semi-transparent panel (dark pixels remain visible, just muted).
-		mat.albedo_color = Color(background_color.r, background_color.g, background_color.b, background_color.a * desktop_sim_alpha)
+		tint.a *= desktop_sim_alpha
+	mat.set_shader_parameter("tint", tint)
 
 	_mesh_instance = MeshInstance3D.new()
 	_mesh_instance.mesh = quad
