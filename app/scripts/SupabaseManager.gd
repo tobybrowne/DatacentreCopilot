@@ -110,25 +110,34 @@ func upsert_space(space: Space) -> bool:
 		return false
 
 
-func insert_anchor(anchor: Anchor) -> bool:
+func insert_anchor(anchor: Anchor) -> Anchor:
 	if not enabled:
-		return false
+		return null
 	var row := {
 		"name": anchor.name,
-		"ml2_id": anchor.ml2_id,
-		"is_reference": anchor.is_reference,
+		"anchor_type": anchor.anchor_type,
 	}
+	if anchor.ml2_id != null:
+		row["ml2_id"] = anchor.ml2_id
 	if not anchor.space_id.is_empty():
 		row["space_id"] = anchor.space_id
+	if anchor.glb_position != null:
+		row["glb_position"] = {
+			"x": anchor.glb_position.x,
+			"y": anchor.glb_position.y,
+			"z": anchor.glb_position.z,
+		}
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("anchors").insert([row])
 	).completed
 
-	if task.error == null:
-		return true
+	if task.error == null and task.data != null and not task.data.is_empty():
+		anchor.id = task.data[0].get("id", "")
+		return anchor
 	else:
-		print("Error inserting anchor: ", task.error.message)
-		return false
+		if task.error != null:
+			print("Error inserting anchor: ", task.error.message)
+		return null
 
 func update_anchor_glb_position(anchor_id: String, glb_position: Vector3) -> bool:
 	if not enabled:

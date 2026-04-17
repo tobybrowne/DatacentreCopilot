@@ -169,7 +169,7 @@ func _on_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bool)
 		var new_anchor := Anchor.new()
 		new_anchor.ml2_id = uuid_str
 		new_anchor.name = str(_next_num)
-		new_anchor.is_reference = true
+		new_anchor.anchor_type = Anchor.TYPE_REFERENCE
 		new_anchor.space_id = location_manager.get_current_space_id() if location_manager else ""
 		_next_num += 1
 		_all_anchors[new_anchor.id] = new_anchor

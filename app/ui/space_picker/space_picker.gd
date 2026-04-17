@@ -60,6 +60,8 @@ func _on_localise_pressed(space: Space, btn: Button) -> void:
 	btn.text = "…"
 	if _mode == "navigate":
 		PanelRouter.request("start_nav_for_space", { "space": space })
+	elif _mode == "procedure":
+		PanelRouter.request("start_nav_for_procedure", { "space": space })
 	else:
 		PanelRouter.request("localise_space", { "space": space })
 

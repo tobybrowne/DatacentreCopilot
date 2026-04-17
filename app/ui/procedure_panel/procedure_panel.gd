@@ -46,7 +46,7 @@ func _add_row(procedure: Procedure) -> void:
 func _on_row_input(event: InputEvent, procedure: Procedure, row: PanelContainer) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		row.modulate = COLOR_ROW_PRESS
-		navigate_to.emit("step_viewer", { "procedure": procedure })
+		PanelRouter.request("start_procedure", { "procedure": procedure })
 
 
 func _format_time(iso: String) -> String:

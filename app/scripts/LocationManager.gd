@@ -195,6 +195,7 @@ func _attempt_relocalisation(target_space_id: String) -> void:
 
 
 func _on_localization_changed(state: int, _confidence: int, _error_flags: int) -> void:
+	print("LocationManager: _on_localization_changed state=", state, " confidence=", _confidence, " error_flags=", _error_flags)
 	match state:
 		1: # LOCALIZED — success
 			_relocalising = false
@@ -234,7 +235,9 @@ func _setup_space_for_calibration(space_id: String) -> void:
 	for anchor in _all_anchors.values():
 		if anchor.space_id != space_id:
 			continue
-		if anchor.is_reference:
+		if anchor.anchor_type == Anchor.TYPE_TEMP:
+			continue
+		elif anchor.anchor_type == Anchor.TYPE_REFERENCE:
 			if anchor.glb_position != null:
 				_ref_anchors[anchor.ml2_id] = anchor
 				var already_tracked: Node3D = _anchor_manager.tracked_nodes.get(anchor.ml2_id)
@@ -261,7 +264,7 @@ func _setup_space_for_calibration(space_id: String) -> void:
 func _ref_anchor_count(space_id: String) -> int:
 	var count := 0
 	for anchor in _all_anchors.values():
-		if anchor.space_id == space_id and anchor.is_reference and anchor.glb_position != null:
+		if anchor.space_id == space_id and anchor.anchor_type == Anchor.TYPE_REFERENCE and anchor.glb_position != null:
 			count += 1
 	return count
 
@@ -328,6 +331,27 @@ func get_current_space_id() -> String:
 	return ext.get_localization_map_uuid() if ext else ""
 
 
+## Create a transient content anchor at a given ML2 local-space position,
+## saving it to Supabase with the computed GLB position.
+## Returns the new anchor's Supabase UUID, or "" on failure.
+func create_content_anchor(local_pos: Vector3) -> String:
+	if not _calibrated:
+		push_warning("LocationManager: not calibrated — cannot create content anchor")
+		return ""
+	var glb_pos: Vector3 = _calibration.affine_inverse() * local_pos
+	var anchor := Anchor.new()
+	anchor.name         = "user_position"
+	anchor.anchor_type = Anchor.TYPE_TEMP
+	anchor.glb_position = glb_pos
+	anchor.space_id     = _current_space_id
+	var inserted: Anchor = await SupabaseManager.insert_anchor(anchor)
+	if not inserted or inserted.id.is_empty():
+		push_warning("LocationManager: failed to insert content anchor")
+		return ""
+	print("LocationManager: created content anchor ", inserted.id, " at glb ", glb_pos)
+	return inserted.id
+
+
 func _load_building_offsets(space_id: String) -> void:
 	if space_id.is_empty():
 		return
@@ -377,7 +401,7 @@ func _try_calibrate() -> void:
 		_place_virtual_marker(anchor, anchor.space_id)
 
 	for anchor in _all_anchors.values():
-		if anchor.space_id == _current_space_id or anchor.glb_position == null or anchor.is_reference:
+		if anchor.space_id == _current_space_id or anchor.glb_position == null or anchor.anchor_type != Anchor.TYPE_CONTENT:
 			continue
 		_place_virtual_marker(anchor, anchor.space_id)
 

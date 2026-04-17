@@ -4,8 +4,9 @@ extends BasePanel
 @onready var _counter: Label = $MarginContainer/VBoxContainer/StepCounter
 @onready var _text: Label = $MarginContainer/VBoxContainer/StepText
 
-var _steps: Array[String] = []
+var _steps: Array[Step] = []
 var _current: int = 0
+var _active_goto := false
 
 
 func init(data: Dictionary) -> void:
@@ -33,5 +34,20 @@ func _refresh() -> void:
 		_counter.text = ""
 		_text.text = ""
 		return
+
+	var step: Step = _steps[_current]
 	_counter.text = "Step %d / %d" % [_current + 1, _steps.size()]
-	_text.text = _steps[_current]
+	_text.text = step.text
+
+	if step.type == Step.TYPE_GOTO:
+		_active_goto = true
+		PanelRouter.request("goto_step", {"anchor_id": step.anchor_id})
+	elif _active_goto:
+		_active_goto = false
+		PanelRouter.request("goto_cleared", {})
+
+
+func _exit_tree() -> void:
+	if _active_goto:
+		_active_goto = false
+		PanelRouter.request("goto_cleared", {})

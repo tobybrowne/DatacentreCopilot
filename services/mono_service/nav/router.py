@@ -24,10 +24,13 @@ def _supabase() -> Client:
     return create_client(url, key)
 
 
-@router.post('/path-image')
-async def path_image(req: PathRequest) -> Response:
-    sb = _supabase()
+def _resolve_path(sb: Client, req: PathRequest) -> tuple[dict, dict, list[dict]]:
+    """Shared logic: fetch anchors, resolve navmesh, compute path.
 
+    Returns (pos_a, pos_b, waypoints) where pos_a/pos_b are world-space dicts
+    and waypoints is the list of {x,y,z} dicts from the pathfinder.
+    Raises HTTPException on any failure.
+    """
     anchors = (
         sb.table('anchors')
         .select('id,glb_position,space_id')
@@ -73,11 +76,29 @@ async def path_image(req: PathRequest) -> Response:
     except RuntimeError as e:
         raise HTTPException(500, f'Pathfinding failed: {e}')
 
-    if result['path']:
+    waypoints = result.get('path', [])
+
+    if waypoints:
         sb.table('routes').insert({
             'start_anchor_id': req.anchor_a_id,
             'end_anchor_id': req.anchor_b_id,
-            'waypoints': result['path'],
+            'waypoints': waypoints,
         }).execute()
 
+    return pos_a, pos_b, waypoints, result
+
+
+@router.post('/path')
+async def path(req: PathRequest) -> dict:
+    """Return computed waypoints as JSON for in-headset route display."""
+    sb = _supabase()
+    _pos_a, _pos_b, waypoints, _result = _resolve_path(sb, req)
+    return {'waypoints': waypoints}
+
+
+@router.post('/path-image')
+async def path_image(req: PathRequest) -> Response:
+    """Return a PNG visualisation of the computed path (debug/desktop tool)."""
+    sb = _supabase()
+    pos_a, pos_b, _waypoints, result = _resolve_path(sb, req)
     return Response(content=render_path_image(pos_a, pos_b, result), media_type='image/png')

@@ -1,6 +1,6 @@
 extends Node3D
 
-enum AppMode { NONE, ANCHOR_EDITING, NAVIGATING }
+enum AppMode { NONE, ANCHOR_EDITING, NAVIGATING, PROCEDURE }
 var _app_mode := AppMode.NONE
 
 var xr_interface: XRInterface
@@ -13,6 +13,7 @@ var xr_interface: XRInterface
 @onready var space_manager: SpaceManager = $XROrigin3D/SpaceManager
 @onready var voice_manager: VoiceManager = $XROrigin3D/VoiceManager
 @onready var world_mesh_manager: WorldMeshManager = $XROrigin3D/WorldMeshManager
+@onready var route_manager: RouteManager = $XROrigin3D/RouteManager
 
 const ANCHOR_DELETE_RADIUS := 0.10   # metres — how close to an anchor to target it for delete
 
@@ -42,6 +43,8 @@ var _spaces_synced := false
 
 var _anchor_mode   := ""   # "create" | "delete"
 var _anchor_target: Anchor = null
+var _pending_procedure: Procedure = null
+var _procedure_nav_pending := false  # true while waiting for nav signals to resolve a procedure start
 
 # Progress ring — two separate mesh nodes so each has a plain, reliable material
 const RING_R_IN    := 0.04
@@ -59,10 +62,15 @@ func _ready():
 	PanelRouter.push("start_menu")
 	PanelRouter.action_requested.connect(_on_panel_action)
 	location_manager.space_picker_needed.connect(func(spaces: Array[Space]):
-		PanelRouter.push("space_picker", { "spaces": spaces, "mode": "navigate" }))
+		var mode := "procedure" if _procedure_nav_pending else "navigate"
+		PanelRouter.push("space_picker", { "spaces": spaces, "mode": mode }))
 	location_manager.navigation_ready.connect(func(space_id: String):
-		_enter_nav_mode_for_id(space_id))
-	ui_panel.visible = true
+		if _procedure_nav_pending:
+			_procedure_nav_pending = false
+			_enter_procedure_mode_for_id(space_id)
+		else:
+			_enter_nav_mode_for_id(space_id))
+ui_panel.visible = true
 	gesture_manager.pinch_started.connect(_on_pinch_started)
 	gesture_manager.pinch_held.connect(_on_pinch_held)
 	gesture_manager.pinch_completed.connect(_on_pinch_completed)
@@ -367,6 +375,14 @@ func _on_panel_action(action: String, data: Dictionary) -> void:
 			location_manager.request_navigation(data.get("building_id", ""))
 		"update_space":
 			pass  # TODO
+		"start_procedure":
+			_start_procedure(data.get("procedure") as Procedure)
+		"start_nav_for_procedure":
+			_enter_procedure_mode(data.get("space") as Space)
+		"goto_step":
+			_on_goto_step(data.get("anchor_id", ""))
+		"goto_cleared":
+			route_manager.clear_goto_route()
 
 
 func _ensure_space_local(space: Space) -> bool:
@@ -396,8 +412,9 @@ func _set_mode(new_mode: AppMode) -> void:
 	_clear_progress_indicator()
 	location_manager.clear_markers()
 	anchor_manager.clear_markers()
+	route_manager.clear_goto_route()
 	_app_mode = new_mode
-	ui_panel.visible = new_mode == AppMode.NONE
+	ui_panel.visible = new_mode == AppMode.NONE or new_mode == AppMode.PROCEDURE
 	print("main: mode → ", AppMode.keys()[new_mode])
 
 
@@ -415,6 +432,54 @@ func _enter_nav_mode_for_id(space_id: String) -> void:
 	print("main: entering nav mode for space ", space_id, " (coarse detected)")
 	_set_mode(AppMode.NAVIGATING)
 	location_manager.calibrate_to_space(space_id)
+
+
+func _enter_procedure_mode(space: Space) -> void:
+	if not space:
+		return
+	_procedure_nav_pending = false
+	print("main: entering procedure mode for '", space.name, "' (", space.id, ")")
+	if not await _ensure_space_local(space):
+		return
+	_set_mode(AppMode.PROCEDURE)
+	print("PROCEDURE: CALIBRATING TO SPACE: ", space.id)
+	location_manager.calibrate_to_space(space.id)
+	if _pending_procedure:
+		PanelRouter.push("step_viewer", { "procedure": _pending_procedure })
+		_pending_procedure = null
+
+
+func _enter_procedure_mode_for_id(space_id: String) -> void:
+	print("main: entering procedure mode for space ", space_id, " (coarse detected)")
+	_set_mode(AppMode.PROCEDURE)
+	location_manager.calibrate_to_space(space_id)
+	if _pending_procedure:
+		PanelRouter.push("step_viewer", { "procedure": _pending_procedure })
+		_pending_procedure = null
+
+
+func _start_procedure(procedure: Procedure) -> void:
+	if not procedure:
+		return
+	if location_manager._calibrated:
+		_set_mode(AppMode.PROCEDURE)
+		PanelRouter.push("step_viewer", { "procedure": procedure })
+		return
+	_pending_procedure = procedure
+	_procedure_nav_pending = true
+	location_manager.request_navigation(procedure.building_id)
+
+
+func _on_goto_step(dest_anchor_id: String) -> void:
+	if dest_anchor_id.is_empty():
+		push_warning("main: goto_step has no anchor_id")
+		return
+	var camera := $XROrigin3D/XRCamera3D as Camera3D
+	var start_id: String = await location_manager.create_content_anchor(camera.global_position)
+	if start_id.is_empty():
+		push_warning("main: could not create start anchor for GOTO route")
+		return
+	await route_manager.fetch_and_display_goto(start_id, dest_anchor_id, location_manager)
 
 
 func _enter_anchor_editing(space: Space) -> void:
