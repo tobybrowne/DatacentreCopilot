@@ -48,10 +48,12 @@ var _coarse_label: Label
 var _active_label: Label
 
 var _marker_nodes: Array[Node3D] = []
+var _space_manager: SpaceManager
 
 
 func _ready() -> void:
 	_anchor_manager = get_parent().get_node_or_null("AnchorManager")
+	_space_manager  = get_parent().get_node_or_null("SpaceManager")
 	if not _anchor_manager:
 		push_warning("LocationManager: AnchorManager not found")
 		return
@@ -267,6 +269,21 @@ func _ref_anchor_count(space_id: String) -> int:
 		if anchor.space_id == space_id and anchor.anchor_type == Anchor.TYPE_REFERENCE and anchor.glb_position != null:
 			count += 1
 	return count
+
+
+## Ensure the ML2 has the localization map downloaded for the given space.
+func ensure_space_local(space: Space) -> bool:
+	if not _space_manager:
+		push_warning("LocationManager: no SpaceManager — cannot import space")
+		return false
+	var local_ids := _space_manager.get_all_local_spaces().map(func(s: Space): return s.id)
+	if space.id in local_ids:
+		return true
+	print("LocationManager: space not local — importing ", space.id)
+	var ok := await _space_manager.import_space(space)
+	if not ok:
+		push_warning("LocationManager: import failed for space ", space.id)
+	return ok
 
 
 ## Localise into a space without running Kabsch calibration.

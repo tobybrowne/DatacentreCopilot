@@ -15,16 +15,34 @@ const ROUTE_Y_OFFSET := 0.08  # float above floor
 
 # The single on-demand route shown for the active GOTO step.
 var _goto_route_node: Node3D = null
+var _location_manager: LocationManager
 
-
-# ── Stored routes (shown after calibration) ───────────────────────────────────
 
 func _ready() -> void:
-	pass
+	_location_manager = get_parent().get_node_or_null("LocationManager")
 
 
 
 # ── On-demand GOTO route ──────────────────────────────────────────────────────
+
+## Entry point called by main — creates a temp anchor at the camera position then fetches the route.
+func handle_goto_step(dest_anchor_id: String) -> void:
+	if dest_anchor_id.is_empty():
+		push_warning("RouteManager: goto_step has no anchor_id")
+		return
+	if not _location_manager:
+		push_warning("RouteManager: no LocationManager")
+		return
+	var camera := get_viewport().get_camera_3d()
+	if not camera:
+		push_warning("RouteManager: no camera")
+		return
+	var start_id := await _location_manager.create_content_anchor(camera.global_position)
+	if start_id.is_empty():
+		push_warning("RouteManager: could not create start anchor")
+		return
+	await fetch_and_display_goto(start_id, dest_anchor_id, _location_manager)
+
 
 ## Call the nav API to compute a path, then display it as the active GOTO route.
 ## anchor_a_id — Supabase UUID of the start anchor (created at user's position)
