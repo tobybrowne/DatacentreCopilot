@@ -44,17 +44,17 @@ enabled=PackedStringArray("res://addons/cv_camera/plugin.cfg", "res://addons/god
 [rendering]
 
 rendering_device/driver.windows="d3d12"
-renderer/rendering_method="mobile"
+renderer/rendering_method="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 
 [xr]
 
-openxr/enabled=true
 openxr/reference_space=1
 openxr/environment_blend_mode=1
 openxr/extensions/hand_tracking=true
 openxr/extensions/hand_interaction_profile=true
 shaders/enabled=true
+openxr/enabled.android=true
 openxr/extensions/magic_leap/spatial_anchors=true
 openxr/extensions/magic_leap/localization_map=true
 openxr/extensions/magic_leap/plane_detection=true

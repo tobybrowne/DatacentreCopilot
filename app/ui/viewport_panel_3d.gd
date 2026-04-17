@@ -29,15 +29,17 @@ extends Node3D
 @export var lazy_follow: bool = false
 @export var lazy_follow_distance: float = 0.8
 @export var lazy_follow_angle_degrees: float = 30.0
+@export_range(0.0, 1.0) var desktop_sim_alpha: float = 0.65
 
 
 var _camera: XRCamera3D
 var _viewport: SubViewport
 var _mesh_instance: MeshInstance3D
-var _back_mesh: MeshInstance3D
 var _panel: Control
 var _pressing := false
 var _ray_pressing := {"left": false, "right": false}
+var _mouse_pressing := false
+var _desktop_sim := false
 var _placed := false
 var _stable_frames := 0
 var _last_cam_pos := Vector3.ZERO
@@ -63,32 +65,24 @@ func _ready() -> void:
 	var quad := QuadMesh.new()
 	quad.size = quad_size
 
+	_desktop_sim = not XRMode.is_active()
+
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = _viewport.get_texture()
 	mat.albedo_color = background_color
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	if _desktop_sim:
+		# Rough AR feel on desktop: semi-transparent panel (dark pixels remain visible, just muted).
+		mat.albedo_color = Color(background_color.r, background_color.g, background_color.b, background_color.a * desktop_sim_alpha)
 
 	_mesh_instance = MeshInstance3D.new()
 	_mesh_instance.mesh = quad
 	_mesh_instance.material_override = mat
 	add_child(_mesh_instance)
 
-	# Back face — solid colour so the panel isn't invisible from behind.
-	var back_mat := StandardMaterial3D.new()
-	back_mat.albedo_color = background_color
-	back_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	back_mat.cull_mode = BaseMaterial3D.CULL_FRONT
-
-	_back_mesh = MeshInstance3D.new()
-	_back_mesh.mesh = quad
-	_back_mesh.material_override = back_mat
-	_back_mesh.position = Vector3(0.0, 0.0, -0.001)
-	add_child(_back_mesh)
-
 	# Hide until first placement so the panel isn't visible at its default scene position.
 	_mesh_instance.visible = false
-	_back_mesh.visible = false
 
 
 # Called when a new panel is loaded via the router
@@ -175,7 +169,6 @@ func _process(delta: float) -> void:
 			rotation.x = deg_to_rad(tilt_degrees)
 			_placed = true
 			_mesh_instance.visible = true
-			_back_mesh.visible = true
 		elif not lazy_follow:
 			var t: float = clamp(follow_speed * delta, 0.0, 1.0)
 			global_position = global_position.lerp(target_pos, t)
@@ -195,6 +188,8 @@ func _process(delta: float) -> void:
 		_check_poke()
 	if ray_enabled:
 		_check_ray()
+		if _desktop_sim:
+			_check_mouse_ray()
 
 
 const PLANE_CLEARANCE := 0.15
@@ -265,6 +260,44 @@ func _check_poke() -> void:
 		touch_up.pressed = false
 		touch_up.index = 0
 		_viewport.push_input(touch_up)
+
+
+func _check_mouse_ray() -> void:
+	if not _camera:
+		return
+	var origin := _camera.global_position
+	var dir := -_camera.global_transform.basis.z
+	var hw := _ray_world_hit(origin, dir)
+	var uv := _world_hit_to_panel_uv(hw) if hw != Vector3.INF else Vector2(-1.0, -1.0)
+
+	if uv.x < 0.0:
+		if _mouse_pressing:
+			_mouse_pressing = false
+			var release := InputEventMouseButton.new()
+			release.button_index = MOUSE_BUTTON_LEFT
+			release.pressed = false
+			_viewport.push_input(release)
+		return
+
+	var motion := InputEventMouseMotion.new()
+	motion.position = uv
+	_viewport.push_input(motion)
+
+	var pressed := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	if pressed and not _mouse_pressing:
+		_mouse_pressing = true
+		var press := InputEventMouseButton.new()
+		press.position = uv
+		press.button_index = MOUSE_BUTTON_LEFT
+		press.pressed = true
+		_viewport.push_input(press)
+	elif not pressed and _mouse_pressing:
+		_mouse_pressing = false
+		var release := InputEventMouseButton.new()
+		release.position = uv
+		release.button_index = MOUSE_BUTTON_LEFT
+		release.pressed = false
+		_viewport.push_input(release)
 
 
 func _check_ray() -> void:

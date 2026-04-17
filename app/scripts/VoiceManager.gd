@@ -16,11 +16,14 @@ signal stop_recording
 signal go_home
 signal voice_error(error: String)
 
-var _voice: MLVoiceIntentManager = null
+var _voice: Node = null
 
 
 func _ready() -> void:
-	_voice = MLVoiceIntentManager.new()
+	if not ClassDB.class_exists("MLVoiceIntentManager"):
+		push_warning("VoiceManager: ML2 voice API not available (desktop/simulator)")
+		return
+	_voice = ClassDB.instantiate("MLVoiceIntentManager")
 	add_child(_voice)
 
 	if not _voice.is_available():

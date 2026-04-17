@@ -1,7 +1,5 @@
 extends Node3D
 
-var xr_interface: XRInterface
-
 @onready var ui_panel: ViewportPanel3D = $XROrigin3D/UIPanel
 @onready var keyboard_panel: ViewportPanel3D = $XROrigin3D/KeyboardPanel3D
 @onready var gesture_manager: GestureManager = $XROrigin3D/GestureManager
@@ -18,6 +16,7 @@ var _gesture_replayer: GestureReplayer = null
 
 
 func _ready() -> void:
+	print("[main] _ready start")
 	PanelRouter.push("start_menu")
 	KeyboardManager.register(keyboard_panel)
 	NoteManager.setup(self, location_manager)
@@ -60,12 +59,16 @@ func _ready() -> void:
 	if OS.get_name() == "Android":
 		OS.request_permissions()
 
-	xr_interface = XRServer.find_interface("OpenXR")
-	if xr_interface and xr_interface.is_initialized():
+	if XRMode.is_active():
 		print("OpenXR initialized successfully")
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		get_viewport().transparent_bg = true
 		get_viewport().use_xr = true
+		# AR mode: swap background to camera feed for passthrough.
+		CameraServer.set_monitoring_feeds(true)
+		var world_env := $WorldEnvironment as WorldEnvironment
+		if world_env and world_env.environment:
+			world_env.environment.background_mode = Environment.BG_CAMERA_FEED
 
 		var hand_mat := StandardMaterial3D.new()
 		hand_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -79,6 +82,19 @@ func _ready() -> void:
 				mesh.material_override = hand_mat
 	else:
 		print("OpenXR not initialized, please check if your headset is connected")
+		# Desktop sim environment so there's something visible to test against.
+		var sim_scene: PackedScene = load("res://assets/sponza/Sponza.gltf")
+		if sim_scene:
+			var sim_root: Node = sim_scene.instantiate()
+			add_child(sim_root)
+			_generate_sim_collision(sim_root)
+
+
+func _generate_sim_collision(node: Node) -> void:
+	if node is MeshInstance3D:
+		(node as MeshInstance3D).create_trimesh_collision()
+	for child in node.get_children():
+		_generate_sim_collision(child)
 
 
 # ── Gesture recording (debug, voice-triggered) ────────────────────────────────
