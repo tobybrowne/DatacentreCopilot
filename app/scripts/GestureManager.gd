@@ -23,9 +23,10 @@ signal pinch_ended(hand: String)
 signal pinch_held(hand: String, position: Vector3, duration: float)
 signal pinch_completed(hand: String, position: Vector3)
 
-# Home gesture: thumb + middle finger pinch (avoids conflict with index-pinch UI interaction)
+# Home gesture: thumbs up (thumb tip above wrist, all fingers curled)
 signal home_gesture_held(hand: String, position: Vector3, duration: float)
 signal home_gesture_completed(hand: String)
+signal home_gesture_ended(hand: String)
 
 const _TRACKERS := {
 	"left": "/user/hand_tracker/left",
@@ -236,24 +237,38 @@ func _end(hand: String) -> void:
 
 
 func _check_home_gesture(hand: String, delta: float) -> void:
-	# Thumb tip (joint 5) + middle tip (joint 15)
+	# Thumbs up: thumb tip (5) above wrist (1), all fingers curled (tips near proximal knuckles)
+	# Joints: index tip=10 proximal=7, middle tip=15 proximal=12, ring tip=20 proximal=17, pinky tip=25 proximal=22
+	const THUMB_UP_THRESHOLD  := 0.04  # thumb tip must be this far above wrist in Y
+	const CURL_THRESHOLD      := 0.05  # fingertip-to-proximal distance for a curled finger
+
 	var tracker := XRServer.get_tracker(_TRACKERS[hand])
 	if not tracker or not tracker is XRHandTracker:
 		_end_home(hand)
 		return
 	var ht := tracker as XRHandTracker
-	if not ht.has_tracking_data or not (ht.get_hand_joint_flags(5) & 4) or not (ht.get_hand_joint_flags(15) & 4):
+
+	var required_joints := [1, 5, 7, 10, 12, 15, 17, 20, 22, 25]
+	for j in required_joints:
+		if not (ht.get_hand_joint_flags(j) & 4):
+			_end_home(hand)
+			return
+
+	var wrist_y     := ht.get_hand_joint_transform(1).origin.y
+	var thumb_tip_y := ht.get_hand_joint_transform(5).origin.y
+	if thumb_tip_y - wrist_y < THUMB_UP_THRESHOLD:
 		_end_home(hand)
 		return
+
+	var finger_pairs := [[10, 7], [15, 12], [20, 17], [25, 22]]
+	for pair in finger_pairs:
+		var tip     := ht.get_hand_joint_transform(pair[0]).origin
+		var proximal := ht.get_hand_joint_transform(pair[1]).origin
+		if tip.distance_to(proximal) > CURL_THRESHOLD:
+			_end_home(hand)
+			return
 
 	var thumb_pos := ht.get_hand_joint_transform(5).origin
-	var middle_pos := ht.get_hand_joint_transform(15).origin
-
-	if thumb_pos.distance_to(middle_pos) >= pinch_threshold:
-		_end_home(hand)
-		return
-
-	var pinch_pos := (thumb_pos + middle_pos) * 0.5
 
 	if not _home_pinching[hand]:
 		_home_pinching[hand] = true
@@ -262,7 +277,7 @@ func _check_home_gesture(hand: String, delta: float) -> void:
 
 	if not _home_fired[hand]:
 		_home_hold_time[hand] += delta
-		home_gesture_held.emit(hand, pinch_pos, _home_hold_time[hand])
+		home_gesture_held.emit(hand, thumb_pos, _home_hold_time[hand])
 		if _home_hold_time[hand] >= hold_time:
 			_home_fired[hand] = true
 			home_gesture_completed.emit(hand)
@@ -273,6 +288,7 @@ func _end_home(hand: String) -> void:
 		_home_pinching[hand] = false
 		_home_hold_time[hand] = 0.0
 		_home_fired[hand] = false
+		home_gesture_ended.emit(hand)
 
 
 # ---- Hand pose recording ----

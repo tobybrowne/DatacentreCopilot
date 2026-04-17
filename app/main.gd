@@ -70,13 +70,14 @@ func _ready():
 			_enter_procedure_mode_for_id(space_id)
 		else:
 			_enter_nav_mode_for_id(space_id))
-ui_panel.visible = true
+	ui_panel.visible = true
 	gesture_manager.pinch_started.connect(_on_pinch_started)
 	gesture_manager.pinch_held.connect(_on_pinch_held)
 	gesture_manager.pinch_completed.connect(_on_pinch_completed)
 	gesture_manager.pinch_ended.connect(_on_pinch_ended)
 	gesture_manager.home_gesture_held.connect(_on_home_gesture_held)
 	gesture_manager.home_gesture_completed.connect(_on_home_gesture_completed)
+	gesture_manager.home_gesture_ended.connect(func(_hand: String): _clear_progress_indicator())
 	voice_manager.next_step.connect(func():
 		var sv := ui_panel.get_panel() as StepViewer
 		if sv: sv.next_step())
