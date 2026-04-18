@@ -10,6 +10,10 @@ extends Node3D
 @export var use_router: bool = false
 @export var panel_scene: PackedScene
 
+# When true, the panel stays at its world position and only faces the camera.
+# Used for menus pinned to a pinch point.
+@export var world_anchored: bool = false
+
 @export var follow_speed: float = 2.0
 @export var locked_to_head: bool = false
 @export var distance: float = 1.2
@@ -35,6 +39,10 @@ extends Node3D
 @export var environment_clearance: float = 0.2
 @export_range(0.0, 1.0) var desktop_sim_alpha: float = 0.65
 @export var corner_radius_m: float = 0.02
+# Local offset applied to the quad mesh (relative to this Node3D's origin).
+# Lets scenes add world-anchored decorations at the root (e.g. a pinch dot)
+# with the visible panel hanging below.
+@export var mesh_offset: Vector3 = Vector3.ZERO
 
 
 const _PANEL_SHADER_CODE := """
@@ -116,10 +124,16 @@ func _ready() -> void:
 	_mesh_instance = MeshInstance3D.new()
 	_mesh_instance.mesh = quad
 	_mesh_instance.material_override = mat
+	_mesh_instance.position = mesh_offset
 	add_child(_mesh_instance)
 
-	# Hide until first placement so the panel isn't visible at its default scene position.
-	_mesh_instance.visible = false
+	if world_anchored:
+		# World-anchored panels are positioned by the caller — show immediately.
+		_placed = true
+		_mesh_instance.visible = true
+	else:
+		# Hide until first placement so the panel isn't visible at its default scene position.
+		_mesh_instance.visible = false
 
 
 # Called when a new panel is loaded via the router
@@ -153,7 +167,12 @@ func _process(delta: float) -> void:
 	if not _camera or not visible:
 		return
 
-	if locked_to_head:
+	if world_anchored:
+		# Face camera each frame — look_at points -Z toward camera, quads face +Z so flip 180°
+		if global_position.distance_to(_camera.global_position) > 0.01:
+			look_at(_camera.global_position, Vector3.UP)
+			rotate_object_local(Vector3.UP, PI)
+	elif locked_to_head:
 		# uses the cameras projection matrix (given by ML2 at runtime)
 		# to positions things relative to the users FOV (great for HUD stuff)
 		var cam := _camera.global_transform

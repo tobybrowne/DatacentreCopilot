@@ -43,8 +43,9 @@ func on_pinch_ended(_hand: String) -> void:
 
 const _CONTEXT_HOLD_TIME := 1.5
 const _CONTEXT_COLOR     := Color(0.2, 0.8, 1.0)
+const _CONTEXT_MENU_SCENE := preload("res://ui/context_menu/context_menu_3d.tscn")
 
-var _context_menu: ContextMenu3D = null
+var _context_menu: ViewportPanel3D = null
 var _context_pending := false
 var _context_world_pos := Vector3.ZERO
 
@@ -58,17 +59,16 @@ func _context_update_hold(position: Vector3, duration: float) -> void:
 		_context_open(position)
 
 
-## Returns true if the pinch end was consumed by the context menu.
+## Returns true if the pinch end was consumed by the context menu. The first
+## release after opening is swallowed (pending); subsequent releases that miss
+## a button dismiss the menu. Button taps fire item_selected directly via the
+## same ray → mouse-event path as every other panel.
 func _context_handle_end() -> bool:
 	progress_indicator.clear()
 	if _context_pending:
 		_context_pending = false
 		return true
 	if _context_menu != null:
-		var idx := _context_menu.get_hovered()
-		if idx >= 0:
-			var lbl: String = _context_menu._items[idx]["label"]
-			_context_menu.item_selected.emit(idx, lbl)
 		_context_close()
 		return true
 	return false
@@ -77,15 +77,18 @@ func _context_handle_end() -> bool:
 func _context_open(world_pos: Vector3) -> void:
 	_context_world_pos = world_pos
 	_context_close()
-	_context_menu = ContextMenu3D.new()
-	app.add_child(_context_menu)
-	_context_menu.open(world_pos, ["Add Sticky Note"], gesture_manager)
-	_context_menu.item_selected.connect(_on_context_item_selected)
+	_context_menu = _CONTEXT_MENU_SCENE.instantiate()
+	gesture_manager.get_parent().add_child(_context_menu)
+	_context_menu.global_position = world_pos
+	var inner := _context_menu.get_panel() as ContextMenu
+	if inner:
+		inner.item_selected.connect(_on_context_item_selected)
 
 
 func _on_context_item_selected(_idx: int, label: String) -> void:
+	var pos := _context_world_pos
+	_context_close()
 	if label == "Add Sticky Note":
-		var pos := _context_world_pos
 		KeyboardManager.open("Add a note", "", func(text: String) -> void:
 			if not text.is_empty():
 				NoteManager.create_note_at(pos, text)
@@ -94,5 +97,5 @@ func _on_context_item_selected(_idx: int, label: String) -> void:
 
 func _context_close() -> void:
 	if _context_menu:
-		_context_menu.close()
+		_context_menu.queue_free()
 		_context_menu = null

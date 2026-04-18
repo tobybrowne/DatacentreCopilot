@@ -1,0 +1,44 @@
+[gd_scene format=3 uid="uid://b_ctxmenu3d"]
+
+[ext_resource type="Script" path="res://ui/viewport_panel_3d.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://b_ctxmenu" path="res://ui/context_menu/context_menu.tscn" id="2_panel"]
+
+[sub_resource type="SphereMesh" id="SphereMesh_dot"]
+radius = 0.006
+height = 0.012
+radial_segments = 12
+rings = 6
+
+[sub_resource type="StandardMaterial3D" id="Mat_dot"]
+shading_mode = 0
+albedo_color = Color(0.4, 0.85, 1, 1)
+no_depth_test = true
+
+[sub_resource type="BoxMesh" id="BoxMesh_tether"]
+size = Vector3(0.001, 0.044, 0.001)
+
+[sub_resource type="StandardMaterial3D" id="Mat_tether"]
+shading_mode = 0
+transparency = 1
+albedo_color = Color(0.4, 0.85, 1, 0.6)
+no_depth_test = true
+
+[node name="ContextMenu3D" type="Node3D"]
+script = ExtResource("1_script")
+panel_scene = ExtResource("2_panel")
+world_anchored = true
+touchable = false
+ray_enabled = true
+viewport_size = Vector2i(260, 64)
+quad_size = Vector2(0.26, 0.064)
+corner_radius_m = 0.01
+mesh_offset = Vector3(0, -0.082, 0)
+
+[node name="PinchDot" type="MeshInstance3D" parent="."]
+mesh = SubResource("SphereMesh_dot")
+material_override = SubResource("Mat_dot")
+
+[node name="Tether" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.028, 0)
+mesh = SubResource("BoxMesh_tether")
+material_override = SubResource("Mat_tether")
