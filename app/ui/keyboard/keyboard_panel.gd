@@ -1,5 +1,5 @@
 class_name KeyboardPanel
-extends Control
+extends BasePanel
 
 signal submitted(text: String)
 signal cancelled

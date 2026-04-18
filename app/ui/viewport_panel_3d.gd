@@ -28,7 +28,9 @@ extends Node3D
 @export var tilt_degrees: float = 0.0
 @export var lazy_follow: bool = false
 @export var lazy_follow_distance: float = 0.8
-@export var lazy_follow_angle_degrees: float = 30.0
+@export var lazy_follow_angle_degrees: float = 110.0
+@export var lazy_follow_face_angle_degrees: float = 15.0
+@export var lazy_follow_height_angle_degrees: float = 8.0
 @export_range(0.0, 1.0) var desktop_sim_alpha: float = 0.65
 @export var corner_radius_m: float = 0.02
 
@@ -69,6 +71,9 @@ var _desktop_sim := false
 var _placed := false
 var _stable_frames := 0
 var _last_cam_pos := Vector3.ZERO
+var _sliding := false
+var _slide_target_pos := Vector3.ZERO
+var _slide_target_y := 0.0
 
 
 func _ready() -> void:
@@ -204,15 +209,47 @@ func _process(delta: float) -> void:
 			global_position = global_position.lerp(target_pos, t)
 			rotation.y = lerp_angle(rotation.y, target_y, t)
 			rotation.x = deg_to_rad(tilt_degrees)
-		elif cam_pos.distance_to(global_position) > distance + lazy_follow_distance:
-			# Position threshold exceeded — snap to new position and rotation.
-			global_position = target_pos
-			rotation.y = target_y
-			rotation.x = deg_to_rad(tilt_degrees)
-		elif abs(wrapf(target_y - rotation.y, -PI, PI)) > deg_to_rad(lazy_follow_angle_degrees):
-			# Angle threshold exceeded — rotate to face user without moving.
-			rotation.y = target_y
-			rotation.x = deg_to_rad(tilt_degrees)
+		else:
+			var to_panel := global_position - cam_pos
+			to_panel.y = 0.0
+			var dist_to_panel := to_panel.length()
+			if dist_to_panel > distance + lazy_follow_distance or dist_to_panel < distance * 0.75:
+				# Too far or too close — slide to optimal spot in front.
+				_slide_target_pos = target_pos
+				_slide_target_y = target_y
+				_sliding = true
+			elif dist_to_panel > 0.01:
+				var to_panel_dir := to_panel / dist_to_panel
+				var view_dot: float = clamp(forward.dot(to_panel_dir), -1.0, 1.0)
+				var view_angle: float = acos(view_dot)
+				var face_y: float = atan2(cam_pos.x - global_position.x, cam_pos.z - global_position.z)
+				var target_height: float = cam_pos.y + height_offset
+				var height_angle: float = abs(atan2(global_position.y - target_height, dist_to_panel))
+				if view_angle > deg_to_rad(lazy_follow_angle_degrees):
+					# Look-away — full reposition into view.
+					_slide_target_pos = target_pos
+					_slide_target_y = target_y
+					_sliding = true
+				elif abs(wrapf(face_y - rotation.y, -PI, PI)) > deg_to_rad(lazy_follow_face_angle_degrees):
+					# Face-tracking — rotate in place to point at the user's position.
+					_slide_target_pos = global_position
+					_slide_target_y = face_y
+					_sliding = true
+				elif height_angle > deg_to_rad(lazy_follow_height_angle_degrees):
+					# Height tracking — slide Y only to follow the user up/down.
+					_slide_target_pos = Vector3(global_position.x, target_height, global_position.z)
+					_slide_target_y = rotation.y
+					_sliding = true
+
+			if _sliding:
+				var t: float = clamp(follow_speed * delta, 0.0, 1.0)
+				global_position = global_position.lerp(_slide_target_pos, t)
+				rotation.y = lerp_angle(rotation.y, _slide_target_y, t)
+				rotation.x = deg_to_rad(tilt_degrees)
+				if global_position.distance_to(_slide_target_pos) < 0.005 and abs(wrapf(_slide_target_y - rotation.y, -PI, PI)) < 0.01:
+					global_position = _slide_target_pos
+					rotation.y = _slide_target_y
+					_sliding = false
 
 	if touchable:
 		_check_poke()

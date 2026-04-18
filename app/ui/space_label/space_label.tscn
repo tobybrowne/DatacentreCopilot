@@ -1,6 +1,9 @@
 [gd_scene format=3 uid="uid://b_spacelabel"]
 
+[ext_resource type="Script" path="res://ui/space_label/space_label.gd" id="1_script"]
+
 [node name="SpaceLabel" type="Control"]
+script = ExtResource("1_script")
 layout_mode = 0
 offset_right = 400.0
 offset_bottom = 120.0
@@ -10,7 +13,6 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-color = Color(0.04, 0.04, 0.14, 0.85)
 
 [node name="MarginContainer" type="MarginContainer" parent="."]
 layout_mode = 1
