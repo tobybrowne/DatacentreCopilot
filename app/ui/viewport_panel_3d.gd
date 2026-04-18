@@ -480,7 +480,11 @@ func _world_hit_to_panel_uv(hit_world: Vector3) -> Vector2:
 		return Vector2(-1.0, -1.0)
 	var uv_x := (local.x + half_w) / quad_size.x
 	var uv_y := 1.0 - (local.y + half_h) / quad_size.y
-	return Vector2(uv_x * _viewport.size.x, uv_y * _viewport.size.y)
+	var px := uv_x * _viewport.size.x
+	var py := uv_y * _viewport.size.y
+	if not _hit_inside_content(px, py):
+		return Vector2(-1.0, -1.0)
+	return Vector2(px, py)
 
 
 func _project_to_panel(tip_world: Vector3) -> Vector2:
@@ -496,4 +500,19 @@ func _project_to_panel(tip_world: Vector3) -> Vector2:
 
 	var uv_x := (local.x + half_w) / quad_size.x
 	var uv_y := 1.0 - (local.y + half_h) / quad_size.y
-	return Vector2(uv_x * _viewport.size.x, uv_y * _viewport.size.y)
+	var px := uv_x * _viewport.size.x
+	var py := uv_y * _viewport.size.y
+	if not _hit_inside_content(px, py):
+		return Vector2(-1.0, -1.0)
+	return Vector2(px, py)
+
+
+# Only accept hits within the current Control's rect, so transparent regions
+# of the SubViewport (common when the Control is smaller than the viewport)
+# don't block rays or poke input.
+func _hit_inside_content(px: float, py: float) -> bool:
+	if not _panel:
+		return false
+	var r := _panel.get_rect()
+	return px >= r.position.x and py >= r.position.y \
+		and px <= r.position.x + r.size.x and py <= r.position.y + r.size.y
