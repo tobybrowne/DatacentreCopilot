@@ -36,6 +36,12 @@ const _TRACKERS := {
 var _pinching := {"left": false, "right": false}
 var _hold_time := {"left": 0.0, "right": 0.0}
 var _fired := {"left": false, "right": false}
+var _pinch_suppressed := {"left": false, "right": false}
+
+# Set each frame by UI surfaces (e.g. ViewportPanel3D) when their ray hits.
+# Consumed by pinch detection below to suppress signals so pinches on panels
+# don't also trigger context menus / step nav / anchor gestures.
+var _ui_claimed := {"left": false, "right": false}
 
 var _home_pinching := {"left": false, "right": false}
 var _home_hold_time := {"left": 0.0, "right": 0.0}
@@ -97,9 +103,14 @@ func _process(delta: float) -> void:
 	for hand in _TRACKERS:
 		_hit_points[hand] = Vector3.INF
 
+	# Pinch detection reads _ui_claimed from last frame (panels run after us),
+	# so check pinches first, then reset for this frame's panel updates.
 	for hand in _TRACKERS:
 		_check_hand(hand, delta)
 		_check_home_gesture(hand, delta)
+
+	for hand in _TRACKERS:
+		_ui_claimed[hand] = false
 
 	_update_ray(delta)
 
@@ -110,6 +121,12 @@ func _process(delta: float) -> void:
 # Called by consumers (e.g. ViewportPanel3D) when their intersection test hits
 func set_hit_point(hand: String, world_pos: Vector3) -> void:
 	_hit_points[hand] = world_pos
+
+
+# Called each frame by UI panels when their ray is hovering them. Suppresses
+# pinch signals starting this frame so panel clicks don't double as gestures.
+func claim_ui(hand: String) -> void:
+	_ui_claimed[hand] = true
 
 
 func is_ray_pinching(hand: String) -> bool:
@@ -218,7 +235,12 @@ func _check_hand(hand: String, delta: float) -> void:
 		_pinching[hand] = true
 		_hold_time[hand] = 0.0
 		_fired[hand] = false
-		pinch_started.emit(hand, pinch_pos)
+		_pinch_suppressed[hand] = _ui_claimed[hand]
+		if not _pinch_suppressed[hand]:
+			pinch_started.emit(hand, pinch_pos)
+
+	if _pinch_suppressed[hand]:
+		return
 
 	if not _fired[hand]:
 		_hold_time[hand] += delta
@@ -233,7 +255,10 @@ func _end(hand: String) -> void:
 		_pinching[hand] = false
 		_hold_time[hand] = 0.0
 		_fired[hand] = false
-		pinch_ended.emit(hand)
+		var was_suppressed: bool = _pinch_suppressed[hand]
+		_pinch_suppressed[hand] = false
+		if not was_suppressed:
+			pinch_ended.emit(hand)
 
 
 func _check_home_gesture(hand: String, delta: float) -> void:

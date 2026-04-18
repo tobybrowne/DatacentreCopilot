@@ -415,6 +415,7 @@ func _check_ray() -> void:
 			continue
 
 		gm.set_hit_point(hand, hw)
+		gm.claim_ui(hand)
 
 		var motion := InputEventMouseMotion.new()
 		motion.position = uv
