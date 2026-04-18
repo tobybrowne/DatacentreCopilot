@@ -8,8 +8,10 @@ extends Node3D
 @export var lod: int = 1  # 0=minimum, 1=medium, 2=maximum
 @export var mesh_material: Material
 
+const COLLISION_LAYER := 1 << 19  # bit 20: world-mesh occluders
+
 var _ext = null  # OpenXRMlWorldMeshDetectionExtension singleton
-var _blocks: Dictionary = {}  # block_id (String) -> MeshInstance3D
+var _blocks: Dictionary = {}  # block_id (String) -> StaticBody3D (with MeshInstance3D + CollisionShape3D children)
 
 
 func _ready() -> void:
@@ -50,14 +52,26 @@ func _exit_tree() -> void:
 
 
 func _on_block_updated(block_id: String, status: int, vertices: PackedVector3Array, indices: PackedInt32Array, normals: PackedVector3Array) -> void:
+	var body: StaticBody3D
 	var mesh_inst: MeshInstance3D
+	var coll: CollisionShape3D
 	if _blocks.has(block_id):
-		mesh_inst = _blocks[block_id]
+		body = _blocks[block_id]
+		mesh_inst = body.get_node("Mesh")
+		coll = body.get_node("Collision")
 	else:
+		body = StaticBody3D.new()
+		body.collision_layer = COLLISION_LAYER
+		body.collision_mask = 0
+		add_child(body)
 		mesh_inst = MeshInstance3D.new()
+		mesh_inst.name = "Mesh"
 		mesh_inst.material_override = mesh_material
-		add_child(mesh_inst)
-		_blocks[block_id] = mesh_inst
+		body.add_child(mesh_inst)
+		coll = CollisionShape3D.new()
+		coll.name = "Collision"
+		body.add_child(coll)
+		_blocks[block_id] = body
 
 	var arr_mesh := ArrayMesh.new()
 	var arrays := []
@@ -69,11 +83,15 @@ func _on_block_updated(block_id: String, status: int, vertices: PackedVector3Arr
 	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mesh_inst.mesh = arr_mesh
 
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(arr_mesh.get_faces())
+	coll.shape = shape
+
 
 func _on_block_deleted(block_id: String) -> void:
 	if _blocks.has(block_id):
-		var mesh_inst: MeshInstance3D = _blocks[block_id]
-		mesh_inst.queue_free()
+		var body: StaticBody3D = _blocks[block_id]
+		body.queue_free()
 		_blocks.erase(block_id)
 
 

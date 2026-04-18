@@ -13,3 +13,4 @@ locked_to_head = false
 touchable = true
 height_offset = -0.2
 lazy_follow = true
+environment_avoidance = false

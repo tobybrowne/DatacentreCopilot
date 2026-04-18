@@ -31,6 +31,8 @@ extends Node3D
 @export var lazy_follow_angle_degrees: float = 110.0
 @export var lazy_follow_face_angle_degrees: float = 15.0
 @export var lazy_follow_height_angle_degrees: float = 8.0
+@export var environment_avoidance: bool = false
+@export var environment_clearance: float = 0.2
 @export_range(0.0, 1.0) var desktop_sim_alpha: float = 0.65
 @export var corner_radius_m: float = 0.02
 
@@ -183,6 +185,8 @@ func _process(delta: float) -> void:
 			+ Vector3(0.0, height_offset, 0.0)
 
 		target_pos = _avoid_planes(target_pos)
+		if environment_avoidance:
+			target_pos = _avoid_world_mesh(cam_pos, target_pos)
 
 		var target_y := atan2(-forward.x, -forward.z)
 
@@ -213,8 +217,9 @@ func _process(delta: float) -> void:
 			var to_panel := global_position - cam_pos
 			to_panel.y = 0.0
 			var dist_to_panel := to_panel.length()
-			if dist_to_panel > distance + lazy_follow_distance or dist_to_panel < distance * 0.75:
-				# Too far or too close — slide to optimal spot in front.
+			var occluded := environment_avoidance and _is_occluded(cam_pos, global_position)
+			if dist_to_panel > distance + lazy_follow_distance or dist_to_panel < distance * 0.75 or occluded:
+				# Too far, too close, or occluded — slide to optimal spot in front.
 				_slide_target_pos = target_pos
 				_slide_target_y = target_y
 				_sliding = true
@@ -273,6 +278,28 @@ func _avoid_planes(pos: Vector3) -> Vector3:
 		if local.z < PLANE_CLEARANCE:
 			pos += t.basis.z * (PLANE_CLEARANCE - local.z)
 	return pos
+
+
+func _is_occluded(from_pos: Vector3, to_pos: Vector3) -> bool:
+	var space := get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(from_pos, to_pos)
+	query.collision_mask = WorldMeshManager.COLLISION_LAYER
+	return not space.intersect_ray(query).is_empty()
+
+
+func _avoid_world_mesh(from_pos: Vector3, target_pos: Vector3) -> Vector3:
+	var space := get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(from_pos, target_pos)
+	query.collision_mask = WorldMeshManager.COLLISION_LAYER
+	var hit := space.intersect_ray(query)
+	if hit.is_empty():
+		return target_pos
+	var dir := (target_pos - from_pos).normalized()
+	var pulled := (hit["position"] as Vector3) - dir * environment_clearance
+	# Don't pull the panel behind the camera.
+	if (pulled - from_pos).dot(dir) < 0.0:
+		return from_pos
+	return pulled
 
 
 func _check_poke() -> void:
