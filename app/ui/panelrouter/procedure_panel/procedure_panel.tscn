@@ -25,8 +25,17 @@ offset_right = -20.0
 offset_bottom = -20.0
 theme_override_constants/separation = 12
 
-[node name="Title" type="Label" parent="VBoxContainer"]
+[node name="TopBar" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
+
+[node name="BackButton" type="Button" parent="VBoxContainer/TopBar"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "← Back"
+
+[node name="Title" type="Label" parent="VBoxContainer/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 36
 text = "Procedures"
 horizontal_alignment = 1

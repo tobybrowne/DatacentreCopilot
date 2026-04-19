@@ -4,6 +4,7 @@ extends BasePanel
 
 
 func _ready() -> void:
+	super._ready()
 	call_deferred("load_procedures")
 
 

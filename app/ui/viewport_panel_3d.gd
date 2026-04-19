@@ -195,14 +195,22 @@ func _setup_pin_button() -> void:
 	_pin_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_pin_strip.add_theme_constant_override("separation", 0)
 
-	var drag_btn := Button.new()
-	drag_btn.text = "⠿  drag"
-	drag_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	drag_btn.custom_minimum_size = Vector2(0, _PIN_STRIP_PX)
-	drag_btn.add_theme_font_size_override("font_size", 28)
-	drag_btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
-	drag_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_pin_strip.add_child(drag_btn)
+	var drag_wrapper := Control.new()
+	drag_wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	drag_wrapper.custom_minimum_size = Vector2(0, _PIN_STRIP_PX)
+	drag_wrapper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var drag_label := Label.new()
+	drag_label.text = "⠿"
+	drag_label.add_theme_font_size_override("font_size", 38)
+	drag_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
+	drag_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	drag_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	drag_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	drag_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	drag_label.rotation_degrees = 90.0
+	drag_label.resized.connect(func(): drag_label.pivot_offset = drag_label.size / 2.0)
+	drag_wrapper.add_child(drag_label)
+	_pin_strip.add_child(drag_wrapper)
 
 	_pin_button = Button.new()
 	_pin_button.text = "Pin"

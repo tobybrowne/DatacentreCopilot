@@ -5,7 +5,6 @@ extends BasePanel
 @onready var _local_label: Label     = $MarginContainer/VBoxContainer/Local
 @onready var _created_label: Label   = $MarginContainer/VBoxContainer/Created
 @onready var _updated_label: Label   = $MarginContainer/VBoxContainer/Updated
-@onready var _back_button: Button    = $MarginContainer/VBoxContainer/Buttons/BackButton
 @onready var _update_button: Button  = $MarginContainer/VBoxContainer/Buttons/UpdateButton
 @onready var _calibrate_button: Button = $MarginContainer/VBoxContainer/Buttons/CalibrateButton
 
@@ -26,7 +25,6 @@ func init(data: Dictionary) -> void:
 	_local_label.text = "Local: " + ("Yes" if is_local else "No")
 	_local_label.modulate = Color("#00ff88") if is_local else Color("#ff4444")
 
-	_back_button.pressed.connect(func(): close_requested.emit())
 	_update_button.pressed.connect(_on_update_pressed)
 	_calibrate_button.pressed.connect(_on_calibrate_pressed)
 

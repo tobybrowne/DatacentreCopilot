@@ -2,11 +2,9 @@ extends BasePanel
 
 @onready var _item_list: VBoxContainer = $VBoxContainer/ScrollContainer/ItemList
 @onready var _status: Label = $VBoxContainer/Status
-@onready var _back_button: Button = $VBoxContainer/TopBar/BackButton
 
 
 func init(_data: Dictionary) -> void:
-	_back_button.pressed.connect(func(): close_requested.emit())
 	call_deferred("_load_spaces")
 
 
