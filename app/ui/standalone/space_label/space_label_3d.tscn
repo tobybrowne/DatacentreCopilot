@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://b_spacelabel3d"]
 
 [ext_resource type="Script" uid="uid://doem5fohiy6tt" path="res://ui/viewport_panel_3d.gd" id="1_script"]
-[ext_resource type="PackedScene" uid="uid://b_spacelabel" path="res://ui/space_label/space_label.tscn" id="2_scene"]
+[ext_resource type="PackedScene" uid="uid://b_spacelabel" path="res://ui/standalone/space_label/space_label.tscn" id="2_scene"]
 
 [node name="SpaceLabel3D" type="Node3D"]
 script = ExtResource("1_script")

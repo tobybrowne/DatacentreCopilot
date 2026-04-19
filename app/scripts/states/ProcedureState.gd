@@ -1,13 +1,17 @@
 class_name ProcedureState
 extends State
 
-## User is running a procedure in a calibrated space. UI panel is visible
-## (hosting the step viewer). Left/right pinches step back/forward; right-hold
+## User is running a procedure in a calibrated space. Step viewer is shown as
+## a standalone 3D panel. Left/right pinches step back/forward; right-hold
 ## opens the context menu. Voice commands drive the step viewer too.
+
+const _STEP_VIEWER_SCENE := preload("res://ui/standalone/step_viewer/step_viewer_3d.tscn")
+
+var _step_viewer_3d: ViewportPanel3D = null
 
 
 func enter(data: Dictionary) -> void:
-	ui_panel.visible = true
+	ui_panel.visible = false
 	PanelRouter.action_requested.connect(_on_action)
 
 	voice_manager.next_step.connect(_voice_next)
@@ -23,14 +27,22 @@ func enter(data: Dictionary) -> void:
 	if not space_id.is_empty():
 		location_manager.calibrate_to_space(space_id)
 
+	_step_viewer_3d = _STEP_VIEWER_SCENE.instantiate()
+	gesture_manager.get_parent().add_child(_step_viewer_3d)
 	if procedure:
-		PanelRouter.push("step_viewer", {"procedure": procedure})
+		var sv := _step_viewer_3d.get_panel() as StepViewer
+		if sv:
+			sv.init({"procedure": procedure})
 
 
 func exit() -> void:
 	PanelRouter.action_requested.disconnect(_on_action)
 	voice_manager.next_step.disconnect(_voice_next)
 	voice_manager.previous_step.disconnect(_voice_prev)
+
+	if _step_viewer_3d:
+		_step_viewer_3d.queue_free()
+		_step_viewer_3d = null
 
 	_context_close()
 	_context_pending = false
@@ -83,4 +95,6 @@ func _voice_prev() -> void:
 
 
 func _step_viewer() -> StepViewer:
-	return ui_panel.get_panel() as StepViewer
+	if not _step_viewer_3d:
+		return null
+	return _step_viewer_3d.get_panel() as StepViewer

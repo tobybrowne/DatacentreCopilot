@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://b_stepviewer3d"]
 
 [ext_resource type="Script" uid="uid://doem5fohiy6tt" path="res://ui/viewport_panel_3d.gd" id="1_script"]
-[ext_resource type="PackedScene" uid="uid://b_stepviewer" path="res://ui/step_viewer/step_viewer.tscn" id="2_scene"]
+[ext_resource type="PackedScene" uid="uid://b_stepviewer" path="res://ui/standalone/step_viewer/step_viewer.tscn" id="2_scene"]
 
 [node name="StepViewer3D" type="Node3D"]
 script = ExtResource("1_script")
@@ -9,5 +9,6 @@ panel_scene = ExtResource("2_scene")
 follow_speed = 3.0
 distance = 1.4
 height_offset = 0.2
+screen_position = Vector2(0, 0.6)
 viewport_size = Vector2i(600, 180)
 quad_size = Vector2(0.5, 0.15)

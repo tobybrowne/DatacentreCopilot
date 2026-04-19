@@ -10,6 +10,8 @@ signal calibrated
 signal space_picker_needed(spaces: Array[Space])
 ## Emitted when the current coarse space is already within the requested building.
 signal navigation_ready(space_id: String)
+## Emitted when the nearest coarse space changes.
+signal coarse_space_changed(coarse_id: String, active_id: String)
 
 var _anchor_manager: AnchorManager
 
@@ -44,8 +46,6 @@ var _relocalising := false
 
 var _tracking_dot_mat: StandardMaterial3D
 var _tracking_label: Label3D
-var _coarse_label: Label
-var _active_label: Label
 
 var _marker_nodes: Array[Node3D] = []
 var _space_manager: SpaceManager
@@ -134,18 +134,7 @@ func _update_room_label(building_pos: Vector3) -> void:
 	if closest_id.is_empty():
 		return
 	current_coarse_space = closest_id
-
-	# Lazy-init: panel may not exist at _ready time
-	if not _coarse_label:
-		var space_label_3d := get_parent().get_node_or_null("SpaceLabel")
-		if space_label_3d and space_label_3d.get_panel():
-			var panel: Control = space_label_3d.get_panel()
-			_coarse_label = panel.get_node_or_null("MarginContainer/VBoxContainer/CoarseLabel")
-			_active_label = panel.get_node_or_null("MarginContainer/VBoxContainer/ActiveLabel")
-	if _coarse_label:
-		_coarse_label.text = closest_id
-	if _active_label:
-		_active_label.text = "active: " + _current_space_id
+	coarse_space_changed.emit(closest_id, _current_space_id)
 
 
 func _poll_localization() -> void:

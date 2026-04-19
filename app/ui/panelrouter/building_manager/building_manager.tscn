@@ -1,8 +1,8 @@
-[gd_scene format=3 uid="uid://b_docspanel"]
+[gd_scene format=3 uid="uid://building_manager"]
 
-[ext_resource type="Script" uid="uid://74ed2a6k7h1m" path="res://ui/procedure_panel/procedure_panel.gd" id="1_script"]
+[ext_resource type="Script" path="res://ui/panelrouter/building_manager/building_manager.gd" id="1_script"]
 
-[node name="ProcedurePanel" type="Control"]
+[node name="BuildingManager" type="Control"]
 layout_mode = 0
 offset_right = 800.0
 offset_bottom = 800.0
@@ -25,14 +25,29 @@ offset_right = -20.0
 offset_bottom = -20.0
 theme_override_constants/separation = 12
 
-[node name="Title" type="Label" parent="VBoxContainer"]
+[node name="TopBar" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
+
+[node name="BackButton" type="Button" parent="VBoxContainer/TopBar"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "← Back"
+
+[node name="Title" type="Label" parent="VBoxContainer/TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 36
-text = "Procedures"
+text = "Buildings"
 horizontal_alignment = 1
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
 layout_mode = 2
+
+[node name="Status" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+horizontal_alignment = 1
+text = ""
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBoxContainer"]
 layout_mode = 2

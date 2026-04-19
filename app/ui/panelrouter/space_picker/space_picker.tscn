@@ -1,8 +1,8 @@
-[gd_scene format=3 uid="uid://space_manager"]
+[gd_scene format=3 uid="uid://space_picker"]
 
-[ext_resource type="Script" path="res://ui/space_manager/space_manager.gd" id="1_script"]
+[ext_resource type="Script" path="res://ui/panelrouter/space_picker/space_picker.gd" id="1_script"]
 
-[node name="SpaceManager" type="Control"]
+[node name="SpacePicker" type="Control"]
 layout_mode = 0
 offset_right = 800.0
 offset_bottom = 800.0
@@ -37,7 +37,7 @@ text = "← Back"
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 36
-text = "Spaces"
+text = "Select Space"
 horizontal_alignment = 1
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer"]
@@ -56,4 +56,4 @@ size_flags_vertical = 3
 [node name="ItemList" type="VBoxContainer" parent="VBoxContainer/ScrollContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 6
+theme_override_constants/separation = 8

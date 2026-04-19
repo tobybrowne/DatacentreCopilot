@@ -1,15 +1,20 @@
 extends Node
 
+# Panel Router is used for menu navigation, hence all involved panels
+# share the same movement settings, and why the push/pop behaviour is okay
+
+# Other UI panels like the step viewer are managed separately
+
+
 # Register all panel IDs and their 2D scene paths here
 const SCENES: Dictionary = {
-	"start_menu":    "res://ui/start_menu/start_menu.tscn",
-	"procedures":    "res://ui/procedure_panel/procedure_panel.tscn",
-	"step_viewer":   "res://ui/step_viewer/step_viewer.tscn",
-	"map":            "res://ui/building_manager/building_manager.tscn",
-	"building_info":  "res://ui/building_info/building_info.tscn",
-	"space_manager": "res://ui/space_manager/space_manager.tscn",
-	"space_info":    "res://ui/space_info/space_info.tscn",
-	"space_picker":  "res://ui/space_picker/space_picker.tscn",
+	"start_menu":    "res://ui/panelrouter/start_menu/start_menu.tscn",
+	"procedures":    "res://ui/panelrouter/procedure_panel/procedure_panel.tscn",
+	"map":            "res://ui/panelrouter/building_manager/building_manager.tscn",
+	"building_info":  "res://ui/panelrouter/building_info/building_info.tscn",
+	"space_manager": "res://ui/panelrouter/space_manager/space_manager.tscn",
+	"space_info":    "res://ui/panelrouter/space_info/space_info.tscn",
+	"space_picker":  "res://ui/panelrouter/space_picker/space_picker.tscn",
 }
 
 signal panel_changed(panel_id: String, data: Dictionary)

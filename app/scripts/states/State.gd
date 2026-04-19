@@ -43,7 +43,7 @@ func on_pinch_ended(_hand: String) -> void:
 
 const _CONTEXT_HOLD_TIME := 1.5
 const _CONTEXT_COLOR     := Color(0.2, 0.8, 1.0)
-const _CONTEXT_MENU_SCENE := preload("res://ui/context_menu/context_menu_3d.tscn")
+const _CONTEXT_MENU_SCENE := preload("res://ui/standalone/context_menu/context_menu_3d.tscn")
 
 var _context_menu: ViewportPanel3D = null
 var _context_pending := false

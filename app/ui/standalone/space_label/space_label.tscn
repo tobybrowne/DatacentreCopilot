@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://b_spacelabel"]
 
-[ext_resource type="Script" path="res://ui/space_label/space_label.gd" id="1_script"]
+[ext_resource type="Script" path="res://ui/standalone/space_label/space_label.gd" id="1_script"]
 
 [node name="SpaceLabel" type="Control"]
 script = ExtResource("1_script")

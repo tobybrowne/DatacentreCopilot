@@ -17,7 +17,7 @@ config/icon="res://icon.svg"
 
 [autoload]
 
-PanelRouter="*res://ui/panel_router.gd"
+PanelRouter="*res://ui/panelrouter/panel_router.gd"
 KeyboardManager="*res://scripts/KeyboardManager.gd"
 NoteManager="*res://scripts/NoteManager.gd"
 XRToolsUserSettings="*uid://bqgb8i74tm0t"
