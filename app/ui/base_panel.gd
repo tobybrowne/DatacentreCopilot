@@ -53,9 +53,12 @@ static func _build_theme() -> Theme:
 	t.set_stylebox("panel", "PanelContainer", row_style)
 	return t
 
+var _back_button: Button = null
+
 func _ready() -> void:
 	var back := find_child("BackButton", true, false) as Button
 	if back:
+		_back_button = back
 		back.pressed.connect(func(): close_requested.emit())
 		back.custom_minimum_size.x = _BACK_BTN_W
 		var top_bar := back.get_parent()
