@@ -43,6 +43,7 @@ extends Node3D
 # Lets scenes add world-anchored decorations at the root (e.g. a pinch dot)
 # with the visible panel hanging below.
 @export var mesh_offset: Vector3 = Vector3.ZERO
+@export var pinnable: bool = false
 
 
 const _PANEL_SHADER_CODE := """
@@ -84,6 +85,19 @@ var _last_cam_pos := Vector3.ZERO
 var _sliding := false
 var _slide_target_pos := Vector3.ZERO
 var _slide_target_y := 0.0
+var _pinned := false
+var _pin_bg: ColorRect = null
+var _pin_strip: HBoxContainer = null
+var _pin_button: Button = null
+var _dragging := false
+var _drag_offset := Vector3.ZERO
+var _drag_depth := 0.0
+var _drag_using_ray := false
+var _drag_ray_origin_prev := Vector3.ZERO
+var _drag_hand := ""
+var _poke_hand := ""
+
+const _PIN_STRIP_PX := 80
 
 
 func _ready() -> void:
@@ -135,6 +149,9 @@ func _ready() -> void:
 		# Hide until first placement so the panel isn't visible at its default scene position.
 		_mesh_instance.visible = false
 
+	if pinnable:
+		_setup_pin_button()
+
 
 # Called when a new panel is loaded via the router
 func _swap_panel(panel_id: String, data: Dictionary) -> void:
@@ -152,11 +169,70 @@ func _swap_panel(panel_id: String, data: Dictionary) -> void:
 	_viewport.add_child(_panel)
 	if _panel.has_method("init"):
 		_panel.init(data)
+	if _pin_strip:
+		_pin_bg.move_to_front()
+		_pin_strip.move_to_front()
 
 
 # Override in subclass to wire signals or configure the panel after instantiation (non-router mode)
 func _on_panel_ready(_p: Control) -> void:
 	pass
+
+
+func _setup_pin_button() -> void:
+	_pin_bg = ColorRect.new()
+	_pin_bg.color = Color(0.1, 0.1, 0.15, 0.85)
+	_pin_bg.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	_pin_bg.custom_minimum_size = Vector2(0, _PIN_STRIP_PX)
+	_pin_bg.offset_top = -_PIN_STRIP_PX
+	_pin_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_viewport.add_child(_pin_bg)
+
+	_pin_strip = HBoxContainer.new()
+	_pin_strip.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	_pin_strip.custom_minimum_size = Vector2(0, _PIN_STRIP_PX)
+	_pin_strip.offset_top = -_PIN_STRIP_PX
+	_pin_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pin_strip.add_theme_constant_override("separation", 0)
+
+	var drag_btn := Button.new()
+	drag_btn.text = "⠿  drag"
+	drag_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	drag_btn.custom_minimum_size = Vector2(0, _PIN_STRIP_PX)
+	drag_btn.add_theme_font_size_override("font_size", 28)
+	drag_btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
+	drag_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pin_strip.add_child(drag_btn)
+
+	_pin_button = Button.new()
+	_pin_button.text = "Pin"
+	_pin_button.custom_minimum_size = Vector2(160, _PIN_STRIP_PX)
+	_pin_button.add_theme_font_size_override("font_size", 28)
+	_pin_button.add_theme_color_override("font_color", Color(0.4, 0.9, 1.0))
+	_pin_button.pressed.connect(_on_pin_pressed)
+	_pin_strip.add_child(_pin_button)
+
+	_viewport.add_child(_pin_strip)
+
+
+func _on_pin_pressed() -> void:
+	_pinned = not _pinned
+	_dragging = false
+	_pin_button.text = "Unpin" if _pinned else "Pin"
+
+
+func _get_index_tip(hand: String) -> Vector3:
+	var xr_origin := get_parent() as XROrigin3D
+	if not xr_origin or hand.is_empty():
+		return Vector3.INF
+	var tracker := XRServer.get_tracker("/user/hand_tracker/" + hand)
+	if not tracker or not tracker is XRHandTracker:
+		return Vector3.INF
+	var ht := tracker as XRHandTracker
+	var flags := ht.get_hand_joint_flags(10)
+	if not (flags & 4):
+		return Vector3.INF
+	return xr_origin.global_transform * ht.get_hand_joint_transform(10).origin
 
 
 func get_panel() -> Control:
@@ -167,113 +243,133 @@ func _process(delta: float) -> void:
 	if not _camera or not visible:
 		return
 
-	if world_anchored:
-		# Face camera each frame — look_at points -Z toward camera, quads face +Z so flip 180°
-		if global_position.distance_to(_camera.global_position) > 0.01:
-			look_at(_camera.global_position, Vector3.UP)
-			rotate_object_local(Vector3.UP, PI)
-	elif locked_to_head:
-		# uses the cameras projection matrix (given by ML2 at runtime)
-		# to positions things relative to the users FOV (great for HUD stuff)
-		var cam := _camera.global_transform
-		var x_off: float = screen_position.x * tan(deg_to_rad(fov_scale.x)) * distance
-		var y_off: float = screen_position.y * tan(deg_to_rad(fov_scale.y)) * distance
-		global_position = cam.origin \
-			+ cam.basis.x * x_off \
-			+ cam.basis.y * y_off \
-			+ cam.basis.z * (-distance)
-		global_basis = cam.basis
-
-	else:
-		var cam_basis := _camera.global_transform.basis
-		var cam_pos := _camera.global_position
-
-		var forward := -cam_basis.z
-		forward.y = 0.0
-		if forward.length_squared() < 0.001:
-			return
-		forward = forward.normalized()
-
-		var right := cam_basis.x
-		right.y = 0.0
-		right = right.normalized()
-
-		var target_pos := cam_pos \
-			+ forward * distance \
-			+ right * lateral_offset \
-			+ Vector3(0.0, height_offset, 0.0)
-
-		target_pos = _avoid_planes(target_pos)
-		if environment_avoidance:
-			target_pos = _avoid_world_mesh(cam_pos, target_pos)
-
-		var target_y := atan2(-forward.x, -forward.z)
-
-		if not _placed:
-			# Wait for OpenXR pose to stabilise: non-zero position AND steady for several frames.
-			if cam_pos.length() < 0.3:
-				_stable_frames = 0
-				_last_cam_pos = cam_pos
-				return
-			if cam_pos.distance_to(_last_cam_pos) < 0.02:
-				_stable_frames += 1
-			else:
-				_stable_frames = 0
-			_last_cam_pos = cam_pos
-			if _stable_frames < 10:
-				return
-			global_position = target_pos
-			rotation.y = target_y
-			rotation.x = deg_to_rad(tilt_degrees)
-			_placed = true
-			_mesh_instance.visible = true
-		elif not lazy_follow:
-			var t: float = clamp(follow_speed * delta, 0.0, 1.0)
-			global_position = global_position.lerp(target_pos, t)
-			rotation.y = lerp_angle(rotation.y, target_y, t)
-			rotation.x = deg_to_rad(tilt_degrees)
+	if _dragging:
+		if _drag_using_ray:
+			var gm := get_parent().get_node_or_null("GestureManager") as GestureManager
+			if gm and gm.ray_active[_drag_hand]:
+				var ray_origin: Vector3 = gm.ray_origins[_drag_hand]
+				var ray_dir: Vector3 = gm.ray_directions[_drag_hand]
+				var cam_forward := -_camera.global_transform.basis.z
+				_drag_depth = maxf(0.3, _drag_depth - (_drag_ray_origin_prev - ray_origin).dot(cam_forward))
+				_drag_ray_origin_prev = ray_origin
+				global_position = ray_origin + ray_dir * _drag_depth + _drag_offset
 		else:
-			var to_panel := global_position - cam_pos
-			to_panel.y = 0.0
-			var dist_to_panel := to_panel.length()
-			var occluded := environment_avoidance and _is_occluded(cam_pos, global_position)
-			if dist_to_panel > distance + lazy_follow_distance or dist_to_panel < distance * 0.75 or occluded:
-				# Too far, too close, or occluded — slide to optimal spot in front.
-				_slide_target_pos = target_pos
-				_slide_target_y = target_y
-				_sliding = true
-			elif dist_to_panel > 0.01:
-				var to_panel_dir := to_panel / dist_to_panel
-				var view_dot: float = clamp(forward.dot(to_panel_dir), -1.0, 1.0)
-				var view_angle: float = acos(view_dot)
-				var face_y: float = atan2(cam_pos.x - global_position.x, cam_pos.z - global_position.z)
-				var target_height: float = cam_pos.y + height_offset
-				var height_angle: float = abs(atan2(global_position.y - target_height, dist_to_panel))
-				if view_angle > deg_to_rad(lazy_follow_angle_degrees):
-					# Look-away — full reposition into view.
+			var tip := _get_index_tip(_drag_hand)
+			if tip != Vector3.INF:
+				global_position = tip + _drag_offset
+		if _camera and global_position.distance_to(_camera.global_position) > 0.01:
+			var to_cam := _camera.global_position - global_position
+			to_cam.y = 0.0
+			if to_cam.length_squared() > 0.001:
+				rotation.y = atan2(to_cam.x, to_cam.z)
+				rotation.x = deg_to_rad(tilt_degrees)
+	elif not _pinned:
+		if world_anchored:
+			# Face camera each frame — look_at points -Z toward camera, quads face +Z so flip 180°
+			if global_position.distance_to(_camera.global_position) > 0.01:
+				look_at(_camera.global_position, Vector3.UP)
+				rotate_object_local(Vector3.UP, PI)
+		elif locked_to_head:
+			# uses the cameras projection matrix (given by ML2 at runtime)
+			# to positions things relative to the users FOV (great for HUD stuff)
+			var cam := _camera.global_transform
+			var x_off: float = screen_position.x * tan(deg_to_rad(fov_scale.x)) * distance
+			var y_off: float = screen_position.y * tan(deg_to_rad(fov_scale.y)) * distance
+			global_position = cam.origin \
+				+ cam.basis.x * x_off \
+				+ cam.basis.y * y_off \
+				+ cam.basis.z * (-distance)
+			global_basis = cam.basis
+		else:
+			var cam_basis := _camera.global_transform.basis
+			var cam_pos := _camera.global_position
+
+			var forward := -cam_basis.z
+			forward.y = 0.0
+			if forward.length_squared() < 0.001:
+				return
+			forward = forward.normalized()
+
+			var right := cam_basis.x
+			right.y = 0.0
+			right = right.normalized()
+
+			var target_pos := cam_pos \
+				+ forward * distance \
+				+ right * lateral_offset \
+				+ Vector3(0.0, height_offset, 0.0)
+
+			target_pos = _avoid_planes(target_pos)
+			if environment_avoidance:
+				target_pos = _avoid_world_mesh(cam_pos, target_pos)
+
+			var target_y := atan2(-forward.x, -forward.z)
+
+			if not _placed:
+				# Wait for OpenXR pose to stabilise: non-zero position AND steady for several frames.
+				if cam_pos.length() < 0.3:
+					_stable_frames = 0
+					_last_cam_pos = cam_pos
+					return
+				if cam_pos.distance_to(_last_cam_pos) < 0.02:
+					_stable_frames += 1
+				else:
+					_stable_frames = 0
+				_last_cam_pos = cam_pos
+				if _stable_frames < 10:
+					return
+				global_position = target_pos
+				rotation.y = target_y
+				rotation.x = deg_to_rad(tilt_degrees)
+				_placed = true
+				_mesh_instance.visible = true
+			elif not lazy_follow:
+				var t: float = clamp(follow_speed * delta, 0.0, 1.0)
+				global_position = global_position.lerp(target_pos, t)
+				rotation.y = lerp_angle(rotation.y, target_y, t)
+				rotation.x = deg_to_rad(tilt_degrees)
+			else:
+				var to_panel := global_position - cam_pos
+				to_panel.y = 0.0
+				var dist_to_panel := to_panel.length()
+				var occluded := environment_avoidance and _is_occluded(cam_pos, global_position)
+				if dist_to_panel > distance + lazy_follow_distance or dist_to_panel < distance * 0.75 or occluded:
+					# Too far, too close, or occluded — slide to optimal spot in front.
 					_slide_target_pos = target_pos
 					_slide_target_y = target_y
 					_sliding = true
-				elif abs(wrapf(face_y - rotation.y, -PI, PI)) > deg_to_rad(lazy_follow_face_angle_degrees):
-					# Face-tracking — rotate in place to point at the user's position.
-					_slide_target_pos = global_position
-					_slide_target_y = face_y
-					_sliding = true
-				elif height_angle > deg_to_rad(lazy_follow_height_angle_degrees):
-					# Height tracking — slide Y only to follow the user up/down.
-					_slide_target_pos = Vector3(global_position.x, target_height, global_position.z)
-					_slide_target_y = rotation.y
-					_sliding = true
+				elif dist_to_panel > 0.01:
+					var to_panel_dir := to_panel / dist_to_panel
+					var view_dot: float = clamp(forward.dot(to_panel_dir), -1.0, 1.0)
+					var view_angle: float = acos(view_dot)
+					var face_y: float = atan2(cam_pos.x - global_position.x, cam_pos.z - global_position.z)
+					var target_height: float = cam_pos.y + height_offset
+					var height_angle: float = abs(atan2(global_position.y - target_height, dist_to_panel))
+					if view_angle > deg_to_rad(lazy_follow_angle_degrees):
+						# Look-away — full reposition into view.
+						_slide_target_pos = target_pos
+						_slide_target_y = target_y
+						_sliding = true
+					elif abs(wrapf(face_y - rotation.y, -PI, PI)) > deg_to_rad(lazy_follow_face_angle_degrees):
+						# Face-tracking — rotate in place to point at the user's position.
+						_slide_target_pos = global_position
+						_slide_target_y = face_y
+						_sliding = true
+					elif height_angle > deg_to_rad(lazy_follow_height_angle_degrees):
+						# Height tracking — slide Y only to follow the user up/down.
+						_slide_target_pos = Vector3(global_position.x, target_height, global_position.z)
+						_slide_target_y = rotation.y
+						_sliding = true
 
-			if _sliding:
-				var t: float = clamp(follow_speed * delta, 0.0, 1.0)
-				global_position = global_position.lerp(_slide_target_pos, t)
-				rotation.y = lerp_angle(rotation.y, _slide_target_y, t)
-				rotation.x = deg_to_rad(tilt_degrees)
-				if global_position.distance_to(_slide_target_pos) < 0.005 and abs(wrapf(_slide_target_y - rotation.y, -PI, PI)) < 0.01:
-					global_position = _slide_target_pos
-					rotation.y = _slide_target_y
-					_sliding = false
+				if _sliding:
+					var t: float = clamp(follow_speed * delta, 0.0, 1.0)
+					global_position = global_position.lerp(_slide_target_pos, t)
+					rotation.y = lerp_angle(rotation.y, _slide_target_y, t)
+					rotation.x = deg_to_rad(tilt_degrees)
+					if global_position.distance_to(_slide_target_pos) < 0.005 and abs(wrapf(_slide_target_y - rotation.y, -PI, PI)) < 0.01:
+						global_position = _slide_target_pos
+						rotation.y = _slide_target_y
+						_sliding = false
 
 	if touchable:
 		_check_poke()
@@ -344,35 +440,61 @@ func _check_poke() -> void:
 		var result := _project_to_panel(tip_world)
 		if result.x >= 0.0:
 			hit_pos = result
+			_poke_hand = "left" if "left" in tracker_path else "right"
 			break
 
-	if hit_pos.x >= 0.0:
-		var motion := InputEventMouseMotion.new()
-		motion.position = hit_pos
-		_viewport.push_input(motion)
+	if hit_pos.x < 0.0:
+		_poke_hand = ""
 
-		if not _pressing:
-			_pressing = true
-			var press := InputEventMouseButton.new()
-			press.position = hit_pos
-			press.button_index = MOUSE_BUTTON_LEFT
-			press.pressed = true
-			_viewport.push_input(press)
-			var touch := InputEventScreenTouch.new()
-			touch.position = hit_pos
-			touch.pressed = true
-			touch.index = 0
-			_viewport.push_input(touch)
+	var in_drag_area := pinnable \
+		and hit_pos.x >= 0.0 \
+		and hit_pos.y >= viewport_size.y - _PIN_STRIP_PX \
+		and hit_pos.x < viewport_size.x - 200.0
+
+	if hit_pos.x >= 0.0:
+		if in_drag_area:
+			if not _pressing:
+				_pressing = true
+				_dragging = true
+				_drag_using_ray = false
+				_pinned = false
+				_drag_hand = _poke_hand
+				var tip := _get_index_tip(_drag_hand)
+				if tip != Vector3.INF:
+					_drag_offset = global_position - tip
+		else:
+			var motion := InputEventMouseMotion.new()
+			motion.position = hit_pos
+			_viewport.push_input(motion)
+
+			if not _pressing:
+				_pressing = true
+				var press := InputEventMouseButton.new()
+				press.position = hit_pos
+				press.button_index = MOUSE_BUTTON_LEFT
+				press.pressed = true
+				_viewport.push_input(press)
+				var touch := InputEventScreenTouch.new()
+				touch.position = hit_pos
+				touch.pressed = true
+				touch.index = 0
+				_viewport.push_input(touch)
 	elif _pressing:
 		_pressing = false
-		var release := InputEventMouseButton.new()
-		release.button_index = MOUSE_BUTTON_LEFT
-		release.pressed = false
-		_viewport.push_input(release)
-		var touch_up := InputEventScreenTouch.new()
-		touch_up.pressed = false
-		touch_up.index = 0
-		_viewport.push_input(touch_up)
+		if _dragging:
+			_dragging = false
+			_pinned = true
+			if _pin_button:
+				_pin_button.text = "Unpin"
+		else:
+			var release := InputEventMouseButton.new()
+			release.button_index = MOUSE_BUTTON_LEFT
+			release.pressed = false
+			_viewport.push_input(release)
+			var touch_up := InputEventScreenTouch.new()
+			touch_up.pressed = false
+			touch_up.index = 0
+			_viewport.push_input(touch_up)
 
 
 func _check_mouse_ray() -> void:
@@ -419,6 +541,15 @@ func _check_ray() -> void:
 		return
 
 	for hand in ["left", "right"]:
+		if _dragging and _drag_hand == hand:
+			if not gm.ray_active[hand] or not gm.is_ray_pinching(hand):
+				_ray_pressing[hand] = false
+				_dragging = false
+				_pinned = true
+				if _pin_button:
+					_pin_button.text = "Unpin"
+			continue
+
 		if not gm.ray_active[hand]:
 			_release_ray(hand)
 			continue
@@ -436,47 +567,75 @@ func _check_ray() -> void:
 		gm.set_hit_point(hand, hw)
 		gm.claim_ui(hand)
 
-		var motion := InputEventMouseMotion.new()
-		motion.position = uv
-		_viewport.push_input(motion)
+		var in_drag_area := pinnable \
+			and uv.y >= viewport_size.y - _PIN_STRIP_PX \
+			and uv.x < viewport_size.x - 200.0
 
-		if gm.is_ray_pinching(hand) and not _ray_pressing[hand]:
-			_ray_pressing[hand] = true
-			var press := InputEventMouseButton.new()
-			press.position = uv
-			press.button_index = MOUSE_BUTTON_LEFT
-			press.pressed = true
-			_viewport.push_input(press)
-			var touch := InputEventScreenTouch.new()
-			touch.position = uv
-			touch.pressed = true
-			touch.index = 0
-			_viewport.push_input(touch)
-		elif not gm.is_ray_pinching(hand) and _ray_pressing[hand]:
-			_ray_pressing[hand] = false
-			var release := InputEventMouseButton.new()
-			release.position = uv
-			release.button_index = MOUSE_BUTTON_LEFT
-			release.pressed = false
-			_viewport.push_input(release)
-			var touch_up := InputEventScreenTouch.new()
-			touch_up.position = uv
-			touch_up.pressed = false
-			touch_up.index = 0
-			_viewport.push_input(touch_up)
+		if in_drag_area:
+			if gm.is_ray_pinching(hand) and not _ray_pressing[hand]:
+				_ray_pressing[hand] = true
+				_dragging = true
+				_drag_using_ray = true
+				_pinned = false
+				_drag_hand = hand
+				_drag_depth = (hw - gm.ray_origins[hand]).length()
+				_drag_offset = global_position - hw
+				_drag_ray_origin_prev = gm.ray_origins[hand]
+			elif not gm.is_ray_pinching(hand) and _ray_pressing[hand]:
+				_ray_pressing[hand] = false
+				if _dragging and _drag_hand == hand:
+					_dragging = false
+					_pinned = true
+					if _pin_button:
+						_pin_button.text = "Unpin"
+		else:
+			var motion := InputEventMouseMotion.new()
+			motion.position = uv
+			_viewport.push_input(motion)
+
+			if gm.is_ray_pinching(hand) and not _ray_pressing[hand]:
+				_ray_pressing[hand] = true
+				var press := InputEventMouseButton.new()
+				press.position = uv
+				press.button_index = MOUSE_BUTTON_LEFT
+				press.pressed = true
+				_viewport.push_input(press)
+				var touch := InputEventScreenTouch.new()
+				touch.position = uv
+				touch.pressed = true
+				touch.index = 0
+				_viewport.push_input(touch)
+			elif not gm.is_ray_pinching(hand) and _ray_pressing[hand]:
+				_ray_pressing[hand] = false
+				var release := InputEventMouseButton.new()
+				release.position = uv
+				release.button_index = MOUSE_BUTTON_LEFT
+				release.pressed = false
+				_viewport.push_input(release)
+				var touch_up := InputEventScreenTouch.new()
+				touch_up.position = uv
+				touch_up.pressed = false
+				touch_up.index = 0
+				_viewport.push_input(touch_up)
 
 
 func _release_ray(hand: String) -> void:
 	if _ray_pressing[hand]:
 		_ray_pressing[hand] = false
-		var release := InputEventMouseButton.new()
-		release.button_index = MOUSE_BUTTON_LEFT
-		release.pressed = false
-		_viewport.push_input(release)
-		var touch_up := InputEventScreenTouch.new()
-		touch_up.pressed = false
-		touch_up.index = 0
-		_viewport.push_input(touch_up)
+		if _dragging and _drag_hand == hand:
+			_dragging = false
+			_pinned = true
+			if _pin_button:
+				_pin_button.text = "Unpin"
+		else:
+			var release := InputEventMouseButton.new()
+			release.button_index = MOUSE_BUTTON_LEFT
+			release.pressed = false
+			_viewport.push_input(release)
+			var touch_up := InputEventScreenTouch.new()
+			touch_up.pressed = false
+			touch_up.index = 0
+			_viewport.push_input(touch_up)
 
 
 func _ray_world_hit(ray_origin: Vector3, ray_dir: Vector3) -> Vector3:
@@ -530,6 +689,8 @@ func _project_to_panel(tip_world: Vector3) -> Vector2:
 # of the SubViewport (common when the Control is smaller than the viewport)
 # don't block rays or poke input.
 func _hit_inside_content(px: float, py: float) -> bool:
+	if pinnable and py >= viewport_size.y - _PIN_STRIP_PX:
+		return px >= 0.0 and px <= float(viewport_size.x)
 	if not _panel:
 		return false
 	var r := _panel.get_rect()
