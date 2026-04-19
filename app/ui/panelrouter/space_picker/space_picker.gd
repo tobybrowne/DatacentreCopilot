@@ -1,5 +1,6 @@
 extends BasePanel
 
+@onready var _scroll: ScrollContainer = $VBoxContainer/ScrollContainer
 @onready var _item_list: VBoxContainer = $VBoxContainer/ScrollContainer/ItemList
 @onready var _status: Label = $VBoxContainer/Status
 @onready var _back_button: Button = $VBoxContainer/TopBar/BackButton
@@ -49,15 +50,17 @@ func _add_row(space: Space) -> void:
 	var pin_btn := Button.new()
 	pin_btn.text = "📍"
 	pin_btn.add_theme_font_size_override("font_size", FONT_BODY)
-	pin_btn.pressed.connect(_on_localise_pressed.bind(space, pin_btn))
+	pin_btn.pressed.connect(_on_localise_pressed.bind(space))
 	row.add_child(pin_btn)
 
 	_item_list.add_child(row)
 
 
-func _on_localise_pressed(space: Space, btn: Button) -> void:
-	btn.disabled = true
-	btn.text = "…"
+func _on_localise_pressed(space: Space) -> void:
+	_scroll.visible = false
+	_back_button.disabled = true
+	_status.text = "Localising…"
+
 	if _mode == "navigate":
 		PanelRouter.request("start_nav_for_space", { "space": space })
 	elif _mode == "procedure":

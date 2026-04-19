@@ -24,7 +24,7 @@ func enter(data: Dictionary) -> void:
 		if not await location_manager.ensure_space_local(space):
 			return
 		space_id = space.id
-	if not space_id.is_empty():
+	if not space_id.is_empty() and not data.get("pre_calibrated", false):
 		location_manager.calibrate_to_space(space_id)
 
 	_step_viewer_3d = _STEP_VIEWER_SCENE.instantiate()

@@ -68,9 +68,18 @@ func _on_action(action: String, data: Dictionary) -> void:
 			else:
 				_begin("procedure", {"procedure": proc}, proc.building_id)
 
-		# space_picker tapped — resume whichever transition we deferred.
+		# space_picker tapped — download map, kick off calibration, wait for it to
+		# complete, then transition. pre_calibrated tells the target state to skip
+		# its own calibrate_to_space call since it's already done.
 		"start_nav_for_space", "start_nav_for_procedure":
-			_finish({"space": data.get("space")})
+			var space := data.get("space") as Space
+			if not space:
+				return
+			if not await location_manager.ensure_space_local(space):
+				return
+			location_manager.calibrate_to_space(space.id)
+			await location_manager.calibrated
+			_finish({"space_id": space.id, "pre_calibrated": true})
 
 
 # Step 1 of deferred transition: remember the target, kick off async resolution.
