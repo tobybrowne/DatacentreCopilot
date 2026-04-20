@@ -100,6 +100,9 @@ var _audio_player: AudioStreamPlayer
 var _press_debounce := 0.0
 
 const _PRESS_DEBOUNCE_TIME := 0.5
+const _RAY_SNAP_RADIUS_PX := 80.0   # attraction kicks in within this pixel radius
+const _RAY_SNAP_STRENGTH := 0.65    # 0 = no pull, 1 = hard snap to centre
+const _RAY_HYSTERESIS_M := 0.015    # metres of extra panel margin while pressing
 
 const _PIN_STRIP_PX := 80
 
@@ -598,10 +601,13 @@ func _check_ray() -> void:
 			_release_ray(hand)
 			continue
 
-		var uv := _world_hit_to_panel_uv(hw)
+		var expand := _RAY_HYSTERESIS_M if _ray_pressing[hand] else 0.0
+		var uv := _world_hit_to_panel_uv(hw, expand)
 		if uv.x < 0.0:
 			_release_ray(hand)
 			continue
+
+		uv = _snap_uv_to_buttons(uv)
 
 		gm.set_hit_point(hand, hw)
 		gm.claim_ui(hand)
@@ -691,19 +697,48 @@ func _ray_world_hit(ray_origin: Vector3, ray_dir: Vector3) -> Vector3:
 	return ray_origin + ray_dir * t
 
 
-func _world_hit_to_panel_uv(hit_world: Vector3) -> Vector2:
+func _world_hit_to_panel_uv(hit_world: Vector3, expand: float = 0.0) -> Vector2:
 	var local := _mesh_instance.global_transform.affine_inverse() * hit_world
 	var half_w := quad_size.x * 0.5
 	var half_h := quad_size.y * 0.5
-	if abs(local.x) > half_w or abs(local.y) > half_h:
+	if abs(local.x) > half_w + expand or abs(local.y) > half_h + expand:
 		return Vector2(-1.0, -1.0)
 	var uv_x := (local.x + half_w) / quad_size.x
 	var uv_y := 1.0 - (local.y + half_h) / quad_size.y
-	var px := uv_x * _viewport.size.x
-	var py := uv_y * _viewport.size.y
-	if not _hit_inside_content(px, py):
+	var px := clampf(uv_x * _viewport.size.x, 0.0, float(_viewport.size.x - 1))
+	var py := clampf(uv_y * _viewport.size.y, 0.0, float(_viewport.size.y - 1))
+	if expand == 0.0 and not _hit_inside_content(px, py):
 		return Vector2(-1.0, -1.0)
 	return Vector2(px, py)
+
+
+func _snap_uv_to_buttons(uv: Vector2) -> Vector2:
+	if not _panel:
+		return uv
+	var centers := _collect_button_centers(_panel)
+	var best_dist := _RAY_SNAP_RADIUS_PX
+	var best := Vector2.INF
+	for c in centers:
+		var d := uv.distance_to(c)
+		if d < best_dist:
+			best_dist = d
+			best = c
+	if best == Vector2.INF:
+		return uv
+	var t := (1.0 - best_dist / _RAY_SNAP_RADIUS_PX) * _RAY_SNAP_STRENGTH
+	return uv.lerp(best, t)
+
+
+func _collect_button_centers(node: Control) -> Array[Vector2]:
+	var result: Array[Vector2] = []
+	if not node.is_visible_in_tree():
+		return result
+	if node is BaseButton and not (node as BaseButton).disabled:
+		result.append(node.get_global_rect().get_center())
+	for child in node.get_children():
+		if child is Control:
+			result.append_array(_collect_button_centers(child as Control))
+	return result
 
 
 func _project_to_panel(tip_world: Vector3) -> Vector2:
