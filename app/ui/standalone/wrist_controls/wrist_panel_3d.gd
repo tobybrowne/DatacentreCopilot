@@ -1,0 +1,71 @@
+class_name WristPanel3D
+extends ViewportPanel3D
+
+signal prev_requested
+signal next_requested
+
+@export var tracked_hand: String = "left"
+
+const _PALM_FACE_THRESHOLD := 0.35
+const _PALM_JOINT := 0
+const _WRIST_JOINT := 1
+const _WRIST_NORMAL_OFFSET := 0.03  # metres above wrist surface
+
+
+func _ready() -> void:
+	world_anchored = true
+	panel_scene = preload("res://ui/standalone/wrist_controls/wrist_controls.tscn")
+	viewport_size = Vector2i(480, 240)
+	quad_size = Vector2(0.12, 0.06)
+	corner_radius_m = 0.008
+	touchable = true
+	ray_enabled = false
+	super._ready()
+	visible = false
+	_mesh_instance.visible = false
+
+
+func _on_panel_ready(p: Control) -> void:
+	p.prev_requested.connect(func(): prev_requested.emit())
+	p.next_requested.connect(func(): next_requested.emit())
+
+
+func _process(delta: float) -> void:
+	var xr_origin := get_parent() as XROrigin3D
+	var camera := get_viewport().get_camera_3d()
+	if not xr_origin or not camera:
+		_set_visible(false)
+		super._process(delta)
+		return
+
+	var tracker := XRServer.get_tracker("/user/hand_tracker/" + tracked_hand)
+	if not tracker or not tracker is XRHandTracker:
+		_set_visible(false)
+		super._process(delta)
+		return
+	var ht := tracker as XRHandTracker
+
+	if not (ht.get_hand_joint_flags(_PALM_JOINT) & 4) or not (ht.get_hand_joint_flags(_WRIST_JOINT) & 4):
+		_set_visible(false)
+		super._process(delta)
+		return
+
+	var xr_tf := xr_origin.global_transform
+	var palm_xform := xr_tf * ht.get_hand_joint_transform(_PALM_JOINT)
+	var wrist_pos := (xr_tf * ht.get_hand_joint_transform(_WRIST_JOINT)).origin
+
+	var palm_normal := palm_xform.basis.z
+	var facing := palm_normal.dot((camera.global_position - palm_xform.origin).normalized())
+
+	if facing > _PALM_FACE_THRESHOLD:
+		global_position = wrist_pos + palm_normal * _WRIST_NORMAL_OFFSET
+		_set_visible(true)
+	else:
+		_set_visible(false)
+
+	super._process(delta)
+
+
+func _set_visible(v: bool) -> void:
+	visible = v
+	_mesh_instance.visible = v

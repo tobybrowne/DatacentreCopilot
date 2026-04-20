@@ -8,6 +8,7 @@ extends State
 const _STEP_VIEWER_SCENE := preload("res://ui/standalone/step_viewer/step_viewer_3d.tscn")
 
 var _step_viewer_3d: ViewportPanel3D = null
+var _wrist_panel: WristPanel3D = null
 
 
 func enter(data: Dictionary) -> void:
@@ -34,6 +35,11 @@ func enter(data: Dictionary) -> void:
 		if sv:
 			sv.init({"procedure": procedure})
 
+	_wrist_panel = WristPanel3D.new()
+	gesture_manager.get_parent().add_child(_wrist_panel)
+	_wrist_panel.prev_requested.connect(_voice_prev)
+	_wrist_panel.next_requested.connect(_voice_next)
+
 
 func exit() -> void:
 	PanelRouter.action_requested.disconnect(_on_action)
@@ -43,6 +49,10 @@ func exit() -> void:
 	if _step_viewer_3d:
 		_step_viewer_3d.queue_free()
 		_step_viewer_3d = null
+
+	if _wrist_panel:
+		_wrist_panel.queue_free()
+		_wrist_panel = null
 
 	_context_close()
 	_context_pending = false
@@ -62,14 +72,8 @@ func _on_action(action: String, data: Dictionary) -> void:
 
 # ── Gestures ──────────────────────────────────────────────────────────────────
 
-func on_pinch_started(hand: String, _position: Vector3) -> void:
-	var sv := _step_viewer()
-	if not sv:
-		return
-	if hand == "left":
-		sv.prev_step()
-	elif hand == "right":
-		sv.next_step()
+func on_pinch_started(_hand: String, _position: Vector3) -> void:
+	pass
 
 
 func on_pinch_held(hand: String, position: Vector3, duration: float) -> void:

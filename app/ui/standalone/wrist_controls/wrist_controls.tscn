@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b_wristcontrols"]
+
+[ext_resource type="Script" path="res://ui/standalone/wrist_controls/wrist_controls.gd" id="1"]
+
+[node name="WristControls" type="Control"]
+script = ExtResource("1")

@@ -96,11 +96,38 @@ var _drag_using_ray := false
 var _drag_ray_origin_prev := Vector3.ZERO
 var _drag_hand := ""
 var _poke_hand := ""
+var _audio_player: AudioStreamPlayer
+var _press_debounce := 0.0
+
+const _PRESS_DEBOUNCE_TIME := 0.5
 
 const _PIN_STRIP_PX := 80
 
 
+static func _create_pop_stream() -> AudioStreamWAV:
+	var sample_rate := 22050
+	var num_samples := sample_rate * 25 / 1000  # 25 ms
+	var data := PackedByteArray()
+	data.resize(num_samples * 2)
+	for i in num_samples:
+		var t := float(i) / sample_rate
+		var v := int(sin(TAU * 1000.0 * t) * exp(-t * 80.0) * 32767.0)
+		data[i * 2]     = v & 0xFF
+		data[i * 2 + 1] = (v >> 8) & 0xFF
+	var stream := AudioStreamWAV.new()
+	stream.data = data
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = sample_rate
+	stream.stereo = false
+	return stream
+
+
 func _ready() -> void:
+	_audio_player = AudioStreamPlayer.new()
+	_audio_player.stream = _create_pop_stream()
+	_audio_player.volume_db = -6.0
+	add_child(_audio_player)
+
 	_camera = get_parent().get_node_or_null("XRCamera3D")
 	_viewport = SubViewport.new()
 	_viewport.size = viewport_size
@@ -250,6 +277,8 @@ func get_panel() -> Control:
 func _process(delta: float) -> void:
 	if not _camera or not visible:
 		return
+	if _press_debounce > 0.0:
+		_press_debounce -= delta
 
 	if _dragging:
 		if _drag_using_ray:
@@ -475,8 +504,10 @@ func _check_poke() -> void:
 			motion.position = hit_pos
 			_viewport.push_input(motion)
 
-			if not _pressing:
+			if not _pressing and _press_debounce <= 0.0:
 				_pressing = true
+				_press_debounce = _PRESS_DEBOUNCE_TIME
+				_audio_player.play()
 				var press := InputEventMouseButton.new()
 				press.position = hit_pos
 				press.button_index = MOUSE_BUTTON_LEFT
@@ -601,8 +632,10 @@ func _check_ray() -> void:
 			motion.position = uv
 			_viewport.push_input(motion)
 
-			if gm.is_ray_pinching(hand) and not _ray_pressing[hand]:
+			if gm.is_ray_pinching(hand) and not _ray_pressing[hand] and _press_debounce <= 0.0:
 				_ray_pressing[hand] = true
+				_press_debounce = _PRESS_DEBOUNCE_TIME
+				_audio_player.play()
 				var press := InputEventMouseButton.new()
 				press.position = uv
 				press.button_index = MOUSE_BUTTON_LEFT
