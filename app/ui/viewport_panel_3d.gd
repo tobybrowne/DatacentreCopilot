@@ -751,7 +751,7 @@ func _project_to_panel(tip_world: Vector3) -> Vector2:
 	if abs(local.x) > half_w or abs(local.y) > half_h:
 		return Vector2(-1.0, -1.0)
 
-	if local.z < -0.01 or local.z > 0.02:
+	if local.z < -0.01 or local.z > 0.15:
 		return Vector2(-1.0, -1.0)
 
 	var uv_x := (local.x + half_w) / quad_size.x

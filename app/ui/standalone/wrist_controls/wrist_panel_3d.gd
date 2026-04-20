@@ -6,10 +6,16 @@ signal next_requested
 
 @export var tracked_hand: String = "left"
 
-const _PALM_FACE_THRESHOLD := 0.35
+const _PALM_FACE_THRESHOLD := 0.80
 const _PALM_JOINT := 0
 const _WRIST_JOINT := 1
-const _WRIST_NORMAL_OFFSET := 0.03  # metres above wrist surface
+const _WRIST_NORMAL_OFFSET := 0.02  # metres above palm surface
+
+const _HOLD_TIME := 1.5
+const _HOLD_Z_FRONT := -0.02  # finger must breach this depth to start hold
+const _HOLD_Z_BACK := 0.15    # finger stays "in" until it retreats past front
+
+var _hold_timer := 0.0
 
 
 func _ready() -> void:
@@ -52,20 +58,50 @@ func _process(delta: float) -> void:
 
 	var xr_tf := xr_origin.global_transform
 	var palm_xform := xr_tf * ht.get_hand_joint_transform(_PALM_JOINT)
-	var wrist_pos := (xr_tf * ht.get_hand_joint_transform(_WRIST_JOINT)).origin
 
 	var palm_normal := palm_xform.basis.z
 	var facing := palm_normal.dot((camera.global_position - palm_xform.origin).normalized())
 
 	if facing > _PALM_FACE_THRESHOLD:
-		global_position = wrist_pos + palm_normal * _WRIST_NORMAL_OFFSET
+		global_position = palm_xform.origin + palm_normal * _WRIST_NORMAL_OFFSET
 		_set_visible(true)
 	else:
 		_set_visible(false)
 
 	super._process(delta)
 
+	if visible and _panel:
+		var other_hand := "right" if tracked_hand == "left" else "left"
+		var tip := _get_index_tip(xr_origin, other_hand)
+		if tip != Vector3.INF and _finger_over_panel(tip):
+			_hold_timer += delta
+		else:
+			_hold_timer = 0.0
+		_panel.set_hold_progress(_hold_timer / _HOLD_TIME)
+
+
+const _HOLD_RADIUS := 0.03  # metres — must be within 3cm of panel centre
+
+func _finger_over_panel(tip_world: Vector3) -> bool:
+	var local := _mesh_instance.global_transform.affine_inverse() * tip_world
+	if local.z < _HOLD_Z_FRONT or local.z > _HOLD_Z_BACK:
+		return false
+	return Vector2(local.x, local.y).length() <= _HOLD_RADIUS
+
+
+func _get_index_tip(xr_origin: XROrigin3D, hand: String) -> Vector3:
+	var t := XRServer.get_tracker("/user/hand_tracker/" + hand)
+	if not t or not t is XRHandTracker:
+		return Vector3.INF
+	var ht := t as XRHandTracker
+	if not (ht.get_hand_joint_flags(10) & 4):
+		return Vector3.INF
+	return xr_origin.global_transform * ht.get_hand_joint_transform(10).origin
+
 
 func _set_visible(v: bool) -> void:
+	if not v and visible and _panel:
+		_hold_timer = 0.0
+		_panel.reset()
 	visible = v
 	_mesh_instance.visible = v

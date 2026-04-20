@@ -1,5 +1,7 @@
 extends Node3D
 
+const _SHOW_HAND_HIGHLIGHT := false
+
 @onready var ui_panel: ViewportPanel3D = $XROrigin3D/UIPanel
 @onready var keyboard_panel: ViewportPanel3D = $XROrigin3D/KeyboardPanel3D
 @onready var gesture_manager: GestureManager = $XROrigin3D/GestureManager
@@ -72,7 +74,7 @@ func _ready() -> void:
 
 		var hand_mat := StandardMaterial3D.new()
 		hand_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		hand_mat.albedo_color = Color(0.0, 0.133, 0.357, 0.333)
+		hand_mat.albedo_color = Color(0.0, 0.133, 0.357, 0.333) if _SHOW_HAND_HIGHLIGHT else Color(0, 0, 0, 0)
 		for mesh_path in [
 			"XROrigin3D/LeftHand/LeftHandHumanoid/LeftHandHumanoid/Skeleton3D/LeftHandHumanoidMesh",
 			"XROrigin3D/RightHand/RightHandHumanoid/RightHandHumanoid/Skeleton3D/RightHandHumanoidMesh"
