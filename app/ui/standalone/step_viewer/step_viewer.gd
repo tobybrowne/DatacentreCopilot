@@ -38,6 +38,7 @@ func _refresh() -> void:
 	var step: Step = _steps[_current]
 	_counter.text = "Step %d / %d" % [_current + 1, _steps.size()]
 	_text.text = step.text
+	SpeakManager.speak("Step %d: %s" % [_current + 1, step.text])
 
 	if step.type == Step.TYPE_GOTO:
 		_active_goto = true
@@ -48,6 +49,7 @@ func _refresh() -> void:
 
 
 func _exit_tree() -> void:
+	SpeakManager.stop()
 	if _active_goto:
 		_active_goto = false
 		PanelRouter.request("goto_cleared", {})

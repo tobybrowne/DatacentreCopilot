@@ -523,6 +523,7 @@ func _check_poke() -> void:
 				_viewport.push_input(touch)
 	elif _pressing:
 		_pressing = false
+		_press_debounce = _PRESS_DEBOUNCE_TIME
 		if _dragging:
 			_dragging = false
 			_pinned = true
@@ -669,6 +670,7 @@ func _check_ray() -> void:
 func _release_ray(hand: String) -> void:
 	if _ray_pressing[hand]:
 		_ray_pressing[hand] = false
+		_press_debounce = _PRESS_DEBOUNCE_TIME
 		if _dragging and _drag_hand == hand:
 			_dragging = false
 			_pinned = true
