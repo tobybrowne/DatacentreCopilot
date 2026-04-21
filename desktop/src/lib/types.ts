@@ -15,18 +15,13 @@ export interface Building {
   draft: boolean
 }
 
-export interface BuildingSpace {
-  id: string
-  building_id: string
-  space_id: string
-  index: number
-  offset_transformation: RigidTransform | null
-}
-
 export interface Space {
   id: string
   name: string
   glb_path: string | null
+  building_id: string | null
+  building_index: number | null
+  offset_transformation: RigidTransform | null
 }
 
 export interface Anchor {

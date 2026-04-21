@@ -361,13 +361,13 @@ func create_content_anchor(local_pos: Vector3) -> String:
 func _load_building_offsets(space_id: String) -> void:
 	if space_id.is_empty():
 		return
-	var building_spaces: Array = await SupabaseManager.get_building_spaces_for_space(space_id)
-	if building_spaces.is_empty():
+	var sibling_spaces: Array[Space] = await SupabaseManager.get_sibling_spaces(space_id)
+	if sibling_spaces.is_empty():
 		print("LocationManager: no building found for space ", space_id)
 		return
-	print("LocationManager: building has ", building_spaces.size(), " spaces")
-	for bs in building_spaces:
-		_space_offsets[bs.space_id] = bs.offset_transformation
+	print("LocationManager: building has ", sibling_spaces.size(), " spaces")
+	for s in sibling_spaces:
+		_space_offsets[s.id] = s.offset_transformation
 
 
 # ── Calibration ──────────────────────────────────────────────────────────────

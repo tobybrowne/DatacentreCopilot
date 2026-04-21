@@ -183,32 +183,21 @@ func update_user_glb_position(glb_position: Vector3) -> bool:
 		return false
 
 
-func get_building_spaces_for_space(space_id: String) -> Array[BuildingSpace]:
+func get_sibling_spaces(space_id: String) -> Array[Space]:
 	if not enabled:
 		return []
+	# First get the space to find its building_id
 	var task = await Supabase.database.query(
-		SupabaseQuery.new().from("building_spaces").select().eq("space_id", space_id)
+		SupabaseQuery.new().from("spaces").select().eq("id", space_id)
 	).completed
 	if task.error != null or task.data == null or task.data.is_empty():
 		if task.error != null:
-			print("get_building_spaces_for_space error: ", task.error.message)
+			print("get_sibling_spaces error: ", task.error.message)
 		return []
 	var building_id: String = task.data[0].get("building_id", "")
 	if building_id.is_empty():
 		return []
-
-	var task2 = await Supabase.database.query(
-		SupabaseQuery.new().from("building_spaces").select().eq("building_id", building_id)
-	).completed
-	if task2.error == null and task2.data != null:
-		var result: Array[BuildingSpace] = []
-		for row in task2.data:
-			result.append(BuildingSpace.from_dict(row))
-		return result
-	else:
-		if task2.error != null:
-			print("get_building_spaces_for_space error: ", task2.error.message)
-		return []
+	return await get_spaces_for_building(building_id)
 
 
 func get_buildings() -> Array[Building]:
@@ -230,27 +219,13 @@ func get_buildings() -> Array[Building]:
 func get_spaces_for_building(building_id: String) -> Array[Space]:
 	if not enabled:
 		return []
-	var bs_task = await Supabase.database.query(
-		SupabaseQuery.new().from("building_spaces").select().eq("building_id", building_id)
-	).completed
-	if bs_task.error != null or bs_task.data == null or bs_task.data.is_empty():
-		return []
-	var ids := PackedStringArray()
-	for row in bs_task.data:
-		var sid: String = row.get("space_id", "")
-		if not sid.is_empty():
-			ids.append(sid)
-	if ids.is_empty():
-		return []
-	# Fetch all spaces and filter client-side (plugin's In() filter has a key-case bug)
 	var task = await Supabase.database.query(
-		SupabaseQuery.new().from("spaces").select()
+		SupabaseQuery.new().from("spaces").select().eq("building_id", building_id)
 	).completed
 	if task.error == null and task.data != null:
 		var result: Array[Space] = []
 		for row in task.data:
-			if row.get("id", "") in ids:
-				result.append(Space.from_dict(row))
+			result.append(Space.from_dict(row))
 		return result
 	if task.error != null:
 		print("get_spaces_for_building error: ", task.error.message)

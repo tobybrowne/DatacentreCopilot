@@ -4,7 +4,7 @@
   import { computeTransform, posToV3 } from './stitching'
   import { computeCentroids } from './centroid'
   import Scene from './Scene.svelte'
-  import type { Anchor, Building, BuildingSpace, Position, RigidTransform, Space } from './types'
+  import type { Anchor, Building, Position, RigidTransform, Space } from './types'
   import * as THREE from 'three'
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
   import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
@@ -21,8 +21,8 @@
 
   // Setup state
   let allSpaces: Space[] = []
-  let draftBuildings: (Building & { building_spaces: BuildingSpace[] })[] = []
-  let completedBuildings: (Building & { building_spaces: BuildingSpace[] })[] = []
+  let draftBuildings: (Building & { spaces: Space[] })[] = []
+  let completedBuildings: (Building & { spaces: Space[] })[] = []
   let buildingName = ''
   let orderedSpaceIds: string[] = []  // user-chosen order; index 0 = reference
 
@@ -99,17 +99,14 @@
     phase = 'pickSource'
   }
 
-  async function resumeBuilding(draft: Building & { building_spaces: BuildingSpace[] }): Promise<void> {
-    const sorted = [...draft.building_spaces].sort((a, b) => a.index - b.index)
-    orderedSpaceIds = sorted.map(bs => bs.space_id)
+  async function resumeBuilding(draft: Building & { spaces: Space[] }): Promise<void> {
+    const sorted = [...draft.spaces].sort((a, b) => (a.building_index ?? 0) - (b.building_index ?? 0))
+    orderedSpaceIds = sorted.map(s => s.id)
     buildingName = draft.name ?? ''
     activeBuildingId = draft.id
     builtSpaces = sorted
-      .filter(bs => bs.index === 0 || bs.offset_transformation !== null)
-      .map(bs => {
-        const space = allSpaces.find(s => s.id === bs.space_id)!
-        return { space, glbUrl: getSpaceGlbUrl(space.glb_path!), transform: bs.offset_transformation }
-      })
+      .filter(s => s.building_index === 0 || s.offset_transformation !== null)
+      .map(s => ({ space: s, glbUrl: getSpaceGlbUrl(s.glb_path!), transform: s.offset_transformation }))
     currentIdx = builtSpaces.length
     srcPoints = []
     tgtPoints = []
@@ -118,7 +115,7 @@
     phase = currentIdx >= orderedSpaceIds.length ? 'complete' : 'pickSource'
   }
 
-  async function discardDraft(draft: Building & { building_spaces: BuildingSpace[] }): Promise<void> {
+  async function discardDraft(draft: Building & { spaces: Space[] }): Promise<void> {
     try {
       await deleteBuilding(draft.id)
       draftBuildings = draftBuildings.filter(d => d.id !== draft.id)
@@ -127,7 +124,7 @@
     }
   }
 
-  async function deleteCompletedBuilding(building: Building & { building_spaces: BuildingSpace[] }): Promise<void> {
+  async function deleteCompletedBuilding(building: Building & { spaces: Space[] }): Promise<void> {
     try {
       await deleteBuilding(building.id)
       completedBuildings = completedBuildings.filter(b => b.id !== building.id)
@@ -137,12 +134,9 @@
     }
   }
 
-  function viewBuilding(building: Building & { building_spaces: BuildingSpace[] }): void {
-    const sorted = [...building.building_spaces].sort((a, b) => a.index - b.index)
-    builtSpaces = sorted.map(bs => {
-      const space = allSpaces.find(s => s.id === bs.space_id)!
-      return { space, glbUrl: getSpaceGlbUrl(space.glb_path!), transform: bs.offset_transformation }
-    })
+  function viewBuilding(building: Building & { spaces: Space[] }): void {
+    const sorted = [...building.spaces].sort((a, b) => (a.building_index ?? 0) - (b.building_index ?? 0))
+    builtSpaces = sorted.map(s => ({ space: s, glbUrl: getSpaceGlbUrl(s.glb_path!), transform: s.offset_transformation }))
     buildingName = building.name ?? ''
     activeBuildingId = building.id
     loadBuildingAnchors(builtSpaces)
@@ -266,14 +260,7 @@
     try {
       const entries = builtSpaces
         .filter(e => e.space.glb_path)
-        .map(e => {
-          const bs = (activeBuildingId
-            ? [...draftBuildings, ...completedBuildings].find(b => b.id === activeBuildingId)?.building_spaces ?? []
-            : []
-          ).find(bs => bs.space_id === e.space.id)
-          return bs ? { bs, glbUrl: getSpaceGlbUrl(e.space.glb_path!) } : null
-        })
-        .filter(Boolean) as { bs: import('./types').BuildingSpace; glbUrl: string }[]
+        .map(e => ({ space: e.space, glbUrl: getSpaceGlbUrl(e.space.glb_path!) }))
 
       const { centroids, voronoiPoints } = await computeCentroids(entries, voxelSize, overlapPenalty)
 
@@ -369,8 +356,8 @@
         <label class="section-label">Resume draft</label>
         <ul class="pool-list">
           {#each draftBuildings as draft (draft.id)}
-            {@const stitched = draft.building_spaces.filter(bs => bs.index === 0 || bs.offset_transformation !== null).length}
-            {@const total = draft.building_spaces.length}
+            {@const stitched = draft.spaces.filter(s => s.building_index === 0 || s.offset_transformation !== null).length}
+            {@const total = draft.spaces.length}
             <li class="draft-item">
               <div class="draft-info">
                 <span class="draft-name">{draft.name || 'Unnamed'}</span>
@@ -436,7 +423,7 @@
           {#each completedBuildings as b (b.id)}
             <li class="pool-item">
               <span class="building-name" on:click={() => viewBuilding(b)}>{b.name || 'Unnamed'}</span>
-              <span class="space-count">{b.building_spaces.length}</span>
+              <span class="space-count">{b.spaces?.length ?? 0}</span>
               <button class="discard-btn" on:click|stopPropagation={() => deleteCompletedBuilding(b)}>×</button>
             </li>
           {/each}

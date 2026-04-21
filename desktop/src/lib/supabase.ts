@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import type { Anchor, Building, BuildingSpace, Position, RigidTransform, Space } from './types'
+import type { Anchor, Building, Position, RigidTransform, Space } from './types'
 
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL as string,
@@ -86,37 +86,37 @@ export async function fetchUserPosition(userId: string): Promise<Position | null
   return (data?.glb_position as Position) ?? null
 }
 
-export async function fetchBuildingById(id: string): Promise<Building & { building_spaces: BuildingSpace[] }> {
+export async function fetchBuildingById(id: string): Promise<Building & { spaces: Space[] }> {
   const { data, error } = await supabase
     .from('buildings')
-    .select('*, building_spaces(*)')
+    .select('*, spaces(*)')
     .eq('id', id)
     .single()
   if (error) throw error
-  return data as Building & { building_spaces: BuildingSpace[] }
+  return data as Building & { spaces: Space[] }
 }
 
-export async function fetchCompletedBuildings(): Promise<(Building & { building_spaces: BuildingSpace[] })[]> {
+export async function fetchCompletedBuildings(): Promise<(Building & { spaces: Space[] })[]> {
   const { data, error } = await supabase
     .from('buildings')
-    .select('*, building_spaces(*)')
+    .select('*, spaces(*)')
     .eq('draft', false)
     .order('created_at', { ascending: false })
   if (error) throw error
-  return data as (Building & { building_spaces: BuildingSpace[] })[]
+  return data as (Building & { spaces: Space[] })[]
 }
 
-export async function fetchDraftBuildings(): Promise<(Building & { building_spaces: BuildingSpace[] })[]> {
+export async function fetchDraftBuildings(): Promise<(Building & { spaces: Space[] })[]> {
   const { data, error } = await supabase
     .from('buildings')
-    .select('*, building_spaces(*)')
+    .select('*, spaces(*)')
     .eq('draft', true)
     .order('created_at', { ascending: false })
   if (error) throw error
-  return data as (Building & { building_spaces: BuildingSpace[] })[]
+  return data as (Building & { spaces: Space[] })[]
 }
 
-// Creates a draft building with all spaces pre-inserted (transforms null until stitched).
+// Creates a draft building and assigns spaces to it in order.
 export async function createDraftBuilding(
   name: string,
   orderedSpaceIds: string[]
@@ -128,29 +128,25 @@ export async function createDraftBuilding(
     .single()
   if (buildingErr) throw buildingErr
 
-  const rows = orderedSpaceIds.map((spaceId, index) => ({
-    building_id: building.id,
-    space_id: spaceId,
-    index,
-    offset_transformation: null,
-  }))
-
-  const { error } = await supabase.from('building_spaces').insert(rows)
-  if (error) throw error
+  await Promise.all(orderedSpaceIds.map((spaceId, index) =>
+    supabase
+      .from('spaces')
+      .update({ building_id: building.id, building_index: index, offset_transformation: null })
+      .eq('id', spaceId)
+  ))
 
   return building.id
 }
 
 export async function updateBuildingSpaceTransform(
-  buildingId: string,
+  _buildingId: string,
   spaceId: string,
   transform: RigidTransform
 ): Promise<void> {
   const { error } = await supabase
-    .from('building_spaces')
+    .from('spaces')
     .update({ offset_transformation: transform })
-    .eq('building_id', buildingId)
-    .eq('space_id', spaceId)
+    .eq('id', spaceId)
   if (error) throw error
 }
 

@@ -2,9 +2,9 @@
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
   import { fetchCompletedBuildings, fetchSpaces } from '$lib/supabase'
-  import type { Building, BuildingSpace, Space } from '$lib/types'
+  import type { Building, Space } from '$lib/types'
 
-  let buildings: (Building & { building_spaces: BuildingSpace[] })[] = []
+  let buildings: (Building & { spaces: Space[] })[] = []
   let spaces: Space[] = []
   let loading = true
   let error: string | null = null
@@ -39,7 +39,7 @@
           {#each buildings as b (b.id)}
             <li class="item" on:click={() => goto(`/navigate/${b.id}`)}>
               <span class="name">{b.name || 'Unnamed'}</span>
-              <span class="meta">{b.building_spaces.length} spaces</span>
+              <span class="meta">{b.spaces?.length ?? 0} spaces</span>
               <span class="arrow">→</span>
             </li>
           {/each}

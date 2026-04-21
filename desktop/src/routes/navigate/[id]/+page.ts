@@ -1,26 +1,19 @@
-import { fetchBuildingById, fetchSpaces, getSpaceGlbUrl, getNavMeshUrl, supabase } from '$lib/supabase'
+import { fetchBuildingById, getSpaceGlbUrl, getNavMeshUrl, supabase } from '$lib/supabase'
 import type { PageLoad } from './$types'
 import type { RigidTransform } from '$lib/types'
 
 export const load: PageLoad = async ({ params }) => {
-  const [building, spaces] = await Promise.all([
+  const [building] = await Promise.all([
     fetchBuildingById(params.id),
-    fetchSpaces(),
   ])
 
-  const spaceEntries = [...building.building_spaces]
-    .sort((a, b) => a.index - b.index)
-    .filter(bs => {
-      const space = spaces.find(s => s.id === bs.space_id)
-      return space?.glb_path
-    })
-    .map(bs => {
-      const space = spaces.find(s => s.id === bs.space_id)!
-      return {
-        url: getSpaceGlbUrl(space.glb_path!),
-        transform: bs.offset_transformation as RigidTransform | null,
-      }
-    })
+  const spaceEntries = [...building.spaces]
+    .filter(s => s.glb_path)
+    .sort((a, b) => (a.building_index ?? 0) - (b.building_index ?? 0))
+    .map(s => ({
+      url: getSpaceGlbUrl(s.glb_path!),
+      transform: s.offset_transformation as RigidTransform | null,
+    }))
 
   let existingNavMesh: { url: string; buildSettings: Record<string, unknown> } | null = null
   if ((building as any).navmesh_id) {
