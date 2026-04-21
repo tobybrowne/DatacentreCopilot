@@ -3,10 +3,18 @@ extends BasePanel
 
 @onready var _counter: Label = $MarginContainer/VBoxContainer/StepCounter
 @onready var _text: Label = $MarginContainer/VBoxContainer/StepText
+@onready var _timer_display: PanelContainer = $MarginContainer/VBoxContainer/TimerDisplay
+@onready var _timer_label: Label = $MarginContainer/VBoxContainer/TimerDisplay/TimerLabel
+@onready var _countdown: Timer = $CountdownTimer
 
 var _steps: Array[Step] = []
 var _current: int = 0
 var _active_goto := false
+
+var _timer_remaining: float = 0.0
+var _timer_target_uuid: String = ""
+var _timer_expired: bool = false
+var _flash_accum: float = 0.0
 
 
 func init(data: Dictionary) -> void:
@@ -14,6 +22,7 @@ func init(data: Dictionary) -> void:
 	if procedure:
 		_steps = procedure.steps
 		_current = 0
+		_stop_timer()
 		_refresh()
 
 
@@ -47,9 +56,60 @@ func _refresh() -> void:
 		_active_goto = false
 		PanelRouter.request("goto_cleared", {})
 
+	# Dismiss timer if we've reached its target step
+	if not _timer_target_uuid.is_empty() and step.id == _timer_target_uuid:
+		_stop_timer()
+
+	# Start a new timer if this step has one
+	if step.has_timer():
+		_start_timer(step.timer_duration, step.timer_target_uuid)
+
+
+func _process(delta: float) -> void:
+	if _countdown.is_stopped() or _timer_expired:
+		if _timer_expired:
+			_flash_accum += delta
+			_timer_display.modulate = Color.RED if fmod(_flash_accum, 0.6) < 0.3 else Color.WHITE
+		return
+
+	_timer_remaining = _countdown.time_left
+	_timer_label.text = _format_time(_timer_remaining)
+
+
+func _start_timer(duration: float, target_uuid: String) -> void:
+	_timer_target_uuid = target_uuid
+	_timer_remaining = duration
+	_timer_expired = false
+	_flash_accum = 0.0
+	_timer_display.modulate = Color.WHITE
+	_timer_display.visible = true
+	_timer_label.text = _format_time(duration)
+	_countdown.start(duration)
+	_countdown.timeout.connect(_on_timer_expired, CONNECT_ONE_SHOT)
+
+
+func _stop_timer() -> void:
+	_countdown.stop()
+	_timer_target_uuid = ""
+	_timer_expired = false
+	_timer_display.visible = false
+	_timer_label.text = ""
+
+
+func _on_timer_expired() -> void:
+	_timer_expired = true
+	_timer_label.text = "Time ran out"
+	SpeakManager.speak("Time ran out")
+
+
+func _format_time(seconds: float) -> String:
+	var s := int(seconds)
+	return "%d:%02d" % [s / 60, s % 60]
+
 
 func _exit_tree() -> void:
 	SpeakManager.stop()
+	_stop_timer()
 	if _active_goto:
 		_active_goto = false
 		PanelRouter.request("goto_cleared", {})

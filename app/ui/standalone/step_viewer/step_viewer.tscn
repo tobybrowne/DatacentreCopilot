@@ -39,3 +39,16 @@ layout_mode = 2
 autowrap_mode = 3
 theme_override_font_sizes/font_size = 30
 text = ""
+
+[node name="TimerDisplay" type="PanelContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+visible = false
+
+[node name="TimerLabel" type="Label" parent="MarginContainer/VBoxContainer/TimerDisplay"]
+layout_mode = 2
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 26
+text = ""
+
+[node name="CountdownTimer" type="Timer" parent="."]
+one_shot = true
