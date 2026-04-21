@@ -63,6 +63,38 @@ ON logs FOR INSERT WITH CHECK (
 );
 
 
+-- Storage bucket: log_bucket (private) — stores camera and geometry recordings
+INSERT INTO storage.buckets (id, name, public) VALUES ('log_bucket', 'log_bucket', false);
+
+CREATE POLICY "log_bucket: select"
+ON storage.objects FOR SELECT USING (
+  bucket_id = 'log_bucket'
+  AND EXISTS (
+    SELECT 1 FROM logs
+    WHERE logs.camera_recording_path = name
+       OR logs.geometry_recording_path = name
+  )
+);
+
+CREATE POLICY "log_bucket: insert"
+ON storage.objects FOR INSERT WITH CHECK (
+  bucket_id = 'log_bucket'
+  AND EXISTS (
+    SELECT 1 FROM site_users
+    WHERE site_users.user_id = (SELECT auth.uid())
+  )
+);
+
+CREATE POLICY "log_bucket: delete"
+ON storage.objects FOR DELETE USING (
+  bucket_id = 'log_bucket'
+  AND EXISTS (
+    SELECT 1 FROM logs
+    WHERE logs.camera_recording_path = name
+       OR logs.geometry_recording_path = name
+  )
+);
+
 -- logs can be associated with many assets
 CREATE TABLE log_assets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

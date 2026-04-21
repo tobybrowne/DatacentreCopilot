@@ -22,6 +22,16 @@ CREATE TABLE buildings (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- RLS: navmeshes accessible if user can see the building referencing it
+ALTER TABLE navmeshes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view navmeshes for buildings they have access to"
+ON navmeshes FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM buildings
+    WHERE buildings.navmesh_id = navmeshes.id
+  )
+);
+
 -- RLS: users can see/modify buildings for sites they belong to
 ALTER TABLE buildings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view buildings for sites they belong to"
@@ -50,8 +60,8 @@ ON buildings FOR DELETE USING (
 );
 
 
--- Storage bucket: spaces_bucket (public) — stores .blob and .glb exports
-INSERT INTO storage.buckets (id, name, public) VALUES ('spaces_bucket', 'spaces_bucket', true);
+-- Storage bucket: spaces_bucket (private) — stores .blob and .glb exports
+INSERT INTO storage.buckets (id, name, public) VALUES ('spaces_bucket', 'spaces_bucket', false);
 
 CREATE TABLE spaces (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -90,5 +100,47 @@ ON spaces FOR DELETE USING (
     SELECT 1
     FROM sites
     WHERE sites.id = spaces.site_id
+  )
+);
+
+-- Storage RLS: spaces_bucket access gated on path existence in accessible spaces/navmeshes
+CREATE POLICY "spaces_bucket: select"
+ON storage.objects FOR SELECT USING (
+  bucket_id = 'spaces_bucket'
+  AND (
+    EXISTS (
+      SELECT 1 FROM spaces
+      WHERE spaces.blob_path = name
+         OR spaces.glb_path = name
+    )
+    OR EXISTS (
+      SELECT 1 FROM navmeshes
+      WHERE navmeshes.navmesh_path = name
+    )
+  )
+);
+
+CREATE POLICY "spaces_bucket: insert"
+ON storage.objects FOR INSERT WITH CHECK (
+  bucket_id = 'spaces_bucket'
+  AND EXISTS (
+    SELECT 1 FROM site_users
+    WHERE site_users.user_id = (SELECT auth.uid())
+  )
+);
+
+CREATE POLICY "spaces_bucket: delete"
+ON storage.objects FOR DELETE USING (
+  bucket_id = 'spaces_bucket'
+  AND (
+    EXISTS (
+      SELECT 1 FROM spaces
+      WHERE spaces.blob_path = name
+         OR spaces.glb_path = name
+    )
+    OR EXISTS (
+      SELECT 1 FROM navmeshes
+      WHERE navmeshes.navmesh_path = name
+    )
   )
 );
