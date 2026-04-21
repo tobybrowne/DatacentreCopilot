@@ -13,7 +13,8 @@ func sign_in(email, password):
 
 	if auth_task.error == null:
 		auth_user = auth_task.user
-		print("Login Success!")
+		print("Login Success! access_token: ", auth_task.user.access_token.substr(0, 40), "...")
+		print("Supabase._auth after login: ", Supabase.auth._auth.substr(0, 40) if not Supabase.auth._auth.is_empty() else "EMPTY")
 		return true
 	else:
 		print("Login Error: ", auth_task.error.message)

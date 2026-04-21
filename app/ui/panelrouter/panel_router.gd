@@ -15,6 +15,7 @@ const SCENES: Dictionary = {
 	"space_manager": "res://ui/panelrouter/space_manager/space_manager.tscn",
 	"space_info":    "res://ui/panelrouter/space_info/space_info.tscn",
 	"space_picker":  "res://ui/panelrouter/space_picker/space_picker.tscn",
+	"auth_error":    "res://ui/panelrouter/auth_error/auth_error.tscn",
 }
 
 signal panel_changed(panel_id: String, data: Dictionary)

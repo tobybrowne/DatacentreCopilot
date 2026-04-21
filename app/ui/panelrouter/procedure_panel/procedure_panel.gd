@@ -1,10 +1,12 @@
 extends BasePanel
 
 @onready var _item_list: VBoxContainer = $VBoxContainer/ScrollContainer/ItemList
+@onready var _status: Label = $VBoxContainer/Status
 
 
 func _ready() -> void:
 	super._ready()
+	_status.text = "Loading..."
 	call_deferred("load_procedures")
 
 
@@ -16,6 +18,10 @@ func load_procedures() -> void:
 func _populate(procedures: Array[Procedure]) -> void:
 	for child in _item_list.get_children():
 		child.queue_free()
+	if procedures.is_empty():
+		_status.text = "No procedures found."
+		return
+	_status.text = ""
 	for procedure in procedures:
 		_add_row(procedure)
 

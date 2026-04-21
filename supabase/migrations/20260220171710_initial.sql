@@ -29,8 +29,6 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION handle_new_user();
 
-INSERT INTO users (id, contact_email) VALUES ('00000000-0000-0000-0000-000000000000', 'demo@entangl.ai');
-
 CREATE TABLE procedures (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
