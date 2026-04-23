@@ -26,6 +26,7 @@ XRToolsRumbleManager="*uid://by853dk86g1qw"
 Supabase="*uid://ocnh0cal4jt1"
 SupabaseManager="*uid://bkm7clkns3jgq"
 AuthManager="*res://scripts/AuthManager.gd"
+LogManager="*res://scripts/LogManager.gd"
 
 [display]
 

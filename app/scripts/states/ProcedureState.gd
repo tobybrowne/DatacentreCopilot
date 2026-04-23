@@ -9,6 +9,8 @@ const _STEP_VIEWER_SCENE := preload("res://ui/standalone/step_viewer/step_viewer
 
 var _step_viewer_3d: ViewportPanel3D = null
 var _wrist_panel: WristPanel3D = null
+var _gesture_replayer: PoseReplayer = null
+var _current_log_path: String = ""
 
 
 func enter(data: Dictionary) -> void:
@@ -31,8 +33,13 @@ func enter(data: Dictionary) -> void:
 	_step_viewer_3d = _STEP_VIEWER_SCENE.instantiate()
 	gesture_manager.get_parent().add_child(_step_viewer_3d)
 	if procedure:
+		var site_id: String = space.site_id if space else ""
+		await LogManager.start_procedure(procedure, site_id)
 		var sv := _step_viewer_3d.get_panel() as StepViewer
 		if sv:
+			sv.step_changed.connect(LogManager.on_step_changed)
+			sv.step_changed.connect(_on_step_changed_for_replay)
+			sv.replay_requested.connect(_on_replay_requested)
 			sv.init({"procedure": procedure})
 
 	_wrist_panel = WristPanel3D.new()
@@ -45,6 +52,9 @@ func exit() -> void:
 	PanelRouter.action_requested.disconnect(_on_action)
 	voice_manager.next_step.disconnect(_voice_next)
 	voice_manager.previous_step.disconnect(_voice_prev)
+
+	LogManager.end_procedure()
+	_stop_replay()
 
 	if _step_viewer_3d:
 		_step_viewer_3d.queue_free()
@@ -102,3 +112,60 @@ func _step_viewer() -> StepViewer:
 	if not _step_viewer_3d:
 		return null
 	return _step_viewer_3d.get_panel() as StepViewer
+
+
+# ── Replay ────────────────────────────────────────────────────────────────────
+
+func _on_step_changed_for_replay(_prev: Step, next_step: Step) -> void:
+	_stop_replay()
+	_current_log_path = ""
+	var sv := _step_viewer()
+	if sv:
+		sv.show_replay_button(false)
+	if not next_step:
+		return
+	var path := await _fetch_log_path(next_step.id)
+	_current_log_path = path
+	sv = _step_viewer()
+	if sv:
+		sv.show_replay_button(not path.is_empty())
+
+
+func _fetch_log_path(step_id: String) -> String:
+	var task = await Supabase.database.query(
+		SupabaseQuery.new()
+			.from("logs")
+			.select(["geometry_recording_path"])
+			.eq("step_id", step_id)
+			.Is("geometry_recording_path", "null", true)
+			.order("created_at", SupabaseQuery.Directions.Descending)
+			.range(0, 0)
+	).completed
+	if task.error != null or task.data == null or task.data.is_empty():
+		return ""
+	return task.data[0].get("geometry_recording_path", "")
+
+
+func _on_replay_requested() -> void:
+	if _current_log_path.is_empty():
+		return
+	var task = await Supabase.storage.from("log_bucket").download(_current_log_path, "", true).completed
+	if task.error != null:
+		push_warning("ProcedureState: replay download failed — %s" % task.error.message)
+		return
+	var frames := PoseRec.frames_from_bytes(task.data)
+	if frames.is_empty():
+		push_warning("ProcedureState: no frames in replay recording")
+		return
+	_stop_replay()
+	_gesture_replayer = PoseReplayer.new()
+	_gesture_replayer.skeleton_enabled = true
+	gesture_manager.get_parent().add_child(_gesture_replayer)
+	_gesture_replayer.global_transform = location_manager.get_calibration()
+	_gesture_replayer.play(frames, true)
+
+
+func _stop_replay() -> void:
+	if _gesture_replayer:
+		_gesture_replayer.queue_free()
+		_gesture_replayer = null

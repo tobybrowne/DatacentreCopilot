@@ -5,7 +5,11 @@ extends BasePanel
 @onready var _text: Label = $MarginContainer/VBoxContainer/StepText
 @onready var _timer_display: PanelContainer = $MarginContainer/VBoxContainer/TimerDisplay
 @onready var _timer_label: Label = $MarginContainer/VBoxContainer/TimerDisplay/TimerLabel
+@onready var _replay_btn: Button = $MarginContainer/VBoxContainer/ReplayButton
 @onready var _countdown: Timer = $CountdownTimer
+
+signal step_changed(prev_step: Step, next_step: Step)
+signal replay_requested
 
 var _steps: Array[Step] = []
 var _current: int = 0
@@ -17,34 +21,45 @@ var _timer_expired: bool = false
 var _flash_accum: float = 0.0
 
 
+func _ready() -> void:
+	_replay_btn.pressed.connect(replay_requested.emit)
+
+
+func show_replay_button(has_log: bool) -> void:
+	_replay_btn.visible = has_log
+
+
 func init(data: Dictionary) -> void:
 	var procedure: Procedure = data.get("procedure")
 	if procedure:
 		_steps = procedure.steps
 		_current = 0
 		_stop_timer()
-		_refresh()
+		_refresh(null)
 
 
 func next_step() -> void:
 	if _current < _steps.size() - 1:
+		var prev := _steps[_current]
 		_current += 1
-		_refresh()
+		_refresh(prev)
 
 
 func prev_step() -> void:
 	if _current > 0:
+		var prev := _steps[_current]
 		_current -= 1
-		_refresh()
+		_refresh(prev)
 
 
-func _refresh() -> void:
+func _refresh(prev_step: Step) -> void:
 	if _steps.is_empty():
 		_counter.text = ""
 		_text.text = ""
 		return
 
 	var step: Step = _steps[_current]
+	step_changed.emit(prev_step, step)
 	_counter.text = "Step %d / %d" % [_current + 1, _steps.size()]
 	_text.text = step.text
 	SpeakManager.speak("Step %d: %s" % [_current + 1, step.text])

@@ -1,9 +1,10 @@
 class_name Space
 
-var id: String        # uuid from ML2
+var id: String
 var name: String
-var blob_path: String # path to the binary space export file in Supabase storage
-var glb_path: String  # path to the glb export file in Supabase storage
+var blob_path: String
+var glb_path: String
+var offset_transformation: Transform3D
 var created_at: String
 var updated_at: String
 
@@ -13,6 +14,15 @@ static func from_dict(data: Dictionary) -> Space:
 	space.name = data.get("name", "")
 	space.blob_path = data.get("blob_path", "")
 	space.glb_path = data.get("glb_path", "")
+	var ot = data.get("offset_transformation", null)
+	if ot is Dictionary:
+		var p = ot.get("position", {})
+		var q = ot.get("quaternion", {})
+		var origin := Vector3(p.get("x", 0.0), p.get("y", 0.0), p.get("z", 0.0))
+		var quat := Quaternion(q.get("x", 0.0), q.get("y", 0.0), q.get("z", 0.0), q.get("w", 1.0))
+		space.offset_transformation = Transform3D(Basis(quat), origin)
+	else:
+		space.offset_transformation = Transform3D.IDENTITY
 	space.created_at = data.get("created_at", "")
 	space.updated_at = data.get("updated_at", "")
 	return space

@@ -49,7 +49,7 @@ var _home_fired := {"left": false, "right": false}
 
 var _recording := false
 var _recording_origin := Transform3D()
-var _frames: Array[HandPoseRec] = []
+var _frames: Array[PoseRec] = []
 
 # Ray state — read by consumers each frame (keyed by "left"/"right")
 var ray_origins := {"left": Vector3.ZERO, "right": Vector3.ZERO}
@@ -318,18 +318,14 @@ func _end_home(hand: String) -> void:
 
 # ---- Hand pose recording ----
 
-func start_recording() -> void:
+func start_recording(origin: Transform3D = Transform3D.IDENTITY) -> void:
 	_frames.clear()
-	# Capture the camera (head) transform as the recording origin.
-	# All joints will be stored relative to this so the recording is portable.
-	var camera := get_viewport().get_camera_3d()
-	if camera:
-		_recording_origin = camera.global_transform
-	else:
-		_recording_origin = Transform3D()
+	# origin should be the GLB→world calibration transform from LocationManager.
+	# Storing its inverse maps all poses into building space at record time.
+	_recording_origin = origin
 	_recording = true
 
-func stop_recording() -> Array[HandPoseRec]:
+func stop_recording() -> Array[PoseRec]:
 	_recording = false
 	var result := _frames.duplicate()
 	_frames.clear()
@@ -339,9 +335,12 @@ func is_recording() -> bool:
 	return _recording
 
 func _record_frame() -> void:
-	var pose := HandPoseRec.new()
+	var pose := PoseRec.new()
 	pose.timestamp_msec = Time.get_ticks_msec()
 	var inv_origin := _recording_origin.affine_inverse()
+	var camera := get_viewport().get_camera_3d()
+	if camera:
+		pose.head_transform = inv_origin * camera.global_transform
 	_capture_hand_joints("left", pose.left_joints, inv_origin)
 	_capture_hand_joints("right", pose.right_joints, inv_origin)
 	_frames.append(pose)
@@ -352,6 +351,6 @@ func _capture_hand_joints(hand: String, joints: Array[Transform3D], inv_origin: 
 		return
 
 	var ht := tracker as XRHandTracker
-	for joint_idx in HandPoseRec.JOINT_COUNT:
+	for joint_idx in PoseRec.JOINT_COUNT:
 		if ht.get_hand_joint_flags(joint_idx) & 4:  # has tracking data
 			joints[joint_idx] = inv_origin * ht.get_hand_joint_transform(joint_idx)

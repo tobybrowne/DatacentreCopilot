@@ -416,6 +416,9 @@ func _try_calibrate() -> void:
 	_pending_save.clear()
 
 
+func get_calibration() -> Transform3D:
+	return _calibration
+
 func world_to_glb(world_pos: Vector3) -> Vector3:
 	return _calibration.affine_inverse() * world_pos
 

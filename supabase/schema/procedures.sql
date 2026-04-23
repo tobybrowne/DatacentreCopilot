@@ -4,11 +4,14 @@
 -- timer is optional; target_uuid is the step id at which the countdown should be dismissed.
 -- gesture_recordings store motion-capture data tied to a specific step.
 
+CREATE TYPE log_type AS ENUM ('FULL', 'CAMERA_ONLY', 'GEOMETRY_ONLY', 'NONE');
+
 CREATE TABLE procedures (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
   steps JSONB[] NOT NULL DEFAULT '{}', -- ordered array of step objects
   building_id UUID REFERENCES buildings(id) ON DELETE SET NULL,
+  log_type log_type DEFAULT 'NONE',
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );

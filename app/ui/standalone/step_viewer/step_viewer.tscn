@@ -50,5 +50,11 @@ horizontal_alignment = 1
 theme_override_font_sizes/font_size = 26
 text = ""
 
+[node name="ReplayButton" type="Button" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+visible = false
+text = "▶  Replay"
+theme_override_font_sizes/font_size = 22
+
 [node name="CountdownTimer" type="Timer" parent="."]
 one_shot = true

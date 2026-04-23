@@ -14,7 +14,7 @@ const _SHOW_HAND_HIGHLIGHT := false
 var app_state: AppState
 var progress_indicator: ProgressIndicator
 
-var _gesture_replayer: GestureReplayer = null
+var _gesture_replayer: PoseReplayer = null
 
 
 func _ready() -> void:
@@ -22,6 +22,7 @@ func _ready() -> void:
 	PanelRouter.push("start_menu")
 	KeyboardManager.register(keyboard_panel)
 	NoteManager.setup(self, location_manager)
+	LogManager.setup(gesture_manager, location_manager)
 
 	progress_indicator = ProgressIndicator.new()
 	add_child(progress_indicator)
@@ -115,7 +116,7 @@ func _on_stop_recording() -> void:
 	if frames.is_empty():
 		return
 	var camera := $XROrigin3D/XRCamera3D as Camera3D
-	_gesture_replayer = GestureReplayer.new()
+	_gesture_replayer = PoseReplayer.new()
 	add_child(_gesture_replayer)
 	_gesture_replayer.global_transform = Transform3D(Basis.IDENTITY, camera.global_position + -camera.global_basis.z)
 	_gesture_replayer.play(frames, true)
