@@ -1,0 +1,9 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://ui/standalone/video_player/video_player_panel.gd" id="1"]
+
+[node name="VideoPlayerPanel" type="Control"]
+layout_mode = 0
+offset_right = 800.0
+offset_bottom = 560.0
+script = ExtResource("1")

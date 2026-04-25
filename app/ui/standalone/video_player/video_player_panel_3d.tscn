@@ -1,0 +1,13 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://ui/viewport_panel_3d.gd" id="1"]
+[ext_resource type="PackedScene" path="res://ui/standalone/video_player/video_player_panel.tscn" id="2"]
+
+[node name="VideoPlayerPanel3D" type="Node3D"]
+script = ExtResource("1")
+panel_scene = ExtResource("2")
+viewport_size = Vector2i(800, 560)
+quad_size = Vector2(0.72, 0.504)
+distance = 1.3
+height_offset = -0.05
+pinnable = true

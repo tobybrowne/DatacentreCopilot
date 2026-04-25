@@ -6,6 +6,8 @@ import android.graphics.YuvImage
 import android.hardware.camera2.*
 import android.media.Image
 import android.media.ImageReader
+import android.media.MediaRecorder
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import org.godotengine.godot.Godot
@@ -25,6 +27,18 @@ class CVCameraPlugin(godot: Godot) : GodotPlugin(godot) {
     private var captureSession: CameraCaptureSession? = null
     private var imageReader: ImageReader? = null
 
+    private var mediaRecorder: MediaRecorder? = null
+    @Volatile private var isRecording = false
+    @Volatile private var pendingStop = false
+    private var recordingPath: String? = null
+
+    // Action queued while waiting for the camera device to open.
+    private var pendingAction: (() -> Unit)? = null
+
+    // Incremented each time createSession is called; onConfigured checks its captured
+    // value against the current one and discards stale callbacks.
+    private var sessionGeneration = 0
+
     // -1 = auto, otherwise manual values set via setExposure() / setNoiseReduction()
     private var exposureTimeNs: Long = -1L
     private var sensitivity: Int = -1
@@ -34,8 +48,6 @@ class CVCameraPlugin(godot: Godot) : GodotPlugin(godot) {
     // Public API
     // -------------------------------------------------------------------------
 
-    // exposureMs: shutter time in milliseconds (e.g. 4.0 = 1/250s), -1 for auto
-    // iso: sensor sensitivity (e.g. 800), -1 for auto
     @UsedByGodot
     fun setExposure(exposureMs: Double, iso: Int) {
         exposureTimeNs = if (exposureMs < 0) -1L else (exposureMs * 1_000_000.0).toLong()
@@ -47,75 +59,69 @@ class CVCameraPlugin(godot: Godot) : GodotPlugin(godot) {
         noiseReductionOff = !enabled
     }
 
+    // Prepares the ImageReader but does NOT open the camera device — no privacy indicator.
+    // The device is opened lazily on the first captureFrame() or startRecording() call.
     @UsedByGodot
     fun openCamera(width: Int, height: Int) {
         imageReader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 2)
+        emitSignal("camera_opened")
+    }
 
-        val manager = godot.getActivity()!!
-            .getSystemService(android.content.Context.CAMERA_SERVICE) as CameraManager
-
-        try {
-            manager.openCamera("1", object : CameraDevice.StateCallback() {
-                override fun onOpened(camera: CameraDevice) {
-                    cameraDevice = camera
-                    createSession()
-                }
-                override fun onDisconnected(camera: CameraDevice) {
-                    camera.close()
-                    cameraDevice = null
-                    emitSignal("camera_closed")
-                }
-                override fun onError(camera: CameraDevice, error: Int) {
-                    camera.close()
-                    cameraDevice = null
-                    emitSignal("camera_error", error)
-                }
-            }, handler)
-        } catch (e: SecurityException) {
-            emitSignal("camera_error", -1)
-        }
+    // Opens a photo session, captures one frame, closes the session and device.
+    @UsedByGodot
+    fun captureFrame() {
+        if (isRecording) { emitSignal("camera_error", -2); return }
+        withCameraDevice { doCaptureFrame() }
     }
 
     @UsedByGodot
-    fun captureFrame() {
-        val session = captureSession ?: run { emitSignal("camera_error", -2); return }
-        val camera = cameraDevice ?: run { emitSignal("camera_error", -2); return }
-        val reader = imageReader ?: return
+    fun startRecording(filePath: String, width: Int, height: Int) {
+        if (isRecording) return
+        pendingStop = false
+        recordingPath = filePath
 
-        reader.setOnImageAvailableListener({ r ->
-            r.setOnImageAvailableListener(null, null)
-            val image = r.acquireLatestImage() ?: return@setOnImageAvailableListener
-            try {
-                emitSignal("frame_available", imageToJpeg(image))
-            } finally {
-                image.close()
-            }
-        }, handler)
+        val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            MediaRecorder(godot.getActivity()!!)
+        } else {
+            @Suppress("DEPRECATION")
+            MediaRecorder()
+        }
 
-        val request = camera
-            // TEMPLATE_PREVIEW gives a single raw frame with no multi-frame compositing.
-            // TEMPLATE_STILL_CAPTURE on ML2 blends previous frames into the output,
-            // producing a ghost overlay of wherever the headset was pointing before.
-            .createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-            .apply {
-                addTarget(reader.surface)
-                if (noiseReductionOff) {
-                    set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_OFF)
-                    set(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_OFF)
-                }
-                if (exposureTimeNs > 0 && sensitivity > 0) {
-                    set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
-                    set(CaptureRequest.SENSOR_EXPOSURE_TIME, exposureTimeNs)
-                    set(CaptureRequest.SENSOR_SENSITIVITY, sensitivity)
-                }
-            }
-            .build()
+        recorder.setVideoSource(MediaRecorder.VideoSource.SURFACE)
+        recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+        recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+        recorder.setVideoSize(width, height)
+        recorder.setVideoFrameRate(30)
+        recorder.setVideoEncodingBitRate(8_000_000)
+        recorder.setOutputFile(filePath)
+        recorder.prepare()
 
-        session.capture(request, null, handler)
+        mediaRecorder = recorder
+
+        captureSession?.close()
+        captureSession = null
+        withCameraDevice { createRecordingSession() }
+    }
+
+    @UsedByGodot
+    fun stopRecording() {
+        if (!isRecording) {
+            pendingStop = true
+            return
+        }
+        handler.post { doStopRecording() }
     }
 
     @UsedByGodot
     fun closeCamera() {
+        pendingAction = null
+        if (isRecording) {
+            try { mediaRecorder?.stop() } catch (e: Exception) {}
+            mediaRecorder?.reset()
+            mediaRecorder?.release()
+            mediaRecorder = null
+            isRecording = false
+        }
         captureSession?.close()
         cameraDevice?.close()
         imageReader?.close()
@@ -133,29 +139,177 @@ class CVCameraPlugin(godot: Godot) : GodotPlugin(godot) {
         SignalInfo("camera_closed"),
         SignalInfo("camera_error", Int::class.java),
         SignalInfo("frame_available", ByteArray::class.java),
+        SignalInfo("recording_started"),
+        SignalInfo("recording_stopped", String::class.java),
     )
 
     // -------------------------------------------------------------------------
     // Internal
     // -------------------------------------------------------------------------
 
-    private fun createSession() {
+    // Runs action immediately if the device is already open, otherwise opens it first.
+    private fun withCameraDevice(action: () -> Unit) {
+        if (cameraDevice != null) {
+            action()
+            return
+        }
+        pendingAction = action
+        val manager = godot.getActivity()!!
+            .getSystemService(android.content.Context.CAMERA_SERVICE) as CameraManager
+        try {
+            manager.openCamera("1", object : CameraDevice.StateCallback() {
+                override fun onOpened(camera: CameraDevice) {
+                    cameraDevice = camera
+                    pendingAction?.invoke()
+                    pendingAction = null
+                }
+                override fun onDisconnected(camera: CameraDevice) {
+                    camera.close()
+                    cameraDevice = null
+                    pendingAction = null
+                    emitSignal("camera_closed")
+                }
+                override fun onError(camera: CameraDevice, error: Int) {
+                    camera.close()
+                    cameraDevice = null
+                    pendingAction = null
+                    emitSignal("camera_error", error)
+                }
+            }, handler)
+        } catch (e: SecurityException) {
+            pendingAction = null
+            emitSignal("camera_error", -1)
+        }
+    }
+
+    private fun doCaptureFrame() {
         val camera = cameraDevice ?: return
         val reader = imageReader ?: return
+        val gen = ++sessionGeneration
+
+        reader.setOnImageAvailableListener({ r ->
+            r.setOnImageAvailableListener(null, null)
+            val image = r.acquireLatestImage() ?: return@setOnImageAvailableListener
+            try {
+                emitSignal("frame_available", imageToJpeg(image))
+            } finally {
+                image.close()
+                captureSession?.close()
+                captureSession = null
+                cameraDevice?.close()
+                cameraDevice = null
+            }
+        }, handler)
 
         camera.createCaptureSession(
             listOf(reader.surface),
             object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
+                    if (gen != sessionGeneration) { session.close(); return }
                     captureSession = session
-                    emitSignal("camera_opened")
+                    val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                        addTarget(reader.surface)
+                        if (noiseReductionOff) {
+                            set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_OFF)
+                            set(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_OFF)
+                        }
+                        if (exposureTimeNs > 0 && sensitivity > 0) {
+                            set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
+                            set(CaptureRequest.SENSOR_EXPOSURE_TIME, exposureTimeNs)
+                            set(CaptureRequest.SENSOR_SENSITIVITY, sensitivity)
+                        }
+                    }.build()
+                    session.capture(request, null, handler)
                 }
                 override fun onConfigureFailed(session: CameraCaptureSession) {
+                    if (gen != sessionGeneration) return
+                    cameraDevice?.close()
+                    cameraDevice = null
                     emitSignal("camera_error", -3)
                 }
             },
             handler
         )
+    }
+
+    private fun createRecordingSession() {
+        val gen = ++sessionGeneration
+        val camera = cameraDevice ?: return
+        val recorder = mediaRecorder ?: return
+
+        camera.createCaptureSession(
+            listOf(recorder.surface),
+            object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(session: CameraCaptureSession) {
+                    if (gen != sessionGeneration) { session.close(); return }
+                    captureSession = session
+
+                    if (pendingStop) {
+                        pendingStop = false
+                        recorder.reset()
+                        recorder.release()
+                        mediaRecorder = null
+                        session.close()
+                        captureSession = null
+                        cameraDevice?.close()
+                        cameraDevice = null
+                        emitSignal("recording_stopped", "")
+                        return
+                    }
+
+                    // Start encoder before the repeating request — frames sent to the
+                    // MediaRecorder surface before start() are dropped, causing green frames.
+                    recorder.start()
+                    isRecording = true
+                    emitSignal("recording_started")
+
+                    val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                        addTarget(recorder.surface)
+                        if (noiseReductionOff) {
+                            set(CaptureRequest.NOISE_REDUCTION_MODE, CaptureRequest.NOISE_REDUCTION_MODE_OFF)
+                            set(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_OFF)
+                        }
+                        if (exposureTimeNs > 0 && sensitivity > 0) {
+                            set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_OFF)
+                            set(CaptureRequest.SENSOR_EXPOSURE_TIME, exposureTimeNs)
+                            set(CaptureRequest.SENSOR_SENSITIVITY, sensitivity)
+                        }
+                    }.build()
+                    session.setRepeatingRequest(request, null, handler)
+                }
+                override fun onConfigureFailed(session: CameraCaptureSession) {
+                    if (gen != sessionGeneration) return
+                    cameraDevice?.close()
+                    cameraDevice = null
+                    emitSignal("camera_error", -3)
+                }
+            },
+            handler
+        )
+    }
+
+    private fun doStopRecording() {
+        if (!isRecording) return
+        isRecording = false
+        pendingStop = false
+        val path = recordingPath ?: ""
+
+        try {
+            captureSession?.stopRepeating()
+            mediaRecorder?.stop()
+        } catch (e: Exception) {
+            emitSignal("camera_error", -4)
+        }
+
+        mediaRecorder?.reset()
+        mediaRecorder?.release()
+        mediaRecorder = null
+        captureSession?.close()
+        captureSession = null
+        cameraDevice?.close()
+        cameraDevice = null
+
+        emitSignal("recording_stopped", path)
     }
 
     // Convert YUV_420_888 → NV21 → JPEG
@@ -168,7 +322,6 @@ class CVCameraPlugin(godot: Godot) : GodotPlugin(godot) {
 
         val nv21 = ByteArray(w * h * 3 / 2)
 
-        // Y plane — copy row by row to handle non-packed strides
         val yRowStride = yPlane.rowStride
         val yBuffer = yPlane.buffer
         for (row in 0 until h) {
@@ -176,7 +329,6 @@ class CVCameraPlugin(godot: Godot) : GodotPlugin(godot) {
             yBuffer.get(nv21, row * w, w)
         }
 
-        // Chroma — interleave V then U (NV21 order)
         val uvRowStride = vPlane.rowStride
         val uvPixelStride = vPlane.pixelStride
         val uBuffer = uPlane.buffer

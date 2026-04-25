@@ -22,7 +22,7 @@ func _ready() -> void:
 	PanelRouter.push("start_menu")
 	KeyboardManager.register(keyboard_panel)
 	NoteManager.setup(self, location_manager)
-	LogManager.setup(gesture_manager, location_manager)
+	LogManager.setup(gesture_manager, location_manager, CVCameraManager)
 
 	progress_indicator = ProgressIndicator.new()
 	add_child(progress_indicator)

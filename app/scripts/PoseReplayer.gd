@@ -38,6 +38,7 @@ const _ELBOW_HANG         := 0.10   # additional downward bias for natural elbow
 const _HIP_DROP           := 0.55   # below neck
 
 signal playback_finished
+signal initialized
 
 var skeleton_enabled: bool = false:
 	set(v):
@@ -50,6 +51,7 @@ var _looping := false
 var _start_time_msec: int
 var _base_time_msec: int
 var _frame_idx: int = 0
+var _initialized := false
 
 var _left_skeleton: Skeleton3D
 var _right_skeleton: Skeleton3D
@@ -72,10 +74,21 @@ var _torso:            MeshInstance3D
 
 
 func _ready() -> void:
+	_init_async()
+
+# instantiates, spread over several frames - cos this instantiation is very heavy this stops us from hanging the app
+func _init_async() -> void:
 	var left_inst := LEFT_HAND_SCENE.instantiate()
-	var right_inst := RIGHT_HAND_SCENE.instantiate()
 	add_child(left_inst)
+
+	# waits for the next frame to be processed
+	await get_tree().process_frame
+
+	var right_inst := RIGHT_HAND_SCENE.instantiate()
 	add_child(right_inst)
+
+	# waits for the next frame to be processed
+	await get_tree().process_frame
 
 	_left_skeleton = _find_skeleton(left_inst)
 	_right_skeleton = _find_skeleton(right_inst)
@@ -109,6 +122,8 @@ func _ready() -> void:
 	_torso           = _make_cylinder(0.070, limb_mat)
 
 	_set_skeleton_visible(false)
+	_initialized = true
+	initialized.emit()
 
 
 func play(frames: Array[PoseRec], loop := false) -> void:
@@ -117,6 +132,8 @@ func play(frames: Array[PoseRec], loop := false) -> void:
 	_frame_idx = 0
 	if _frames.is_empty():
 		return
+	if not _initialized:
+		await initialized
 	_base_time_msec = _frames[0].timestamp_msec
 	_start_time_msec = Time.get_ticks_msec()
 	_playing = true

@@ -1,0 +1,15 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://ui/viewport_panel_3d.gd" id="1"]
+[ext_resource type="PackedScene" path="res://ui/standalone/logs_fab/logs_fab.tscn" id="2"]
+
+[node name="LogsFab3D" type="Node3D"]
+script = ExtResource("1")
+panel_scene = ExtResource("2")
+follow_speed = 3.0
+distance = 1.4
+height_offset = 0.2
+lateral_offset = 0.33
+viewport_size = Vector2i(120, 120)
+quad_size = Vector2(0.1, 0.1)
+corner_radius_m = 0.05

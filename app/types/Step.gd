@@ -7,6 +7,7 @@ var id: String        = ""
 var type: String      = TYPE_INSTRUCTION
 var text: String      = ""
 var anchor_id: String = ""
+var log_id: String    = ""
 var timer_duration: float  = 0.0
 var timer_target_uuid: String = ""
 
@@ -22,6 +23,7 @@ static func from_value(v) -> Step:
 		step.type      = v.get("type", TYPE_INSTRUCTION)
 		step.text      = v.get("text", "")
 		step.anchor_id = v.get("anchor_id", "")
+		step.log_id    = v.get("log_id", "")
 		var timer: Variant = v.get("timer", null)
 		if timer is Dictionary:
 			step.timer_duration    = float(timer.get("duration", 0.0))

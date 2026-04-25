@@ -2,6 +2,7 @@ extends Node
 
 var _gesture_manager: GestureManager = null
 var _location_manager: LocationManager = null
+var _camera_manager: Node = null
 
 var _procedure: Procedure = null
 var _site_id: String = ""
@@ -13,9 +14,10 @@ func _ready() -> void:
 	print("LogManager: ready")
 
 
-func setup(gm: GestureManager, lm: LocationManager) -> void:
+func setup(gm: GestureManager, lm: LocationManager, cm: Node = null) -> void:
 	_gesture_manager = gm
 	_location_manager = lm
+	_camera_manager = cm
 
 
 func start_procedure(procedure: Procedure, site_id: String) -> void:
@@ -61,7 +63,8 @@ func _begin_step(step: Step) -> void:
 		_gesture_manager.start_recording(_location_manager.get_calibration())
 
 	if log_type in ["FULL", "CAMERA_ONLY"]:
-		pass # TODO: CVCameraManager.start_step_recording()
+		if _camera_manager:
+			_camera_manager.start_recording()
 
 
 func _end_step(step: Step) -> void:
@@ -74,7 +77,10 @@ func _end_step(step: Step) -> void:
 		geometry_path = await _upload_gesture_recording(frames, step.id)
 
 	if log_type in ["FULL", "CAMERA_ONLY"]:
-		pass # TODO: camera_path = await CVCameraManager.stop_step_recording(step.id)
+		if _camera_manager:
+			_camera_manager.stop_recording()
+			var local_path: String = await _camera_manager.recording_stopped
+			camera_path = await _upload_camera_recording(local_path, step.id)
 
 	await _insert_log(step.id, geometry_path, camera_path)
 
@@ -102,6 +108,7 @@ func _upload_gesture_recording(frames: Array[PoseRec], step_id: String) -> Strin
 	if not file:
 		push_warning("LogManager: failed to open temp file for gesture recording")
 		return ""
+	# TO-DO: should consider JSON alternatives, this is pretty heavy
 	var json_str := JSON.stringify({"v": 1, "frames": frame_list})
 	file.store_string(json_str)
 	file.close()
@@ -116,6 +123,21 @@ func _upload_gesture_recording(frames: Array[PoseRec], step_id: String) -> Strin
 		push_warning("LogManager: gesture upload failed — code=%s message=%s details=%s" % [task.error.code, task.error.message, task.error.details])
 		return ""
 	return remote_path
+
+func _upload_camera_recording(local_path: String, step_id: String) -> String:
+	if local_path.is_empty():
+		return ""
+
+	var remote_path := "videos/%s_%s.mp4" % [_procedure_run_id, step_id]
+	print("LogManager: uploading camera recording as user_id=%s" % (SupabaseManager.auth_user.id if SupabaseManager.auth_user else "null"))
+	var task = await Supabase.storage.from("log_bucket").upload(remote_path, local_path, false).completed
+	DirAccess.remove_absolute(local_path)
+
+	if task.error != null:
+		push_warning("LogManager: camera upload failed — code=%s message=%s details=%s" % [task.error.code, task.error.message, task.error.details])
+		return ""
+	return remote_path
+
 
 # we collapse transform dicts to arrays, this saves a lot of space
 func _append_transform(row: Array, t: Transform3D) -> void:

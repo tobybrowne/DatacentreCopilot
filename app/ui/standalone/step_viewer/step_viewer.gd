@@ -10,6 +10,7 @@ extends BasePanel
 
 signal step_changed(prev_step: Step, next_step: Step)
 signal replay_requested
+signal stop_requested
 
 var _steps: Array[Step] = []
 var _current: int = 0
@@ -22,11 +23,32 @@ var _flash_accum: float = 0.0
 
 
 func _ready() -> void:
-	_replay_btn.pressed.connect(replay_requested.emit)
+	_replay_btn.pressed.connect(_on_replay_btn_pressed)
+
+
+func _on_replay_btn_pressed() -> void:
+	if _replay_btn.text == "▶  Play Log":
+		_replay_btn.text = "■  Stop"
+		replay_requested.emit()
+	else:
+		_replay_btn.text = "▶  Play Log"
+		stop_requested.emit()
+
+
+func get_current_step() -> Step:
+	if _steps.is_empty():
+		return null
+	return _steps[_current]
 
 
 func show_replay_button(has_log: bool) -> void:
 	_replay_btn.visible = has_log
+	if not has_log:
+		_replay_btn.text = "▶  Play Log"
+
+
+func reset_replay_button() -> void:
+	_replay_btn.text = "▶  Play Log"
 
 
 func init(data: Dictionary) -> void:

@@ -27,6 +27,7 @@ Supabase="*uid://ocnh0cal4jt1"
 SupabaseManager="*uid://bkm7clkns3jgq"
 AuthManager="*res://scripts/AuthManager.gd"
 LogManager="*res://scripts/LogManager.gd"
+CVCameraManager="*res://scripts/CVCameraManager.gd"
 
 [display]
 

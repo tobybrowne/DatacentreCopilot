@@ -66,3 +66,4 @@ func _load_notes_for_space(space_id: String) -> void:
 			continue
 		var world_pos := _location_manager.glb_to_world(note.glb_position)
 		_spawn_note(world_pos, note.text)
+		await get_tree().process_frame
