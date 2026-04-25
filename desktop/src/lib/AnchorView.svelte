@@ -56,7 +56,7 @@
     selectedSpaceId = space.id
     glbUrl = null
     try {
-      glbUrl = getSpaceGlbUrl(space.glb_path!)
+      glbUrl = await getSpaceGlbUrl(space.glb_path!)
       await refresh()
     } catch (e) {
       error = (e as Error).message

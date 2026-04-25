@@ -9,6 +9,6 @@ export const load: PageLoad = async ({ params }) => {
 
   return {
     buildingName: space.name ?? 'Space',
-    spaces: [{ url: getSpaceGlbUrl(space.glb_path), transform: null }],
+    spaces: [{ url: await getSpaceGlbUrl(space.glb_path), transform: null }],
   }
 }

@@ -55,7 +55,12 @@
   $: pickingSource = phase === 'pickSource'
   $: pairsDone = tgtPoints.length
   $: currentSpace = orderedSpaceIds[currentIdx] ? allSpaces.find(s => s.id === orderedSpaceIds[currentIdx]) ?? null : null
-  $: currentSourceGlbUrl = currentSpace?.glb_path ? getSpaceGlbUrl(currentSpace.glb_path) : null
+  let currentSourceGlbUrl: string | null = null
+  $: if (currentSpace?.glb_path) {
+    getSpaceGlbUrl(currentSpace.glb_path).then(url => currentSourceGlbUrl = url).catch(() => currentSourceGlbUrl = null)
+  } else {
+    currentSourceGlbUrl = null
+  }
 
   // Only show the most recently confirmed space as the stitch target
   $: lastBuilt = builtSpaces[builtSpaces.length - 1]
@@ -90,7 +95,7 @@
       return
     }
     const refSpace = allSpaces.find(s => s.id === orderedSpaceIds[0])!
-    builtSpaces = [{ space: refSpace, glbUrl: getSpaceGlbUrl(refSpace.glb_path!), transform: null }]
+    builtSpaces = [{ space: refSpace, glbUrl: await getSpaceGlbUrl(refSpace.glb_path!), transform: null }]
     currentIdx = 1
     srcPoints = []
     tgtPoints = []
@@ -104,9 +109,11 @@
     orderedSpaceIds = sorted.map(s => s.id)
     buildingName = draft.name ?? ''
     activeBuildingId = draft.id
-    builtSpaces = sorted
-      .filter(s => s.building_index === 0 || s.offset_transformation !== null)
-      .map(s => ({ space: s, glbUrl: getSpaceGlbUrl(s.glb_path!), transform: s.offset_transformation }))
+    builtSpaces = await Promise.all(
+      sorted
+        .filter(s => s.building_index === 0 || s.offset_transformation !== null)
+        .map(async s => ({ space: s, glbUrl: await getSpaceGlbUrl(s.glb_path!), transform: s.offset_transformation }))
+    )
     currentIdx = builtSpaces.length
     srcPoints = []
     tgtPoints = []
@@ -134,9 +141,9 @@
     }
   }
 
-  function viewBuilding(building: Building & { spaces: Space[] }): void {
+  async function viewBuilding(building: Building & { spaces: Space[] }): Promise<void> {
     const sorted = [...building.spaces].sort((a, b) => (a.building_index ?? 0) - (b.building_index ?? 0))
-    builtSpaces = sorted.map(s => ({ space: s, glbUrl: getSpaceGlbUrl(s.glb_path!), transform: s.offset_transformation }))
+    builtSpaces = await Promise.all(sorted.map(async s => ({ space: s, glbUrl: await getSpaceGlbUrl(s.glb_path!), transform: s.offset_transformation })))
     buildingName = building.name ?? ''
     activeBuildingId = building.id
     loadBuildingAnchors(builtSpaces)
@@ -258,9 +265,11 @@
     recomputingCentroids = true
     pointClouds = []
     try {
-      const entries = builtSpaces
-        .filter(e => e.space.glb_path)
-        .map(e => ({ space: e.space, glbUrl: getSpaceGlbUrl(e.space.glb_path!) }))
+      const entries = await Promise.all(
+        builtSpaces
+          .filter(e => e.space.glb_path)
+          .map(async e => ({ space: e.space, glbUrl: await getSpaceGlbUrl(e.space.glb_path!) }))
+      )
 
       const { centroids, voronoiPoints } = await computeCentroids(entries, voxelSize, overlapPenalty)
 

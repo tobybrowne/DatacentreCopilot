@@ -15,18 +15,20 @@ export async function fetchSpaces(): Promise<Space[]> {
   return data as Space[]
 }
 
-export function getNavMeshUrl(navMeshPath: string): string {
-  const { data } = supabase.storage
+export async function getNavMeshUrl(navMeshPath: string): Promise<string> {
+  const { data, error } = await supabase.storage
     .from('spaces_bucket')
-    .getPublicUrl(navMeshPath)
-  return data.publicUrl
+    .createSignedUrl(navMeshPath, 3600)
+  if (error) throw error
+  return data.signedUrl
 }
 
-export function getSpaceGlbUrl(glbPath: string): string {
-  const { data } = supabase.storage
+export async function getSpaceGlbUrl(glbPath: string): Promise<string> {
+  const { data, error } = await supabase.storage
     .from('spaces_bucket')
-    .getPublicUrl(glbPath)
-  return data.publicUrl
+    .createSignedUrl(glbPath, 3600)
+  if (error) throw error
+  return data.signedUrl
 }
 
 export async function fetchAnchors(spaceId: string | null = null): Promise<Anchor[]> {

@@ -3,17 +3,17 @@ import type { PageLoad } from './$types'
 import type { RigidTransform } from '$lib/types'
 
 export const load: PageLoad = async ({ params }) => {
-  const [building] = await Promise.all([
-    fetchBuildingById(params.id),
-  ])
+  const building = await fetchBuildingById(params.id)
 
-  const spaceEntries = [...building.spaces]
-    .filter(s => s.glb_path)
-    .sort((a, b) => (a.building_index ?? 0) - (b.building_index ?? 0))
-    .map(s => ({
-      url: getSpaceGlbUrl(s.glb_path!),
-      transform: s.offset_transformation as RigidTransform | null,
-    }))
+  const spaceEntries = await Promise.all(
+    [...building.spaces]
+      .filter(s => s.glb_path)
+      .sort((a, b) => (a.building_index ?? 0) - (b.building_index ?? 0))
+      .map(async s => ({
+        url: await getSpaceGlbUrl(s.glb_path!),
+        transform: s.offset_transformation as RigidTransform | null,
+      }))
+  )
 
   let existingNavMesh: { url: string; buildSettings: Record<string, unknown> } | null = null
   if ((building as any).navmesh_id) {
@@ -24,7 +24,7 @@ export const load: PageLoad = async ({ params }) => {
       .single()
     if (nm?.navmesh_path) {
       existingNavMesh = {
-        url: getNavMeshUrl(nm.navmesh_path),
+        url: await getNavMeshUrl(nm.navmesh_path),
         buildSettings: nm.build_settings ?? {},
       }
     }

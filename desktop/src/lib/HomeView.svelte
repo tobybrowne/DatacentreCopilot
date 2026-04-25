@@ -1,9 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
+  import { session, signOut } from './auth'
   const dispatch = createEventDispatcher<{ navigate: 'anchors' | 'buildings' | 'navigate' }>()
 </script>
 
 <div class="home">
+  <button class="sign-out" on:click={signOut}>Sign out</button>
   <div class="center">
     <h1 class="logo">Entangl Desktop</h1>
     <p class="subtitle">What would you like to do?</p>
@@ -35,6 +37,25 @@
     align-items: center;
     justify-content: center;
     background: var(--bg);
+    position: relative;
+  }
+
+  .sign-out {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    padding: 6px 14px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    background: transparent;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .sign-out:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
   }
 
   .center {

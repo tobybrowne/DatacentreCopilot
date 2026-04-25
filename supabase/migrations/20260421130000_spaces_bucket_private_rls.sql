@@ -18,12 +18,12 @@ ON storage.objects FOR SELECT USING (
   AND (
     EXISTS (
       SELECT 1 FROM spaces
-      WHERE spaces.blob_path = name
-         OR spaces.glb_path = name
+      WHERE spaces.blob_path = objects.name
+         OR spaces.glb_path = objects.name
     )
     OR EXISTS (
       SELECT 1 FROM navmeshes
-      WHERE navmeshes.navmesh_path = name
+      WHERE navmeshes.navmesh_path = objects.name
     )
   )
 );
@@ -43,12 +43,12 @@ ON storage.objects FOR DELETE USING (
   AND (
     EXISTS (
       SELECT 1 FROM spaces
-      WHERE spaces.blob_path = name
-         OR spaces.glb_path = name
+      WHERE spaces.blob_path = objects.name
+         OR spaces.glb_path = objects.name
     )
     OR EXISTS (
       SELECT 1 FROM navmeshes
-      WHERE navmeshes.navmesh_path = name
+      WHERE navmeshes.navmesh_path = objects.name
     )
   )
 );
