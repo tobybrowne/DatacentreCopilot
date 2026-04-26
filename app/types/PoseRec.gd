@@ -4,8 +4,10 @@ const JOINT_COUNT := 26
 
 var timestamp_msec: int
 var head_transform: Transform3D
-var left_joints: Array[Transform3D]
-var right_joints: Array[Transform3D]
+var left_joints:    Array[Transform3D]
+var right_joints:   Array[Transform3D]
+var left_tracked:   bool = true
+var right_tracked:  bool = true
 
 func _init() -> void:
 	left_joints.resize(JOINT_COUNT)
@@ -35,6 +37,9 @@ static func from_flat_row(row: Array) -> PoseRec:
 	for i in JOINT_COUNT:
 		rec.right_joints[i] = _transform_from_array(row, off)
 		off += 12
+	if row.size() > off + 1:
+		rec.left_tracked  = int(row[off])     != 0
+		rec.right_tracked = int(row[off + 1]) != 0
 	return rec
 
 

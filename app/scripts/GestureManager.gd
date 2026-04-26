@@ -341,16 +341,18 @@ func _record_frame() -> void:
 	var camera := get_viewport().get_camera_3d()
 	if camera:
 		pose.head_transform = inv_origin * camera.global_transform
-	_capture_hand_joints("left", pose.left_joints, inv_origin)
-	_capture_hand_joints("right", pose.right_joints, inv_origin)
+	pose.left_tracked  = _capture_hand_joints("left",  pose.left_joints,  inv_origin)
+	pose.right_tracked = _capture_hand_joints("right", pose.right_joints, inv_origin)
 	_frames.append(pose)
 
-func _capture_hand_joints(hand: String, joints: Array[Transform3D], inv_origin: Transform3D) -> void:
+func _capture_hand_joints(hand: String, joints: Array[Transform3D], inv_origin: Transform3D) -> bool:
 	var tracker := XRServer.get_tracker(_TRACKERS[hand])
 	if not tracker or not tracker is XRHandTracker:
-		return
-
+		return false
 	var ht := tracker as XRHandTracker
+	if not ht.has_tracking_data or not (ht.get_hand_joint_flags(1) & 4):
+		return false
 	for joint_idx in PoseRec.JOINT_COUNT:
-		if ht.get_hand_joint_flags(joint_idx) & 4:  # has tracking data
+		if ht.get_hand_joint_flags(joint_idx) & 4:
 			joints[joint_idx] = inv_origin * ht.get_hand_joint_transform(joint_idx)
+	return true

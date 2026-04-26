@@ -113,6 +113,8 @@ func _upload_gesture_recording(frames: Array[PoseRec], step_id: String) -> Strin
 			_append_transform(row, t)
 		for t in f.right_joints:
 			_append_transform(row, t)
+		row.append(1 if f.left_tracked  else 0)
+		row.append(1 if f.right_tracked else 0)
 		frame_list.append(row)
 
 	var tmp_path := "user://gesture_%s.json" % step_id

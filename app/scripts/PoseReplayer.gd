@@ -53,10 +53,12 @@ var _base_time_msec: int
 var _frame_idx: int = 0
 var _initialized := false
 
-var _left_skeleton: Skeleton3D
-var _right_skeleton: Skeleton3D
-var _left_bone_map: PackedInt32Array
-var _right_bone_map: PackedInt32Array
+var _left_skeleton:   Skeleton3D
+var _right_skeleton:  Skeleton3D
+var _left_bone_map:   PackedInt32Array
+var _right_bone_map:  PackedInt32Array
+var _left_hand_inst:  Node3D
+var _right_hand_inst: Node3D
 
 var _head_mesh: MeshInstance3D
 
@@ -79,12 +81,14 @@ func _ready() -> void:
 # instantiates, spread over several frames - cos this instantiation is very heavy this stops us from hanging the app
 func _init_async() -> void:
 	var left_inst := LEFT_HAND_SCENE.instantiate()
+	_left_hand_inst = left_inst
 	add_child(left_inst)
 
 	# waits for the next frame to be processed
 	await get_tree().process_frame
 
 	var right_inst := RIGHT_HAND_SCENE.instantiate()
+	_right_hand_inst = right_inst
 	add_child(right_inst)
 
 	# waits for the next frame to be processed
@@ -173,6 +177,12 @@ func _process(_delta: float) -> void:
 			return
 
 	var pose := _frames[_frame_idx]
+	var left_tracked  := pose.left_tracked
+	var right_tracked := pose.right_tracked
+	if _left_hand_inst:
+		_left_hand_inst.visible = left_tracked
+	if _right_hand_inst:
+		_right_hand_inst.visible = right_tracked
 	_apply_joints(_left_skeleton, _left_bone_map, pose.left_joints)
 	_apply_joints(_right_skeleton, _right_bone_map, pose.right_joints)
 
@@ -186,38 +196,44 @@ func _process(_delta: float) -> void:
 # ── Skeleton estimation ───────────────────────────────────────────────────────
 
 func _update_skeleton(pose: PoseRec, head_world: Transform3D) -> void:
-	var head_pos := head_world.origin
+	var head_pos   := head_world.origin
 	var head_basis := head_world.basis
 
-	# Shoulders: fixed anatomical offset from the head origin.
-	var neck := head_pos + head_basis.y * -(_SHOULDER_DROP * 0.4)
+	var neck               := head_pos + head_basis.y * -(_SHOULDER_DROP * 0.4)
 	var left_shoulder_pos  := neck + head_basis.x * -_SHOULDER_HALF_WIDTH + Vector3.DOWN * (_SHOULDER_DROP * 0.6)
 	var right_shoulder_pos := neck + head_basis.x *  _SHOULDER_HALF_WIDTH + Vector3.DOWN * (_SHOULDER_DROP * 0.6)
+	var hip                := neck + Vector3.DOWN * _HIP_DROP
 
-	# Wrist positions from recorded data (already in world space via global_transform).
-	var left_wrist  := (global_transform * pose.left_joints[1]).origin
-	var right_wrist := (global_transform * pose.right_joints[1]).origin
+	_orient_limb(_clavicle, left_shoulder_pos, right_shoulder_pos)
+	_orient_limb(_torso, neck, hip)
 
-	# Elbows: midpoint of shoulder→wrist arc, pulled down for natural droop.
-	var left_elbow_pos  := _estimate_elbow(left_shoulder_pos,  left_wrist,  -1.0)
-	var right_elbow_pos := _estimate_elbow(right_shoulder_pos, right_wrist,  1.0)
+	var left_tracked  := pose.left_tracked
+	var right_tracked := pose.right_tracked
 
-	# Hip: straight down from neck in world space.
-	var hip := neck + Vector3.DOWN * _HIP_DROP
+	if left_tracked:
+		var left_wrist    := (global_transform * pose.left_joints[1]).origin
+		var left_elbow_pos := _estimate_elbow(left_shoulder_pos, left_wrist, -1.0)
+		_left_shoulder.global_position = left_shoulder_pos
+		_left_elbow.global_position    = left_elbow_pos
+		_orient_limb(_left_upper_arm, left_shoulder_pos, left_elbow_pos)
+		_orient_limb(_left_forearm,   left_elbow_pos,    left_wrist)
 
-	# Position joint spheres.
-	_left_shoulder.global_position  = left_shoulder_pos
-	_right_shoulder.global_position = right_shoulder_pos
-	_left_elbow.global_position     = left_elbow_pos
-	_right_elbow.global_position    = right_elbow_pos
+	if right_tracked:
+		var right_wrist    := (global_transform * pose.right_joints[1]).origin
+		var right_elbow_pos := _estimate_elbow(right_shoulder_pos, right_wrist, 1.0)
+		_right_shoulder.global_position = right_shoulder_pos
+		_right_elbow.global_position    = right_elbow_pos
+		_orient_limb(_right_upper_arm, right_shoulder_pos, right_elbow_pos)
+		_orient_limb(_right_forearm,   right_elbow_pos,    right_wrist)
 
-	# Orient and size limb cylinders.
-	_orient_limb(_clavicle,        left_shoulder_pos, right_shoulder_pos)
-	_orient_limb(_left_upper_arm,  left_shoulder_pos, left_elbow_pos)
-	_orient_limb(_right_upper_arm, right_shoulder_pos, right_elbow_pos)
-	_orient_limb(_left_forearm,    left_elbow_pos, left_wrist)
-	_orient_limb(_right_forearm,   right_elbow_pos, right_wrist)
-	_orient_limb(_torso,           neck, hip)
+	_left_shoulder.visible  = left_tracked
+	_left_elbow.visible     = left_tracked
+	_left_upper_arm.visible = left_tracked
+	_left_forearm.visible   = left_tracked
+	_right_shoulder.visible  = right_tracked
+	_right_elbow.visible     = right_tracked
+	_right_upper_arm.visible = right_tracked
+	_right_forearm.visible   = right_tracked
 
 
 func _estimate_elbow(shoulder: Vector3, wrist: Vector3, side: float) -> Vector3:
