@@ -34,6 +34,9 @@ var _storage_retry_timer := 0.0
 const RETRY_DELAY := 3.0
 const STORAGE_RETRY_INTERVAL := 2.0
 
+var _recalib_timer := 0.0
+const RECALIB_INTERVAL := 2.0
+
 signal calibrated
 signal space_localized(uuid: String)
 signal anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bool)
@@ -58,15 +61,20 @@ func _on_mgr_entered_tree() -> void:
 
 
 func _process(delta: float) -> void:
-	if _storage_pending.is_empty() or not _ml_mgr:
-		return
-	_storage_retry_timer -= delta
-	if _storage_retry_timer > 0.0:
-		return
-	_storage_retry_timer = STORAGE_RETRY_INTERVAL
-	print("AnchorManager: retrying ", _storage_pending.size(), " pending anchors")
-	for uuid in _storage_pending.duplicate():
-		_ml_mgr.call("load_anchor", StringName(uuid))
+	if not _storage_pending.is_empty() and _ml_mgr:
+		_storage_retry_timer -= delta
+		if _storage_retry_timer <= 0.0:
+			_storage_retry_timer = STORAGE_RETRY_INTERVAL
+			print("AnchorManager: retrying ", _storage_pending.size(), " pending anchors")
+			for uuid in _storage_pending.duplicate():
+				_ml_mgr.call("load_anchor", StringName(uuid))
+
+	# rerun calibration every few seconsd, as the anchor node positions are constantly being refined by the ML2
+	if _calibrated and _kabsch_nodes.size() >= 3:
+		_recalib_timer -= delta
+		if _recalib_timer <= 0.0:
+			_recalib_timer = RECALIB_INTERVAL
+			_refresh_calibration()
 
 
 # ── Calibration API ───────────────────────────────────────────────────────────
@@ -305,6 +313,48 @@ func _try_calibrate() -> void:
 	_pending_save.clear()
 
 
+func _refresh_calibration() -> void:
+	var kabsch_dst: Array[Vector3] = []
+	for node in _kabsch_nodes:
+		if not is_instance_valid(node):
+			return
+		kabsch_dst.append(node.position)
+
+	var new_calibration := Kabsch.compute(_kabsch_src, kabsch_dst)
+
+	var old_err := 0.0
+	var new_err := 0.0
+	for i in _kabsch_src.size():
+		old_err += (_calibration * _kabsch_src[i]).distance_to(kabsch_dst[i])
+		new_err += (new_calibration * _kabsch_src[i]).distance_to(kabsch_dst[i])
+	old_err /= _kabsch_src.size()
+	new_err /= _kabsch_src.size()
+
+	if new_err >= old_err:
+		return
+
+	print("AnchorManager: recalibrated — avg error ", snappedf(old_err, 0.001), "m → ", snappedf(new_err, 0.001), "m")
+	_calibration = new_calibration
+	_reposition_virtual_markers()
+
+
+func _reposition_virtual_markers() -> void:
+	for node in _marker_nodes:
+		if is_instance_valid(node):
+			node.queue_free()
+	_marker_nodes.clear()
+
+	for anchor in _desktop_content:
+		_place_virtual_marker(anchor, anchor.space_id)
+
+	for anchor in _all_anchors.values():
+		if anchor.space_id == _current_space_id or anchor.glb_position == null:
+			continue
+		if anchor.anchor_type != Anchor.TYPE_CONTENT and anchor.anchor_type != Anchor.TYPE_ASSET:
+			continue
+		_place_virtual_marker(anchor, anchor.space_id)
+
+
 func _to_local(glb_pos: Vector3, space_id: String) -> Vector3:
 	if space_id == _current_space_id or _space_offsets.is_empty():
 		return _calibration * glb_pos
@@ -416,6 +466,7 @@ func _on_ml_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bo
 		_kabsch_src.append(ref.glb_position)
 		_kabsch_nodes.append(anchor_node)
 		print("AnchorManager: Kabsch pair #", _kabsch_src.size(), " for ", uuid_str)
+		# try and calibrate every time we get a new tracked anchor
 		_try_calibrate()
 	elif _calibrated:
 		if anchor and anchor.glb_position:
