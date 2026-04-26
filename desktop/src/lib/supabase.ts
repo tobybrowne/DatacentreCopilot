@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import type { Anchor, Building, Position, RigidTransform, Space } from './types'
+import type { Anchor, Asset, AssetWithAnchor, Building, Position, RigidTransform, Space } from './types'
 
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL as string,
@@ -39,13 +39,14 @@ export async function fetchAnchors(spaceId: string | null = null): Promise<Ancho
   return data as Anchor[]
 }
 
-export async function insertAnchor({ name, glbPosition, spaceId }: { name: string; glbPosition: Position; spaceId: string }): Promise<Anchor> {
+export async function insertAnchor({ name, glbPosition, spaceId, anchorType = 'content' }: { name: string; glbPosition: Position; spaceId: string; anchorType?: string }): Promise<Anchor> {
   const { data, error } = await supabase
     .from('anchors')
     .insert({
       name: name || 'Unnamed',
       glb_position: glbPosition,
       space_id: spaceId,
+      anchor_type: anchorType,
     })
     .select()
     .single()
@@ -203,6 +204,39 @@ export async function saveNavMesh(
 
 export async function deleteBuilding(buildingId: string): Promise<void> {
   const { error } = await supabase.from('buildings').delete().eq('id', buildingId)
+  if (error) throw error
+}
+
+export async function fetchAssetsWithAnchors(buildingId: string): Promise<AssetWithAnchor[]> {
+  const { data, error } = await supabase
+    .from('assets')
+    .select('*, anchor:anchors(*)')
+    .eq('building_id', buildingId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data as AssetWithAnchor[]
+}
+
+export async function createAsset(params: { name: string; assetType: string; buildingId: string }): Promise<Asset> {
+  const { data, error } = await supabase
+    .from('assets')
+    .insert({ name: params.name, asset_type: params.assetType, building_id: params.buildingId })
+    .select()
+    .single()
+  if (error) throw error
+  return data as Asset
+}
+
+export async function deleteAsset(id: string): Promise<void> {
+  const { error } = await supabase.from('assets').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function setAssetAnchor(assetId: string, anchorId: string): Promise<void> {
+  const { error } = await supabase
+    .from('assets')
+    .update({ anchor_id: anchorId })
+    .eq('id', assetId)
   if (error) throw error
 }
 

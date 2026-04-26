@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte'
   import { session, signOut } from './auth'
-  const dispatch = createEventDispatcher<{ navigate: 'anchors' | 'buildings' | 'navigate' }>()
+  const dispatch = createEventDispatcher<{ navigate: 'anchors' | 'buildings' | 'navigate' | 'assets' }>()
 </script>
 
 <div class="home">
@@ -24,6 +24,11 @@
         <span class="card-icon">⟐</span>
         <span class="card-title">Navigate</span>
         <span class="card-desc">Find routes between points in a stitched building</span>
+      </button>
+      <button class="card" on:click={() => dispatch('navigate', 'assets')}>
+        <span class="card-icon">◈</span>
+        <span class="card-title">Asset Manager</span>
+        <span class="card-desc">Manage assets and map them to locations in your buildings</span>
       </button>
     </div>
   </div>

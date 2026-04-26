@@ -28,8 +28,22 @@ export interface Anchor {
   id: string
   name: string | null
   glb_position: Position | null
-  is_reference: boolean
+  anchor_type: string
   ml2_id: string | null
   space_id: string | null
   created_at: string
+}
+
+export interface Asset {
+  id: string
+  name: string | null
+  asset_type: string | null
+  anchor_id: string | null
+  building_id: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AssetWithAnchor extends Asset {
+  anchor: Anchor | null
 }

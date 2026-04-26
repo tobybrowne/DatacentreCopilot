@@ -17,6 +17,7 @@
   export let stitchTargetPoints: Position[] = []
   export let stitchTransform: RigidTransform | null = null
   export let pointClouds: Array<{ points: Position[]; color: string }> = []
+  export let mergedSpacesClickable = false
 </script>
 
 <div class="canvas-wrap">
@@ -34,6 +35,7 @@
       {stitchTargetPoints}
       {stitchTransform}
       {pointClouds}
+      {mergedSpacesClickable}
       on:place
       on:select
     />

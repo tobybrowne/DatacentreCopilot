@@ -9,7 +9,10 @@
   export let transform: RigidTransform | null = null
   export let clickable = false
 
-  const dispatch = createEventDispatcher<{ dblclick: { point: THREE.Vector3 } }>()
+  const dispatch = createEventDispatcher<{
+    click: { point: THREE.Vector3 }
+    dblclick: { point: THREE.Vector3 }
+  }>()
 
   let group: THREE.Group
 
@@ -23,16 +26,20 @@
     }
   }
 
-  function handleClick(e: any): void {
+  function handle(e: any, type: 'click' | 'dblclick'): void {
+    console.log('[TransformedGltf] handle called', type, 'clickable:', clickable, 'e:', e)
     if (!clickable) return
     e.stopPropagation()
-    // Threlte puts the point directly on e or in e.detail depending on context
     const point: THREE.Vector3 | undefined = e.point ?? e.detail?.point
+    console.log('[TransformedGltf] dispatching', type, 'point:', point)
     if (!point) return
-    dispatch('dblclick', { point })
+    dispatch(type, { point })
   }
 </script>
 
 <T.Group bind:ref={group}>
-  <GLTF {url} on:dblclick={handleClick} />
+  <GLTF {url}
+    on:click={(e) => handle(e, 'click')}
+    on:dblclick={(e) => handle(e, 'dblclick')}
+  />
 </T.Group>

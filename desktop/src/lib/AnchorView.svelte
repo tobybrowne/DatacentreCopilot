@@ -79,7 +79,8 @@
     if (unsubscribeUser) { unsubscribeUser(); unsubscribeUser = null }
   }
 
-  function handleMeshClick({ detail: position }: CustomEvent<Position>): void {
+  function handleMeshClick({ detail }: CustomEvent<{ position: Position; spaceIndex: number | null }>): void {
+    const position = detail.position
     if (mappingAnchor) {
       confirmMapping(position)
     } else {

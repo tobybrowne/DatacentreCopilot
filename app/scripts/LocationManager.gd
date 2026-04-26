@@ -407,7 +407,9 @@ func _try_calibrate() -> void:
 		_place_virtual_marker(anchor, anchor.space_id)
 
 	for anchor in _all_anchors.values():
-		if anchor.space_id == _current_space_id or anchor.glb_position == null or anchor.anchor_type != Anchor.TYPE_CONTENT:
+		if anchor.space_id == _current_space_id or anchor.glb_position == null:
+			continue
+		if anchor.anchor_type != Anchor.TYPE_CONTENT and anchor.anchor_type != Anchor.TYPE_ASSET:
 			continue
 		_place_virtual_marker(anchor, anchor.space_id)
 
@@ -453,7 +455,13 @@ func clear_markers() -> void:
 
 
 func _place_virtual_marker(anchor: Anchor, space_id: String) -> void:
-	var color := Color(0.5, 0.3, 1.0) if space_id != _current_space_id else Color(1.0, 0.55, 0.0)
+	var color: Color
+	if anchor.anchor_type == Anchor.TYPE_ASSET:
+		color = Color(0.2, 0.5, 1.0)
+	elif space_id != _current_space_id:
+		color = Color(0.5, 0.3, 1.0)
+	else:
+		color = Color(1.0, 0.55, 0.0)
 	var marker := _anchor_manager._make_marker(color, anchor.name)
 	marker.position = _to_local(anchor.glb_position, space_id)
 	get_parent().add_child(marker)

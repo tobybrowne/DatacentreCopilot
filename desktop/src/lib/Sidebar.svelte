@@ -19,9 +19,9 @@
     togglemonitor: void
   }>()
 
-  $: unmappedRefs = anchors.filter(a => a.is_reference && !a.glb_position)
-  $: mappedRefs   = anchors.filter(a => a.is_reference && a.glb_position)
-  $: content      = anchors.filter(a => !a.is_reference)
+  $: unmappedRefs = anchors.filter(a => a.anchor_type === 'reference' && !a.glb_position)
+  $: mappedRefs   = anchors.filter(a => a.anchor_type === 'reference' && a.glb_position)
+  $: content      = anchors.filter(a => a.anchor_type !== 'reference')
 </script>
 
 <aside>

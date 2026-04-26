@@ -4,6 +4,7 @@ const TYPE_REFERENCE := "reference"  # Kabsch calibration reference point
 const TYPE_CONTENT   := "content"    # placed content marker
 const TYPE_TEMP      := "temp"       # transient routing anchor, never rendered
 const TYPE_NOTE      := "note"       # sticky note anchor
+const TYPE_ASSET     := "asset"      # physical asset marker
 
 var id: String
 var name: String

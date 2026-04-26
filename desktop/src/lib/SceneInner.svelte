@@ -21,11 +21,12 @@
   export let stitchTargetPoints: Position[] = []
   export let stitchTransform: RigidTransform | null = null
   export let pointClouds: Array<{ points: Position[]; color: string }> = []
+  export let mergedSpacesClickable = false
 
   // allows for this component to emit events to the parent
   // parents can use on:place and on:select to listen for these events
   // so the anchor specific or stitching specific logic can be handled in the parent component instead of here
-  const dispatch = createEventDispatcher<{ place: Position; select: string }>()
+  const dispatch = createEventDispatcher<{ place: { position: Position; spaceIndex: number | null }; select: string }>()
 
   interactivity()
 
@@ -54,11 +55,13 @@
       })
     : []
 
-  function handleMeshClick(e: any): void {
+  function handleMeshClick(e: any, spaceIndex: number | null = null): void {
+    console.log('[SceneInner] handleMeshClick called, spaceIndex:', spaceIndex, 'e:', e)
     e.stopPropagation()
     const point = e.point ?? e.detail?.point
+    console.log('[SceneInner] point:', point)
     if (!point) return
-    dispatch('place', { x: point.x, y: point.y, z: point.z })
+    dispatch('place', { position: { x: point.x, y: point.y, z: point.z }, spaceIndex })
   }
 
   function handleAnchorClick(_e: unknown, id: string): void {
@@ -68,7 +71,7 @@
   function sphereColor(anchor: Anchor): string {
     if (mappingAnchor?.id === anchor.id) return '#ffffff'
     if (anchor.id === selectedId) return '#ff8800'
-    if (anchor.is_reference) return '#ffcc00'
+    if (anchor.anchor_type === 'reference') return '#ffcc00'
     return anchor.ml2_id ? '#88ff88' : '#00d4ff'
   }
 </script>
@@ -94,8 +97,13 @@
     <GLTF url={glbUrl} on:dblclick={handleMeshClick} />
   {/if}
 
-  {#each mergedSpaces as space (space.url)}
-    <TransformedGltf url={space.url} transform={space.transform} />
+  {#each mergedSpaces as space, i (space.url)}
+    <TransformedGltf
+      url={space.url}
+      transform={space.transform}
+      clickable={mergedSpacesClickable}
+      on:click={(e) => handleMeshClick(e, i)}
+    />
   {/each}
 
   {#each anchors.filter(a => a.glb_position) as anchor (anchor.id)}
@@ -147,8 +155,8 @@
 
 <!-- ── Stitch: pick target points (show full merged model so far) ── -->
 {#if stitchPhase === 'pickTarget'}
-  {#each mergedSpaces as space (space.url)}
-    <TransformedGltf url={space.url} transform={space.transform} clickable={true} on:dblclick={handleMeshClick} />
+  {#each mergedSpaces as space, i (space.url)}
+    <TransformedGltf url={space.url} transform={space.transform} clickable={true} on:dblclick={(e) => handleMeshClick(e, i)} />
   {/each}
   {#each stitchTargetPoints as pt}
     <T.Mesh position={[pt.x, pt.y, pt.z]}>
