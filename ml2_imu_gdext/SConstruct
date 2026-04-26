@@ -1,0 +1,41 @@
+#!/usr/bin/env python
+import os
+
+godot_cpp_path = os.path.expanduser("~/godot_openxr_vendors/thirdparty/godot-cpp")
+
+env = SConscript(os.path.join(godot_cpp_path, "SConstruct"))
+
+env.Append(CPPPATH=["src/"])
+
+sources = Glob("src/*.cpp")
+
+if env["platform"] in ["linux", "android"]:
+    env.Append(
+        LINKFLAGS=[
+            "-static-libgcc",
+            "-static-libstdc++",
+        ]
+    )
+
+if env["platform"] == "android":
+    env.Append(LIBS=["android"])
+
+binary_path = os.path.expanduser(
+    "~/entangl-copilot/app/addons/ml2_imu/bin"
+)
+
+project_name = "ml2imu"
+
+library = env.SharedLibrary(
+    "{}/{}/{}/{}/lib{}{}".format(
+        binary_path,
+        env["platform"],
+        env["target"],
+        env["arch"],
+        project_name,
+        env["SHLIBSUFFIX"],
+    ),
+    source=sources,
+)
+
+Default(library)

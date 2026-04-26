@@ -8,22 +8,38 @@ signal play_requested(log_id: String, geo_path: String, ogv_path: String)
 signal stop_requested
 
 var _active_log_id: String = ""
-var _active_btn: Button = null
+var _active_btn:    Button = null
+var _loading_btn:   Button = null
+var _spinner_time:  float  = 0.0
+
+const _SPINNER := ["◐", "◓", "◑", "◒"]
+
+
+func _process(delta: float) -> void:
+	if not _loading_btn:
+		return
+	_spinner_time += delta
+	_loading_btn.text = _SPINNER[int(_spinner_time * 8) % _SPINNER.size()]
 
 
 func init(data: Dictionary) -> void:
 	_clear()
 	_status.text = "Loading…"
 	var step_id: String = data.get("step_id", "")
+	var asset_id: String = data.get("asset_id", "")
 	if not step_id.is_empty():
 		_load_logs(step_id)
+	elif not asset_id.is_empty():
+		_load_logs_for_asset(asset_id)
 
 
 func _clear() -> void:
 	for child in _item_list.get_children():
 		child.queue_free()
 	_active_log_id = ""
-	_active_btn = null
+	_active_btn    = null
+	_loading_btn   = null
+	_spinner_time  = 0.0
 
 
 func _load_logs(step_id: String) -> void:
@@ -48,6 +64,71 @@ func _load_logs(step_id: String) -> void:
 	)
 	if rows.is_empty():
 		_status.text = "No playable logs for this step."
+		return
+
+	var user_ids := PackedStringArray()
+	for row in rows:
+		var uid: String = row.get("user_id", "")
+		if not uid.is_empty() and uid not in user_ids:
+			user_ids.append(uid)
+
+	var email_map: Dictionary = {}
+	if user_ids.size() > 0:
+		var utask = await Supabase.database.query(
+			SupabaseQuery.new().from("users").select(["id", "contact_email"]).In("id", user_ids)
+		).completed
+		if utask.data:
+			for u in utask.data:
+				email_map[u.get("id", "")] = u.get("contact_email", "Unknown")
+
+	_status.text = ""
+	for row in rows:
+		_add_row(row, email_map)
+		await get_tree().process_frame
+
+
+func _load_logs_for_asset(asset_id: String) -> void:
+	var la_task = await Supabase.database.query(
+		SupabaseQuery.new().from("log_assets").select(["log_id"]).eq("asset_id", asset_id)
+	).completed
+
+	_clear()
+
+	if la_task.error != null or la_task.data == null or la_task.data.is_empty():
+		_status.text = "No logs for this asset."
+		return
+
+	var log_ids := PackedStringArray()
+	for row in la_task.data:
+		var lid: String = row.get("log_id", "")
+		if not lid.is_empty():
+			log_ids.append(lid)
+
+	if log_ids.is_empty():
+		_status.text = "No logs for this asset."
+		return
+
+	var task = await Supabase.database.query(
+		SupabaseQuery.new()
+			.from("logs")
+			.select(["id", "created_at", "geometry_recording_path", "camera_recording_path_ogv", "user_id"])
+			.In("id", log_ids)
+			.order("created_at", SupabaseQuery.Directions.Descending)
+	).completed
+
+	_clear()
+
+	if task.error != null or task.data == null or task.data.is_empty():
+		_status.text = "No playable logs for this asset."
+		return
+
+	var rows: Array = task.data.filter(func(r):
+		var has_geo: bool = r.get("geometry_recording_path") != null and not r.get("geometry_recording_path", "").is_empty()
+		var has_ogv: bool = r.get("camera_recording_path_ogv") != null and not r.get("camera_recording_path_ogv", "").is_empty()
+		return has_geo or has_ogv
+	)
+	if rows.is_empty():
+		_status.text = "No playable logs for this asset."
 		return
 
 	var user_ids := PackedStringArray()
@@ -120,32 +201,42 @@ func _add_row(row: Dictionary, email_map: Dictionary) -> void:
 
 func _on_play_pressed(log_id: String, geo_path: String, ogv_path: String, btn: Button) -> void:
 	if _active_log_id == log_id:
-		_clear_active()
+		_clear_all()
 		stop_requested.emit()
 	else:
 		if not _active_log_id.is_empty():
 			stop_requested.emit()
-		_set_active(log_id, btn)
+		_clear_all()
+		_active_log_id = log_id
+		_loading_btn = btn
+		_spinner_time = 0.0
+		btn.disabled = true
 		play_requested.emit(log_id, geo_path, ogv_path)
 
 
-func _set_active(log_id: String, btn: Button) -> void:
-	if _active_btn:
-		_active_btn.text = "▶"
-	_active_log_id = log_id
-	_active_btn = btn
-	btn.text = "■"
-
-
-func _clear_active() -> void:
-	if _active_btn:
-		_active_btn.text = "▶"
-	_active_log_id = ""
-	_active_btn = null
+func notify_playback_started() -> void:
+	if _loading_btn:
+		_loading_btn.disabled = false
+		_loading_btn.text = "■"
+		_active_btn = _loading_btn
+		_loading_btn = null
 
 
 func notify_playback_finished() -> void:
-	_clear_active()
+	_clear_all()
+
+
+func _clear_all() -> void:
+	if _active_btn:
+		_active_btn.text = "▶"
+		_active_btn.disabled = false
+		_active_btn = null
+	if _loading_btn:
+		_loading_btn.text = "▶"
+		_loading_btn.disabled = false
+		_loading_btn = null
+	_active_log_id = ""
+	_spinner_time = 0.0
 
 
 func _add_availability_icon(parent: Control, label: String, available: bool) -> void:

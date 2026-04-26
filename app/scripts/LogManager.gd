@@ -8,6 +8,7 @@ var _procedure: Procedure = null
 var _site_id: String = ""
 var _procedure_run_id: String = ""
 var _current_step: Step = null
+var _interacted_assets: Dictionary = {}  # asset_id -> true, deduplicated set
 
 
 func _ready() -> void:
@@ -56,7 +57,12 @@ func on_step_changed(prev_step: Step, next_step: Step) -> void:
 
 # ── Recording ─────────────────────────────────────────────────────────────────
 
+func record_asset_interaction(asset_id: String) -> void:
+	_interacted_assets[asset_id] = true
+
+
 func _begin_step(step: Step) -> void:
+	_interacted_assets.clear()
 	var log_type: String = _procedure.log_type
 
 	if log_type in ["FULL", "GEOMETRY_ONLY"]:
@@ -82,7 +88,13 @@ func _end_step(step: Step) -> void:
 			var local_path: String = await _camera_manager.recording_stopped
 			camera_path = await _upload_camera_recording(local_path, step.id)
 
-	await _insert_log(step.id, geometry_path, camera_path)
+	var log_id := await _insert_log(step.id, geometry_path, camera_path)
+	if not log_id.is_empty():
+		var all_assets := _interacted_assets.duplicate()
+		for aid: String in step.asset_ids:
+			all_assets[aid] = true
+		if not all_assets.is_empty():
+			await _insert_log_assets(log_id, all_assets)
 
 
 # ── Upload ─────────────────────────────────────────────────────────────────────
@@ -187,7 +199,7 @@ func _insert_procedure_run(procedure_id: String) -> String:
 	return task.data[0].get("id", "")
 
 
-func _insert_log(step_id: String, geometry_path: String, camera_path: String) -> void:
+func _insert_log(step_id: String, geometry_path: String, camera_path: String) -> String:
 	var user_id: String = SupabaseManager.auth_user.id if SupabaseManager.auth_user else ""
 	var row := {
 		"step_id": step_id,
@@ -206,3 +218,18 @@ func _insert_log(step_id: String, geometry_path: String, camera_path: String) ->
 	).completed
 	if task.error != null:
 		push_warning("LogManager: failed to insert log — %s" % task.error.message)
+		return ""
+	if task.data == null or task.data.is_empty():
+		return ""
+	return task.data[0].get("id", "")
+
+
+func _insert_log_assets(log_id: String, assets: Dictionary) -> void:
+	var rows := []
+	for asset_id: String in assets:
+		rows.append({"log_id": log_id, "asset_id": asset_id})
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("log_assets").insert(rows)
+	).completed
+	if task.error != null:
+		push_warning("LogManager: failed to insert log_assets — %s" % task.error.message)

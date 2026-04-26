@@ -72,7 +72,7 @@ func _process(delta: float) -> void:
 
 	if visible and _panel:
 		var other_hand := "right" if tracked_hand == "left" else "left"
-		var tip := _get_index_tip(xr_origin, other_hand)
+		var tip := _get_index_tip(other_hand)
 		if tip != Vector3.INF and _finger_over_panel(tip):
 			_hold_timer += delta
 		else:
@@ -89,14 +89,6 @@ func _finger_over_panel(tip_world: Vector3) -> bool:
 	return Vector2(local.x, local.y).length() <= _HOLD_RADIUS
 
 
-func _get_index_tip(xr_origin: XROrigin3D, hand: String) -> Vector3:
-	var t := XRServer.get_tracker("/user/hand_tracker/" + hand)
-	if not t or not t is XRHandTracker:
-		return Vector3.INF
-	var ht := t as XRHandTracker
-	if not (ht.get_hand_joint_flags(10) & 4):
-		return Vector3.INF
-	return xr_origin.global_transform * ht.get_hand_joint_transform(10).origin
 
 
 func _set_visible(v: bool) -> void:

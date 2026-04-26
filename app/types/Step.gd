@@ -8,6 +8,7 @@ var type: String      = TYPE_INSTRUCTION
 var text: String      = ""
 var anchor_id: String = ""
 var log_id: String    = ""
+var asset_ids: Array[String] = []
 var timer_duration: float  = 0.0
 var timer_target_uuid: String = ""
 
@@ -24,6 +25,9 @@ static func from_value(v) -> Step:
 		step.text      = v.get("text", "")
 		step.anchor_id = v.get("anchor_id", "")
 		step.log_id    = v.get("log_id", "")
+		for aid in v.get("asset_ids", []):
+			if aid is String and not aid.is_empty():
+				step.asset_ids.append(aid)
 		var timer: Variant = v.get("timer", null)
 		if timer is Dictionary:
 			step.timer_duration    = float(timer.get("duration", 0.0))

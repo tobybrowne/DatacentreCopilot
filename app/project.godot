@@ -46,6 +46,10 @@ enabled=PackedStringArray("res://addons/cv_camera/plugin.cfg", "res://addons/god
 theme/custom_font="res://assets/fonts/InterVariable.tres"
 theme/default_font_size=28
 
+[input_devices]
+
+sensors/enable_magnetometer=true
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
