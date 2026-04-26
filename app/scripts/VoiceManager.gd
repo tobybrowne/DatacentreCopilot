@@ -5,10 +5,8 @@
 class_name VoiceManager
 extends Node
 
-@export var intents: PackedStringArray = ["next step", "previous step", "confirm", "cancel", "start recording", "stop recording", "go home"]
+@export var intents: PackedStringArray = ["confirm", "cancel", "start recording", "stop recording", "go home"]
 
-signal next_step
-signal previous_step
 signal confirm
 signal cancel
 signal start_recording
@@ -33,7 +31,6 @@ func _ready() -> void:
 	_voice.intents = intents
 	_voice.voice_intent.connect(_on_intent)
 	_voice.voice_error.connect(_on_error)
-	_voice.configure_and_start()
 
 
 func stop() -> void:
@@ -41,15 +38,9 @@ func stop() -> void:
 		_voice.stop()
 
 
-func _on_intent(intent_name: String, intent_id: int) -> void:
+func _on_intent(intent_name: String, _intent_id: int) -> void:
 	var lower := intent_name.to_lower()
 	match lower:
-		"next step":
-			print("VoiceManager: recognized intent '%s'" % intent_name)
-			next_step.emit()
-		"previous step":
-			print("VoiceManager: recognized intent '%s'" % intent_name)
-			previous_step.emit()
 		"confirm":
 			print("VoiceManager: recognized intent '%s'" % intent_name)
 			confirm.emit()

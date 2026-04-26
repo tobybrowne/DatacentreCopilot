@@ -10,6 +10,7 @@ from nav.router import router as nav_router
 from room_inference.router import router as room_inference_router
 from room_inference import infer
 from video.router import router as video_router
+from copilot.router import router as realtime_router
 
 
 @asynccontextmanager
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title='Mono Service', lifespan=lifespan)
 app.include_router(nav_router)
 app.include_router(video_router)
+app.include_router(realtime_router)
 # app.include_router(room_inference_router)
 
 

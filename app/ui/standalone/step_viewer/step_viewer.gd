@@ -84,7 +84,6 @@ func _refresh(prev_step: Step) -> void:
 	step_changed.emit(prev_step, step)
 	_counter.text = "Step %d / %d" % [_current + 1, _steps.size()]
 	_text.text = step.text
-	SpeakManager.speak("Step %d: %s" % [_current + 1, step.text])
 
 	if step.type == Step.TYPE_GOTO:
 		_active_goto = true
@@ -136,7 +135,6 @@ func _stop_timer() -> void:
 func _on_timer_expired() -> void:
 	_timer_expired = true
 	_timer_label.text = "Time ran out"
-	SpeakManager.speak("Time ran out")
 
 
 func _format_time(seconds: float) -> String:
@@ -145,7 +143,6 @@ func _format_time(seconds: float) -> String:
 
 
 func _exit_tree() -> void:
-	SpeakManager.stop()
 	_stop_timer()
 	if _active_goto:
 		_active_goto = false

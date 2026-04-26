@@ -55,10 +55,6 @@ func _ready() -> void:
 	)
 	app_state.transition_to("idle")
 
-	voice_manager.go_home.connect(app_state.go_home)
-	voice_manager.start_recording.connect(_on_start_recording)
-	voice_manager.stop_recording.connect(_on_stop_recording)
-
 	if OS.get_name() == "Android":
 		OS.request_permissions()
 

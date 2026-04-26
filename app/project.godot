@@ -15,6 +15,10 @@ run/main_scene="uid://cr2ecfpaecnev"
 config/features=PackedStringArray("4.6", "Mobile")
 config/icon="res://icon.svg"
 
+[audio]
+
+driver/enable_input=true
+
 [autoload]
 
 PanelRouter="*res://ui/panelrouter/panel_router.gd"
@@ -28,6 +32,7 @@ SupabaseManager="*uid://bkm7clkns3jgq"
 AuthManager="*res://scripts/AuthManager.gd"
 LogManager="*res://scripts/LogManager.gd"
 CVCameraManager="*res://scripts/CVCameraManager.gd"
+CopilotManager="*res://scripts/CopilotManager.gd"
 
 [display]
 

@@ -18,8 +18,27 @@ func enter(data: Dictionary) -> void:
 	ui_panel.visible = false
 	PanelRouter.action_requested.connect(_on_action)
 
-	voice_manager.next_step.connect(_voice_next)
-	voice_manager.previous_step.connect(_voice_prev)
+	CopilotManager.update_tools([
+		{
+			"type": "function",
+			"name": "next_step",
+			"description": "Navigate to the next step in the current procedure",
+			"parameters": {"type": "object", "properties": {}},
+		},
+		{
+			"type": "function",
+			"name": "previous_step",
+			"description": "Navigate to the previous step in the current procedure",
+			"parameters": {"type": "object", "properties": {}},
+		},
+		{
+			"type": "function",
+			"name": "go_home",
+			"description": "Exit the current procedure and return to the home screen",
+			"parameters": {"type": "object", "properties": {}},
+		},
+	])
+	CopilotManager.function_called.connect(_on_copilot_function)
 
 	var procedure := data.get("procedure") as Procedure
 	var space_id: String = data.get("space_id", "")
@@ -58,8 +77,8 @@ func enter(data: Dictionary) -> void:
 
 func exit() -> void:
 	PanelRouter.action_requested.disconnect(_on_action)
-	voice_manager.next_step.disconnect(_voice_next)
-	voice_manager.previous_step.disconnect(_voice_prev)
+	CopilotManager.update_tools([])
+	CopilotManager.function_called.disconnect(_on_copilot_function)
 
 	LogManager.end_procedure()
 
@@ -117,6 +136,19 @@ func _voice_next() -> void:
 func _voice_prev() -> void:
 	var sv := _step_viewer()
 	if sv: sv.prev_step()
+
+
+func _on_copilot_function(fn_name: String, call_id: String, _args: Dictionary) -> void:
+	match fn_name:
+		"next_step":
+			_voice_next()
+			CopilotManager.send_function_output(call_id, "ok")
+		"previous_step":
+			_voice_prev()
+			CopilotManager.send_function_output(call_id, "ok")
+		"go_home":
+			CopilotManager.send_function_output(call_id, "ok")
+			app.get_node("AppState").go_home()
 
 
 func _step_viewer() -> StepViewer:
