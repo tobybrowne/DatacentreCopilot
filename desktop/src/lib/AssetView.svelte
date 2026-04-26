@@ -59,7 +59,6 @@
   let loadingBuilding = false
 
   $: mergedSpacesClickable = !!placingAsset
-  $: console.log('[AssetView] mergedSpacesClickable:', mergedSpacesClickable, 'placingAsset:', placingAsset?.name)
   $: sceneAnchors = assets.filter(a => a.anchor?.glb_position).map(a => a.anchor!)
   $: selectedAnchorId = selectedAssetId
     ? (assets.find(a => a.id === selectedAssetId)?.anchor?.id ?? null)
@@ -131,7 +130,6 @@
   }
 
   async function handlePlace({ detail }: CustomEvent<{ position: Position; spaceIndex: number | null }>): Promise<void> {
-    console.log('[AssetView] handlePlace called, detail:', detail, 'placingAsset:', placingAsset)
     if (!placingAsset || saving) return
     saving = true
     try {

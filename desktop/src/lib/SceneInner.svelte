@@ -56,10 +56,8 @@
     : []
 
   function handleMeshClick(e: any, spaceIndex: number | null = null): void {
-    console.log('[SceneInner] handleMeshClick called, spaceIndex:', spaceIndex, 'e:', e)
     e.stopPropagation()
     const point = e.point ?? e.detail?.point
-    console.log('[SceneInner] point:', point)
     if (!point) return
     dispatch('place', { position: { x: point.x, y: point.y, z: point.z }, spaceIndex })
   }

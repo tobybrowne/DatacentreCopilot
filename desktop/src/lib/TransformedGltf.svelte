@@ -27,11 +27,9 @@
   }
 
   function handle(e: any, type: 'click' | 'dblclick'): void {
-    console.log('[TransformedGltf] handle called', type, 'clickable:', clickable, 'e:', e)
     if (!clickable) return
     e.stopPropagation()
     const point: THREE.Vector3 | undefined = e.point ?? e.detail?.point
-    console.log('[TransformedGltf] dispatching', type, 'point:', point)
     if (!point) return
     dispatch(type, { point })
   }
