@@ -23,8 +23,8 @@ var _calibrated := false
 var _space_offsets: Dictionary = {}
 var _current_space_id := ""
 
-# Markers
-var _marker_nodes: Array[Node3D] = []
+# Virtual markers (non-ML2, positioned by GLB coords): [{marker: Node3D, anchor: Anchor}]
+var _virtual_markers: Array[Dictionary] = []
 
 # ML2 tracking
 var tracked_nodes: Dictionary = {}     # ml2_uuid → Node3D
@@ -190,10 +190,10 @@ func get_anchor_near(pos: Vector3, radius: float) -> Anchor:
 
 
 func clear_markers() -> void:
-	for node in _marker_nodes:
-		if is_instance_valid(node):
-			node.queue_free()
-	_marker_nodes.clear()
+	for entry in _virtual_markers:
+		if is_instance_valid(entry.marker):
+			entry.marker.queue_free()
+	_virtual_markers.clear()
 	for node in tracked_nodes.values():
 		if is_instance_valid(node):
 			for child in node.get_children():
@@ -293,20 +293,20 @@ func _try_calibrate() -> void:
 
 	calibrated.emit()
 
-	for node in _marker_nodes:
-		if is_instance_valid(node):
-			node.queue_free()
-	_marker_nodes.clear()
+	for entry in _virtual_markers:
+		if is_instance_valid(entry.marker):
+			entry.marker.queue_free()
+	_virtual_markers.clear()
 
 	for anchor in _desktop_content:
-		_place_virtual_marker(anchor, anchor.space_id)
+		_place_virtual_marker(anchor, false)
 
 	for anchor in _all_anchors.values():
 		if anchor.space_id == _current_space_id or anchor.glb_position == null:
 			continue
 		if anchor.anchor_type != Anchor.TYPE_CONTENT and anchor.anchor_type != Anchor.TYPE_ASSET:
 			continue
-		_place_virtual_marker(anchor, anchor.space_id)
+		_place_virtual_marker(anchor, true)
 
 	for uuid in _pending_save:
 		_write_glb_position(uuid, _pending_save[uuid].position)
@@ -339,20 +339,9 @@ func _refresh_calibration() -> void:
 
 
 func _reposition_virtual_markers() -> void:
-	for node in _marker_nodes:
-		if is_instance_valid(node):
-			node.queue_free()
-	_marker_nodes.clear()
-
-	for anchor in _desktop_content:
-		_place_virtual_marker(anchor, anchor.space_id)
-
-	for anchor in _all_anchors.values():
-		if anchor.space_id == _current_space_id or anchor.glb_position == null:
-			continue
-		if anchor.anchor_type != Anchor.TYPE_CONTENT and anchor.anchor_type != Anchor.TYPE_ASSET:
-			continue
-		_place_virtual_marker(anchor, anchor.space_id)
+	for entry in _virtual_markers:
+		if is_instance_valid(entry.marker):
+			entry.marker.position = _to_local(entry.anchor.glb_position, entry.anchor.space_id)
 
 
 func _to_local(glb_pos: Vector3, space_id: String) -> Vector3:
@@ -367,57 +356,44 @@ func _write_glb_position(uuid: String, local_pos: Vector3) -> void:
 	SupabaseManager.update_anchor_glb_position(uuid, _calibration.affine_inverse() * local_pos)
 
 
-func _place_virtual_marker(anchor: Anchor, space_id: String) -> void:
-	var color: Color
-	if anchor.anchor_type == Anchor.TYPE_ASSET:
-		color = Color(0.2, 0.5, 1.0)
-	elif space_id != _current_space_id:
-		color = Color(0.5, 0.3, 1.0)
-	else:
-		color = Color(1.0, 0.55, 0.0)
-	var marker := _make_marker(color, anchor.name)
-	marker.position = _to_local(anchor.glb_position, space_id)
+func _place_virtual_marker(anchor: Anchor, other_space: bool) -> void:
+	var marker := _create_virtual_marker(anchor, other_space)
+	marker.position = _to_local(anchor.glb_position, anchor.space_id)
 	get_parent().add_child(marker)
-	_marker_nodes.append(marker)
+	_virtual_markers.append({ "marker": marker, "anchor": anchor })
 
 
-# ── Marker factory ────────────────────────────────────────────────────────────
+func _create_virtual_marker(anchor: Anchor, other_space: bool) -> Node3D:
+	match anchor.anchor_type:
+		Anchor.TYPE_ASSET:
+			var m := AssetAnchorMarker.new()
+			m.anchor = anchor
+			return m
+		Anchor.TYPE_NOTE:
+			var m := NoteAnchorMarker.new()
+			m.anchor = anchor
+			return m
+		_:
+			var m := ContentAnchorMarker.new()
+			m.anchor = anchor
+			m.other_space = other_space
+			return m
 
-func _make_marker(color: Color = Color(0.2, 0.8, 1.0), label: String = "") -> Node3D:
-	var root := Node3D.new()
 
-	var mi := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.05
-	sphere.height = 0.10
-	mi.mesh = sphere
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.emission_enabled = true
-	mat.emission = color
-	mat.emission_energy_multiplier = 2.0
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mi.material_override = mat
-	root.add_child(mi)
-
-	var light := OmniLight3D.new()
-	light.light_color = color
-	light.light_energy = 0.5
-	light.omni_range = 0.5
-	root.add_child(light)
-
-	if label != "":
-		var lbl := Label3D.new()
-		lbl.text = label
-		lbl.position = Vector3(0, 0.10, 0)
-		lbl.font_size = 128
-		lbl.pixel_size = 0.0005
-		lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-		lbl.no_depth_test = true
-		lbl.modulate = color
-		root.add_child(lbl)
-
-	return root
+func _create_tracked_marker(anchor: Anchor) -> Node3D:
+	match anchor.anchor_type:
+		Anchor.TYPE_ASSET:
+			var m := AssetAnchorMarker.new()
+			m.anchor = anchor
+			return m
+		Anchor.TYPE_REFERENCE:
+			var m := ReferenceAnchorMarker.new()
+			m.anchor = anchor
+			return m
+		_:
+			var m := ContentAnchorMarker.new()
+			m.anchor = anchor
+			return m
 
 
 func _get_anchor_by_ml2(ml2_id: String) -> Anchor:
@@ -445,7 +421,9 @@ func _on_ml_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bo
 		_next_num += 1
 		_all_anchors[new_anchor.id] = new_anchor
 		SupabaseManager.insert_anchor(new_anchor)
-		anchor_node.add_child(_make_marker(Color(0.2, 0.8, 1.0), new_anchor.name))
+		var new_marker := ReferenceAnchorMarker.new()
+		new_marker.anchor = new_anchor
+		anchor_node.add_child(new_marker)
 		if _calibrated:
 			await get_tree().process_frame
 			_write_glb_position(uuid_str, anchor_node.position)
@@ -455,9 +433,12 @@ func _on_ml_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bo
 		return
 
 	var anchor := _get_anchor_by_ml2(uuid_str)
-	var label := anchor.name if anchor else ""
-	var color: Color = Color(1.0, 0.85, 0.0) if (anchor and anchor.glb_position != null) else Color(0.2, 0.8, 1.0)
-	anchor_node.add_child(_make_marker(color, label))
+	if anchor:
+		anchor_node.add_child(_create_tracked_marker(anchor))
+	else:
+		var fallback := ReferenceAnchorMarker.new()
+		fallback.anchor = Anchor.new()
+		anchor_node.add_child(fallback)
 
 	await get_tree().process_frame
 
