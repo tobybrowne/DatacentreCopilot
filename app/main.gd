@@ -21,7 +21,7 @@ func _ready() -> void:
 	print("[main] _ready start")
 	PanelRouter.push("start_menu")
 	KeyboardManager.register(keyboard_panel)
-	NoteManager.setup(self, location_manager)
+	NoteManager.setup(location_manager, anchor_manager)
 	LogManager.setup(gesture_manager, location_manager, CVCameraManager)
 
 	progress_indicator = ProgressIndicator.new()
@@ -54,6 +54,7 @@ func _ready() -> void:
 		progress_indicator,
 	)
 	app_state.transition_to("idle")
+	ContextManager.setup(location_manager, app_state, $XROrigin3D/XRCamera3D)
 
 	if OS.get_name() == "Android":
 		OS.request_permissions()
