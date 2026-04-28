@@ -7,19 +7,10 @@ extends BasePanel
 signal play_requested(log_id: String, geo_path: String, ogv_path: String)
 signal stop_requested
 
-var _active_log_id: String = ""
-var _active_btn:    Button = null
-var _loading_btn:   Button = null
-var _spinner_time:  float  = 0.0
-
-const _SPINNER := ["◐", "◓", "◑", "◒"]
-
-
-func _process(delta: float) -> void:
-	if not _loading_btn:
-		return
-	_spinner_time += delta
-	_loading_btn.text = _SPINNER[int(_spinner_time * 8) % _SPINNER.size()]
+var _active_log_id:   String  = ""
+var _active_btn:      Button  = null
+var _loading_btn:     Button  = null
+var _loading_spinner: Spinner = null
 
 
 func init(data: Dictionary) -> void:
@@ -36,10 +27,10 @@ func init(data: Dictionary) -> void:
 func _clear() -> void:
 	for child in _item_list.get_children():
 		child.queue_free()
-	_active_log_id = ""
-	_active_btn    = null
-	_loading_btn   = null
-	_spinner_time  = 0.0
+	_active_log_id   = ""
+	_active_btn      = null
+	_loading_btn     = null
+	_loading_spinner = null
 
 
 func _load_logs(step_id: String) -> void:
@@ -191,15 +182,23 @@ func _add_row(row: Dictionary, email_map: Dictionary) -> void:
 
 	var play_btn := Button.new()
 	play_btn.text = "▶"
-	play_btn.custom_minimum_size = Vector2(72, 0)
+	play_btn.custom_minimum_size = Vector2(72, 44)
 	play_btn.add_theme_font_size_override("font_size", FONT_BODY)
-	play_btn.pressed.connect(func(): _on_play_pressed(log_id, geo_path, ogv_path, play_btn))
+
+	var spinner := Spinner.new()
+	spinner.color = Color.WHITE
+	spinner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	spinner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	spinner.visible = false
+	play_btn.add_child(spinner)
+
+	play_btn.pressed.connect(func(): _on_play_pressed(log_id, geo_path, ogv_path, play_btn, spinner))
 	hbox.add_child(play_btn)
 
 	_item_list.add_child(panel)
 
 
-func _on_play_pressed(log_id: String, geo_path: String, ogv_path: String, btn: Button) -> void:
+func _on_play_pressed(log_id: String, geo_path: String, ogv_path: String, btn: Button, spinner: Spinner) -> void:
 	if _active_log_id == log_id:
 		_clear_all()
 		stop_requested.emit()
@@ -209,17 +208,19 @@ func _on_play_pressed(log_id: String, geo_path: String, ogv_path: String, btn: B
 		_clear_all()
 		_active_log_id = log_id
 		_loading_btn = btn
-		_spinner_time = 0.0
-		btn.disabled = true
+		_loading_spinner = spinner
+		btn.text = ""
+		spinner.visible = true
 		play_requested.emit(log_id, geo_path, ogv_path)
 
 
 func notify_playback_started() -> void:
 	if _loading_btn:
-		_loading_btn.disabled = false
+		_loading_spinner.visible = false
 		_loading_btn.text = "■"
 		_active_btn = _loading_btn
 		_loading_btn = null
+		_loading_spinner = null
 
 
 func notify_playback_finished() -> void:
@@ -232,11 +233,11 @@ func _clear_all() -> void:
 		_active_btn.disabled = false
 		_active_btn = null
 	if _loading_btn:
+		_loading_spinner.visible = false
 		_loading_btn.text = "▶"
-		_loading_btn.disabled = false
 		_loading_btn = null
+		_loading_spinner = null
 	_active_log_id = ""
-	_spinner_time = 0.0
 
 
 func _add_availability_icon(parent: Control, label: String, available: bool) -> void:

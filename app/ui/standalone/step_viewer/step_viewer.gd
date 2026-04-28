@@ -21,18 +21,35 @@ var _timer_target_uuid: String = ""
 var _timer_expired: bool = false
 var _flash_accum: float = 0.0
 
+var _replay_loading := false
+var _spinner: Spinner = null
+
 
 func _ready() -> void:
 	_replay_btn.pressed.connect(_on_replay_btn_pressed)
+	_spinner = Spinner.new()
+	_spinner.color = Color.WHITE
+	_spinner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_spinner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_spinner.visible = false
+	_replay_btn.add_child(_spinner)
 
 
 func _on_replay_btn_pressed() -> void:
-	if _replay_btn.text == "▶  Play Log":
-		_replay_btn.text = "■  Stop"
+	if not _replay_loading and _replay_btn.text == "▶  Play Log":
+		_replay_loading = true
+		_replay_btn.text = ""
+		_spinner.visible = true
 		replay_requested.emit()
-	else:
+	elif not _replay_loading:
 		_replay_btn.text = "▶  Play Log"
 		stop_requested.emit()
+
+
+func notify_playback_started() -> void:
+	_replay_loading = false
+	_spinner.visible = false
+	_replay_btn.text = "■  Stop"
 
 
 func get_current_step() -> Step:
@@ -45,9 +62,17 @@ func show_replay_button(has_log: bool) -> void:
 	_replay_btn.visible = has_log
 	if not has_log:
 		_replay_btn.text = "▶  Play Log"
+	_fit_height()
+
+
+func _fit_height() -> void:
+	await get_tree().process_frame
+	size.y = $MarginContainer.get_combined_minimum_size().y
 
 
 func reset_replay_button() -> void:
+	_replay_loading = false
+	_spinner.visible = false
 	_replay_btn.text = "▶  Play Log"
 
 

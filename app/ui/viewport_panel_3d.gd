@@ -89,6 +89,7 @@ var _pinned := false
 var _pin_bg: ColorRect = null
 var _pin_strip: HBoxContainer = null
 var _pin_button: Button = null
+var _pin_icon: TextureRect = null
 var _dragging := false
 var _drag_offset := Vector3.ZERO
 var _drag_depth := 0.0
@@ -243,11 +244,22 @@ func _setup_pin_button() -> void:
 	_pin_strip.add_child(drag_wrapper)
 
 	_pin_button = Button.new()
-	_pin_button.text = "Pin"
-	_pin_button.custom_minimum_size = Vector2(160, _PIN_STRIP_PX)
-	_pin_button.add_theme_font_size_override("font_size", 28)
-	_pin_button.add_theme_color_override("font_color", Color(0.4, 0.9, 1.0))
+	_pin_button.text = ""
+	_pin_button.custom_minimum_size = Vector2(_PIN_STRIP_PX, _PIN_STRIP_PX)
 	_pin_button.pressed.connect(_on_pin_pressed)
+
+	var _icon_center := CenterContainer.new()
+	_icon_center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_icon_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pin_button.add_child(_icon_center)
+
+	_pin_icon = TextureRect.new()
+	_pin_icon.texture = load("res://ui/icon_thumbtack_outline.svg")
+	_pin_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_pin_icon.custom_minimum_size = Vector2(36, 36)
+	_pin_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_icon_center.add_child(_pin_icon)
+
 	_pin_strip.add_child(_pin_button)
 
 	_viewport.add_child(_pin_strip)
@@ -256,7 +268,7 @@ func _setup_pin_button() -> void:
 func _on_pin_pressed() -> void:
 	_pinned = not _pinned
 	_dragging = false
-	_pin_button.text = "Unpin" if _pinned else "Pin"
+	_pin_icon.texture = load("res://ui/icon_thumbtack_filled.svg") if _pinned else load("res://ui/icon_thumbtack_outline.svg")
 
 
 func _get_index_tip(hand: String) -> Vector3:
@@ -528,7 +540,7 @@ func _check_poke() -> void:
 			_dragging = false
 			_pinned = true
 			if _pin_button:
-				_pin_button.text = "Unpin"
+				_pin_icon.texture = load("res://ui/icon_thumbtack_filled.svg")
 		else:
 			var release := InputEventMouseButton.new()
 			release.button_index = MOUSE_BUTTON_LEFT
@@ -590,7 +602,7 @@ func _check_ray() -> void:
 				_dragging = false
 				_pinned = true
 				if _pin_button:
-					_pin_button.text = "Unpin"
+					_pin_icon.texture = load("res://ui/icon_thumbtack_filled.svg")
 			continue
 
 		if not gm.ray_active[hand]:
@@ -633,7 +645,7 @@ func _check_ray() -> void:
 					_dragging = false
 					_pinned = true
 					if _pin_button:
-						_pin_button.text = "Unpin"
+						_pin_icon.texture = load("res://ui/icon_thumbtack_filled.svg")
 		else:
 			var motion := InputEventMouseMotion.new()
 			motion.position = uv
@@ -675,7 +687,7 @@ func _release_ray(hand: String) -> void:
 			_dragging = false
 			_pinned = true
 			if _pin_button:
-				_pin_button.text = "Unpin"
+				_pin_icon.texture = load("res://ui/icon_thumbtack_filled.svg")
 		else:
 			var release := InputEventMouseButton.new()
 			release.button_index = MOUSE_BUTTON_LEFT

@@ -15,10 +15,13 @@ const _VIDEO_SCENE   := preload("res://ui/standalone/video_player/video_player_p
 ## Emitted whenever a replayer stops — natural end or explicit stop.
 ## Connect to reset the step-viewer replay button.
 signal replay_ended
+## Emitted when play_log_id successfully starts playback (after download).
+signal replay_started
 
 ## Set before add_child to pin the fab at a world position instead of floating.
 var world_anchored_fab := false
 var fab_local_pos      := Vector3.ZERO
+var fab_ray_enabled    := true
 
 ## Override to avoid temp-file collisions when multiple controllers are active.
 var video_tmp_path := "user://replay_video.ogv"
@@ -36,6 +39,7 @@ func _ready() -> void:
 	if world_anchored_fab:
 		_fab_3d.world_anchored = true
 		_fab_3d.position = fab_local_pos
+	_fab_3d.ray_enabled = fab_ray_enabled
 	get_parent().add_child(_fab_3d)
 	var fab := _fab_3d.get_panel() as LogsFab
 	if fab:
@@ -69,12 +73,17 @@ func play_log_id(log_id: String) -> void:
 	).completed
 	if task.error != null or task.data == null or task.data.is_empty():
 		_replay_loading = false
+		replay_ended.emit()
 		return
 	var row: Dictionary = task.data[0]
 	var geo: String = row.get("geometry_recording_path", "") if row.get("geometry_recording_path") != null else ""
 	var ogv: String = row.get("camera_recording_path_ogv", "") if row.get("camera_recording_path_ogv") != null else ""
-	await _play_paths(geo, ogv, true)
+	var started := await _play_paths(geo, ogv, true)
 	_replay_loading = false
+	if started:
+		replay_started.emit()
+	else:
+		replay_ended.emit()
 
 
 ## Stop any active replay/video without closing the browser.
@@ -98,11 +107,15 @@ func _on_fab_pressed() -> void:
 	if _init_data.is_empty():
 		return
 	_browser_3d = _BROWSER_SCENE.instantiate()
+	if world_anchored_fab:
+		_browser_3d.world_anchored = true
+		_browser_3d.position = _fab_3d.position + Vector3(0.35, 0, 0)
 	get_parent().add_child(_browser_3d)
 	var panel := _browser_3d.get_panel() as LogBrowserPanel
 	if panel:
 		panel.play_requested.connect(_on_play_requested)
 		panel.stop_requested.connect(_on_stop_requested)
+		panel.close_requested.connect(close)
 		panel.init(_init_data)
 
 

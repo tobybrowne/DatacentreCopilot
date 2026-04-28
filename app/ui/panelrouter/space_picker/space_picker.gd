@@ -51,8 +51,8 @@ func _add_row(space: Space) -> void:
 	hbox.add_child(local_badge)
 
 	var pin_btn := Button.new()
-	pin_btn.text = "📍"
-	pin_btn.add_theme_font_size_override("font_size", FONT_BODY)
+	pin_btn.text = ""
+	pin_btn.icon = load("res://ui/panelrouter/space_picker/icon_pin.svg")
 	pin_btn.pressed.connect(_on_localise_pressed.bind(space))
 	hbox.add_child(pin_btn)
 
