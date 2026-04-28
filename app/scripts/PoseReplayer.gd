@@ -1,8 +1,17 @@
 class_name PoseReplayer
 extends Node3D
 
-const LEFT_HAND_SCENE := preload("res://assets/hands/LeftHandHumanoid.gltf")
+const LEFT_HAND_SCENE  := preload("res://assets/hands/LeftHandHumanoid.gltf")
 const RIGHT_HAND_SCENE := preload("res://assets/hands/RightHandHumanoid.gltf")
+# Body model uses Mannequiny (CC BY 4.0 – credit: GDQuest, gdquest.com)
+# Loaded at runtime so the editor can reimport without breaking preload.
+const BODY_SCENE_PATH  := "res://assets/body/Mannequin.glb"
+
+# Bone names in the body model (Mannequiny / Blender rigify convention)
+const B_LEFT_SHOULDER  := "upperarm.l"
+const B_RIGHT_SHOULDER := "upperarm.r"
+const B_LEFT_HAND      := "hand.l"
+const B_RIGHT_HAND     := "hand.r"
 
 const JOINT_BONES_LEFT := [
 	"", "LeftHand",
@@ -31,28 +40,25 @@ const JOINT_PARENTS := [
 	1, 21, 22, 23, 24,
 ]
 
-# Approximate distances in metres used for skeleton estimation.
-const _SHOULDER_HALF_WIDTH := 0.20
-const _SHOULDER_DROP      := 0.15   # below head origin
-const _ELBOW_HANG         := 0.10   # additional downward bias for natural elbow droop
-const _HIP_DROP           := 0.55   # below neck
+# Computed at init from the body model's actual head bone rest position.
+# Falls back to a reasonable average if the bone isn't found.
+var _head_bone_height: float = 1.65
 
 signal playback_finished
 signal initialized
 
-var skeleton_enabled: bool = false:
-	set(v):
-		skeleton_enabled = v
-		_set_skeleton_visible(_playing and v)
+# Kept for API compatibility – body always shows during playback regardless of this value
+var skeleton_enabled: bool = false
 
 var _frames: Array[PoseRec] = []
-var _playing := false
-var _looping := false
+var _playing     := false
+var _looping     := false
 var _start_time_msec: int
-var _base_time_msec: int
-var _frame_idx: int = 0
+var _base_time_msec:  int
+var _frame_idx:  int = 0
 var _initialized := false
 
+# Hand models – provide precise finger detail
 var _left_skeleton:   Skeleton3D
 var _right_skeleton:  Skeleton3D
 var _left_bone_map:   PackedInt32Array
@@ -60,106 +66,196 @@ var _right_bone_map:  PackedInt32Array
 var _left_hand_inst:  Node3D
 var _right_hand_inst: Node3D
 
-var _head_mesh: MeshInstance3D
+# Body model – torso + arm IK
+var _body_inst:     Node3D
+var _body_skeleton: Skeleton3D
+var _left_arm_ik:   SkeletonIK3D
+var _right_arm_ik:  SkeletonIK3D
+var _left_wrist_target:  Node3D
+var _right_wrist_target: Node3D
+var _left_arm_bones:  PackedInt32Array
+var _right_arm_bones: PackedInt32Array
+var _head_bone_idx: int = -1
+var _neck_bone_idx: int = -1
 
-# Skeleton nodes (only used when skeleton_enabled)
-var _left_shoulder:    MeshInstance3D
-var _right_shoulder:   MeshInstance3D
-var _left_elbow:       MeshInstance3D
-var _right_elbow:      MeshInstance3D
-var _left_upper_arm:   MeshInstance3D
-var _right_upper_arm:  MeshInstance3D
-var _left_forearm:     MeshInstance3D
-var _right_forearm:    MeshInstance3D
-var _clavicle:         MeshInstance3D
-var _torso:            MeshInstance3D
+# When true, untracked arms glide to a natural rest pose instead of vanishing.
+var rest_arms_on_lost_tracking: bool = false
+
+const _LEFT_REST_LOCAL  := Vector3( 0.3, 0.9, 0.05)
+const _RIGHT_REST_LOCAL := Vector3(-0.3, 0.9, 0.05)
+const _REST_LERP_SPEED  := 2.0   # seconds to reach rest position
+
+var _left_untracked_t:  float = 1.0
+var _right_untracked_t: float = 1.0
+var _left_wrist_from:   Vector3 = Vector3.ZERO
+var _right_wrist_from:  Vector3 = Vector3.ZERO
 
 
 func _ready() -> void:
 	_init_async()
 
-# instantiates, spread over several frames - cos this instantiation is very heavy this stops us from hanging the app
+
 func _init_async() -> void:
+	# Hand models – instantiated across frames to avoid hitching
 	var left_inst := LEFT_HAND_SCENE.instantiate()
 	_left_hand_inst = left_inst
 	add_child(left_inst)
-
-	# waits for the next frame to be processed
 	await get_tree().process_frame
 
 	var right_inst := RIGHT_HAND_SCENE.instantiate()
 	_right_hand_inst = right_inst
 	add_child(right_inst)
-
-	# waits for the next frame to be processed
 	await get_tree().process_frame
 
-	_left_skeleton = _find_skeleton(left_inst)
+	_left_skeleton  = _find_skeleton(left_inst)
 	_right_skeleton = _find_skeleton(right_inst)
-	_left_bone_map = _build_bone_map(_left_skeleton, JOINT_BONES_LEFT)
+	_left_bone_map  = _build_bone_map(_left_skeleton,  JOINT_BONES_LEFT)
 	_right_bone_map = _build_bone_map(_right_skeleton, JOINT_BONES_RIGHT)
 
-	var ghost_mat := StandardMaterial3D.new()
-	ghost_mat.albedo_color = Color(0.8, 0.85, 1.0, 0.45)
-	ghost_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	# Body model
+	var body_scene := load(BODY_SCENE_PATH) as PackedScene
+	if body_scene:
+		var body_inst := body_scene.instantiate()
+		_body_inst = body_inst
+		add_child(body_inst)
+		await get_tree().process_frame
 
-	_head_mesh = _make_sphere(0.12, ghost_mat)
-	_head_mesh.visible = false
+		_body_skeleton = _find_skeleton(body_inst)
 
-	var joint_mat := StandardMaterial3D.new()
-	joint_mat.albedo_color = Color(0.7, 0.85, 1.0, 0.55)
-	joint_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		# Measure how high the head bone sits above the model root so we can
+		# place the model root such that the head bone aligns with the tracked head.
+		if _body_skeleton:
+			_head_bone_idx = _body_skeleton.find_bone("head")
+			_neck_bone_idx = _body_skeleton.find_bone("neck_01")
+			var head_idx := _head_bone_idx
+			if head_idx >= 0:
+				var sk_y_in_body: float = body_inst.to_local(_body_skeleton.global_position).y
+				var head_rest_y: float  = _body_skeleton.get_bone_global_rest(head_idx).origin.y
+				_head_bone_height = sk_y_in_body + head_rest_y
 
-	var limb_mat := StandardMaterial3D.new()
-	limb_mat.albedo_color = Color(0.7, 0.85, 1.0, 0.35)
-	limb_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			# Zero-scale bones that should never appear: fingers on the body mesh,
+			# and the entire leg chains (no tracking data). Pelvis is left at scale 1
+			# because it is the spine root — zeroing it collapses the whole torso.
+			for bone_name in ["hand.l", "hand.r"]:
+				var idx := _body_skeleton.find_bone(bone_name)
+				if idx >= 0:
+					_body_skeleton.set_bone_pose_scale(idx, Vector3(0.001, 0.001, 0.001))
 
-	_left_shoulder   = _make_sphere(0.035, joint_mat)
-	_right_shoulder  = _make_sphere(0.035, joint_mat)
-	_left_elbow      = _make_sphere(0.030, joint_mat)
-	_right_elbow     = _make_sphere(0.030, joint_mat)
-	_left_upper_arm  = _make_cylinder(0.025, limb_mat)
-	_right_upper_arm = _make_cylinder(0.025, limb_mat)
-	_left_forearm    = _make_cylinder(0.022, limb_mat)
-	_right_forearm   = _make_cylinder(0.022, limb_mat)
-	_clavicle        = _make_cylinder(0.020, limb_mat)
-	_torso           = _make_cylinder(0.070, limb_mat)
+			for bone_name in [
+				"thigh.l", "calf.l", "foot.l", "ball.l",
+				"thigh.r", "calf.r", "foot.r", "ball.r",
+				"thumb_01.l", "thumb_02.l", "thumb_03.l",
+				"index_01.l", "index_02.l", "index_03.l",
+				"middle_01.l","middle_02.l","middle_03.l",
+				"ring_01.l",  "ring_02.l",  "ring_03.l",
+				"thumb_01.r", "thumb_02.r", "thumb_03.r",
+				"index_01.r", "index_02.r", "index_03.r",
+				"middle_01.r","middle_02.r","middle_03.r",
+				"ring_01.r",  "ring_02.r",  "ring_03.r",
+			]:
+				var idx := _body_skeleton.find_bone(bone_name)
+				if idx >= 0:
+					_body_skeleton.set_bone_pose_scale(idx, Vector3.ZERO)
 
-	_set_skeleton_visible(false)
+		# IK wrist target markers (world-space, siblings of the body)
+		_left_wrist_target  = Node3D.new()
+		_right_wrist_target = Node3D.new()
+		add_child(_left_wrist_target)
+		add_child(_right_wrist_target)
+
+		if _body_skeleton:
+			_left_arm_ik  = _make_arm_ik(B_LEFT_SHOULDER,  B_LEFT_HAND,  _left_wrist_target,
+										  Vector3(-0.1, -0.3, 0.0))
+			_right_arm_ik = _make_arm_ik(B_RIGHT_SHOULDER, B_RIGHT_HAND, _right_wrist_target,
+										  Vector3( 0.1, -0.3, 0.0))
+			_left_arm_bones  = PackedInt32Array([
+				_body_skeleton.find_bone("upperarm.l"),
+				_body_skeleton.find_bone("lowerarm.l"),
+			])
+			_right_arm_bones = PackedInt32Array([
+				_body_skeleton.find_bone("upperarm.r"),
+				_body_skeleton.find_bone("lowerarm.r"),
+			])
+
+		body_inst.visible = false
+	else:
+		push_warning("PoseReplayer: body model not found at %s – open editor to import" % BODY_SCENE_PATH)
+
+	# Ghost material – fresnel rim shader gives edge definition without external lighting.
+	# Edges are bright (fresnel ~ 1), centres are dim, producing a hologram silhouette.
+	var ghost_shader := Shader.new()
+	ghost_shader.code = """
+shader_type spatial;
+render_mode unshaded, cull_back;
+
+uniform vec3 rim_color  : source_color = vec3(0.25, 0.5, 0.85);
+uniform vec3 fill_color : source_color = vec3(0.03, 0.07, 0.18);
+uniform float rim_power  : hint_range(0.5, 8.0) = 2.5;
+void fragment() {
+	float fresnel = 1.0 - abs(dot(NORMAL, VIEW));
+	fresnel = pow(fresnel, rim_power);
+	ALBEDO = mix(fill_color, rim_color, fresnel);
+}
+"""
+	var ghost_mat := ShaderMaterial.new()
+	ghost_mat.shader = ghost_shader
+
+	_apply_material_recursive(left_inst,  ghost_mat)
+	_apply_material_recursive(right_inst, ghost_mat)
+	if _body_inst:
+		_apply_material_recursive(_body_inst, ghost_mat)
+
+	left_inst.visible  = false
+	right_inst.visible = false
+
 	_initialized = true
 	initialized.emit()
 
 
+func _make_arm_ik(root: String, tip: String, target: Node3D, magnet: Vector3) -> SkeletonIK3D:
+	var ik := SkeletonIK3D.new()
+	ik.root_bone    = root
+	ik.tip_bone     = tip
+	ik.use_magnet   = true
+	ik.magnet       = magnet
+	ik.interpolation = 0.0
+	_body_skeleton.add_child(ik)
+	ik.target_node  = ik.get_path_to(target)
+	ik.start()
+	return ik
+
+
 func play(frames: Array[PoseRec], loop := false) -> void:
-	_frames = frames
+	_frames  = frames
 	_looping = loop
 	_frame_idx = 0
 	if _frames.is_empty():
 		return
 	if not _initialized:
 		await initialized
-	_base_time_msec = _frames[0].timestamp_msec
+	_base_time_msec  = _frames[0].timestamp_msec
 	_start_time_msec = Time.get_ticks_msec()
 	_playing = true
-	_head_mesh.visible = true
-	_set_skeleton_visible(skeleton_enabled)
+	if _body_inst:
+		_body_inst.visible = true
 
 
 func stop() -> void:
 	_playing = false
-	_head_mesh.visible = false
-	_set_skeleton_visible(false)
+	if _body_inst:       _body_inst.visible      = false
+	if _left_hand_inst:  _left_hand_inst.visible  = false
+	if _right_hand_inst: _right_hand_inst.visible = false
 
 
 func is_playing() -> bool:
 	return _playing
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not _playing or _frames.is_empty():
 		return
 
-	var elapsed := Time.get_ticks_msec() - _start_time_msec
+	var elapsed     := Time.get_ticks_msec() - _start_time_msec
 	var target_time := _base_time_msec + elapsed
 
 	while _frame_idx < _frames.size() - 1 and _frames[_frame_idx + 1].timestamp_msec <= target_time:
@@ -167,104 +263,139 @@ func _process(_delta: float) -> void:
 
 	if target_time > _frames[_frames.size() - 1].timestamp_msec:
 		if _looping:
-			_frame_idx = 0
+			_frame_idx       = 0
 			_start_time_msec = Time.get_ticks_msec()
 		else:
 			_playing = false
-			_head_mesh.visible = false
-			_set_skeleton_visible(false)
+			if _body_inst:       _body_inst.visible      = false
+			if _left_hand_inst:  _left_hand_inst.visible  = false
+			if _right_hand_inst: _right_hand_inst.visible = false
 			playback_finished.emit()
 			return
 
 	var pose := _frames[_frame_idx]
+	var next := _frames[min(_frame_idx + 1, _frames.size() - 1)]
+
+	# Interpolation factor for sub-frame smoothing
+	var t := 0.0
+	var t0 := float(_frames[_frame_idx].timestamp_msec)
+	var t1 := float(next.timestamp_msec)
+	if t1 > t0:
+		t = clamp(float(target_time) - t0, 0.0, t1 - t0) / (t1 - t0)
+
+	# Interpolated head transform
+	var head_a := global_transform * pose.head_transform
+	var head_b := global_transform * next.head_transform
+	var head_pos := head_a.origin.lerp(head_b.origin, t)
+	var head_rot := head_a.basis.get_rotation_quaternion().slerp(
+		head_b.basis.get_rotation_quaternion(), t)
+
+	# Place body root so the head bone aligns with the tracked head position,
+	# then yaw the body to match the head's horizontal facing direction.
+	if _body_inst:
+		_body_inst.global_position = head_pos + Vector3.DOWN * _head_bone_height
+		# Mannequiny faces +Z at rest, so pass the head's +Z (not -Z) to look_at.
+		var fwd_flat := Vector3(Basis(head_rot).z.x, 0.0, Basis(head_rot).z.z)
+		if fwd_flat.length_squared() > 0.0001:
+			_body_inst.look_at(_body_inst.global_position + fwd_flat, Vector3.UP)
+
+		# Drive head bone to match full tracked head rotation (pitch + roll + yaw).
+		# Converts world-space head rotation into the neck bone's local space.
+		if _head_bone_idx >= 0 and _neck_bone_idx >= 0:
+			var corrected_rot := head_rot * Quaternion(Vector3.UP, PI)
+			var head_world := Transform3D(Basis(corrected_rot), head_pos)
+			var head_skel  := _body_skeleton.global_transform.affine_inverse() * head_world
+			var neck_pose  := _body_skeleton.get_bone_global_pose(_neck_bone_idx)
+			var head_local := neck_pose.affine_inverse() * head_skel
+			_body_skeleton.set_bone_pose_rotation(_head_bone_idx, head_local.basis.get_rotation_quaternion())
+
 	var left_tracked  := pose.left_tracked
 	var right_tracked := pose.right_tracked
-	if _left_hand_inst:
-		_left_hand_inst.visible = left_tracked
-	if _right_hand_inst:
-		_right_hand_inst.visible = right_tracked
-	_apply_joints(_left_skeleton, _left_bone_map, pose.left_joints)
-	_apply_joints(_right_skeleton, _right_bone_map, pose.right_joints)
 
-	var head_world := global_transform * pose.head_transform
-	_head_mesh.global_transform = head_world
+	var left_show  := left_tracked  or rest_arms_on_lost_tracking
+	var right_show := right_tracked or rest_arms_on_lost_tracking
+	if _left_hand_inst:  _left_hand_inst.visible  = left_show
+	if _right_hand_inst: _right_hand_inst.visible = right_show
 
-	if skeleton_enabled:
-		_update_skeleton(pose, head_world)
+	if _left_arm_ik:
+		if left_tracked:
+			var wa := (global_transform * pose.left_joints[1]).origin
+			var wb := (global_transform * next.left_joints[1]).origin if next.left_tracked else wa
+			_left_wrist_from = wa.lerp(wb, t)
+			_left_untracked_t = 0.0
+			_left_wrist_target.global_position = _left_wrist_from
+			_left_arm_ik.interpolation = 1.0
+			for idx in _left_arm_bones:
+				if idx >= 0: _body_skeleton.set_bone_pose_scale(idx, Vector3.ONE)
+		elif rest_arms_on_lost_tracking and _body_inst:
+			_left_untracked_t = minf(_left_untracked_t + delta * _REST_LERP_SPEED, 1.0)
+			var rest := _body_inst.to_global(_LEFT_REST_LOCAL)
+			_left_wrist_target.global_position = _left_wrist_from.lerp(rest, _left_untracked_t)
+			_left_arm_ik.interpolation = 1.0
+			for idx in _left_arm_bones:
+				if idx >= 0: _body_skeleton.set_bone_pose_scale(idx, Vector3.ONE)
+		else:
+			_left_arm_ik.interpolation = 0.0
+			for idx in _left_arm_bones:
+				if idx >= 0: _body_skeleton.set_bone_pose_scale(idx, Vector3(0.001, 0.001, 0.001))
 
-
-# ── Skeleton estimation ───────────────────────────────────────────────────────
-
-func _update_skeleton(pose: PoseRec, head_world: Transform3D) -> void:
-	var head_pos   := head_world.origin
-	var head_basis := head_world.basis
-
-	var neck               := head_pos + head_basis.y * -(_SHOULDER_DROP * 0.4)
-	var left_shoulder_pos  := neck + head_basis.x * -_SHOULDER_HALF_WIDTH + Vector3.DOWN * (_SHOULDER_DROP * 0.6)
-	var right_shoulder_pos := neck + head_basis.x *  _SHOULDER_HALF_WIDTH + Vector3.DOWN * (_SHOULDER_DROP * 0.6)
-	var hip                := neck + Vector3.DOWN * _HIP_DROP
-
-	_orient_limb(_clavicle, left_shoulder_pos, right_shoulder_pos)
-	_orient_limb(_torso, neck, hip)
-
-	var left_tracked  := pose.left_tracked
-	var right_tracked := pose.right_tracked
+	if _right_arm_ik:
+		if right_tracked:
+			var wa := (global_transform * pose.right_joints[1]).origin
+			var wb := (global_transform * next.right_joints[1]).origin if next.right_tracked else wa
+			_right_wrist_from = wa.lerp(wb, t)
+			_right_untracked_t = 0.0
+			_right_wrist_target.global_position = _right_wrist_from
+			_right_arm_ik.interpolation = 1.0
+			for idx in _right_arm_bones:
+				if idx >= 0: _body_skeleton.set_bone_pose_scale(idx, Vector3.ONE)
+		elif rest_arms_on_lost_tracking and _body_inst:
+			_right_untracked_t = minf(_right_untracked_t + delta * _REST_LERP_SPEED, 1.0)
+			var rest := _body_inst.to_global(_RIGHT_REST_LOCAL)
+			_right_wrist_target.global_position = _right_wrist_from.lerp(rest, _right_untracked_t)
+			_right_arm_ik.interpolation = 1.0
+			for idx in _right_arm_bones:
+				if idx >= 0: _body_skeleton.set_bone_pose_scale(idx, Vector3.ONE)
+		else:
+			_right_arm_ik.interpolation = 0.0
+			for idx in _right_arm_bones:
+				if idx >= 0: _body_skeleton.set_bone_pose_scale(idx, Vector3(0.001, 0.001, 0.001))
 
 	if left_tracked:
-		var left_wrist    := (global_transform * pose.left_joints[1]).origin
-		var left_elbow_pos := _estimate_elbow(left_shoulder_pos, left_wrist, -1.0)
-		_left_shoulder.global_position = left_shoulder_pos
-		_left_elbow.global_position    = left_elbow_pos
-		_orient_limb(_left_upper_arm, left_shoulder_pos, left_elbow_pos)
-		_orient_limb(_left_forearm,   left_elbow_pos,    left_wrist)
+		_apply_joints(_left_skeleton, _left_bone_map, pose.left_joints)
+	elif rest_arms_on_lost_tracking and _left_skeleton:
+		_relax_hand(_left_skeleton, _left_bone_map, _left_untracked_t, _left_wrist_target.global_position)
 
 	if right_tracked:
-		var right_wrist    := (global_transform * pose.right_joints[1]).origin
-		var right_elbow_pos := _estimate_elbow(right_shoulder_pos, right_wrist, 1.0)
-		_right_shoulder.global_position = right_shoulder_pos
-		_right_elbow.global_position    = right_elbow_pos
-		_orient_limb(_right_upper_arm, right_shoulder_pos, right_elbow_pos)
-		_orient_limb(_right_forearm,   right_elbow_pos,    right_wrist)
-
-	_left_shoulder.visible  = left_tracked
-	_left_elbow.visible     = left_tracked
-	_left_upper_arm.visible = left_tracked
-	_left_forearm.visible   = left_tracked
-	_right_shoulder.visible  = right_tracked
-	_right_elbow.visible     = right_tracked
-	_right_upper_arm.visible = right_tracked
-	_right_forearm.visible   = right_tracked
-
-
-func _estimate_elbow(shoulder: Vector3, wrist: Vector3, side: float) -> Vector3:
-	var mid := (shoulder + wrist) * 0.5
-	# Pull the elbow down (gravity bias) and very slightly outward.
-	var sw := wrist - shoulder
-	var lateral := sw.cross(Vector3.UP).normalized() * side * -0.04
-	return mid + Vector3.DOWN * _ELBOW_HANG + lateral
-
-
-func _orient_limb(node: MeshInstance3D, from: Vector3, to: Vector3) -> void:
-	var dir := to - from
-	var length := dir.length()
-	if length < 0.001:
-		return
-	node.global_position = (from + to) * 0.5
-	var y := dir / length
-	var ref := Vector3.FORWARD if abs(y.dot(Vector3.UP)) > 0.9 else Vector3.UP
-	var x := ref.cross(y).normalized()
-	var z := y.cross(x)
-	node.global_transform.basis = Basis(x, y, z)
-	(node.mesh as CylinderMesh).height = length
+		_apply_joints(_right_skeleton, _right_bone_map, pose.right_joints)
+	elif rest_arms_on_lost_tracking and _right_skeleton:
+		_relax_hand(_right_skeleton, _right_bone_map, _right_untracked_t, _right_wrist_target.global_position)
 
 
 # ── Hand joint application ────────────────────────────────────────────────────
+
+func _relax_hand(skeleton: Skeleton3D, bone_map: PackedInt32Array, t: float, wrist_world: Vector3) -> void:
+	var wrist_bone := bone_map[1]
+	if wrist_bone >= 0:
+		var skel_inv := skeleton.global_transform.affine_inverse()
+		var wrist_local := (skel_inv * Transform3D(Basis.IDENTITY, wrist_world)).origin
+		skeleton.set_bone_pose_position(wrist_bone, wrist_local)
+		# Lerp wrist rotation toward fingers-pointing-down in world space.
+		var fingers_down_local := skeleton.global_transform.basis.get_rotation_quaternion().inverse() \
+			* Quaternion(Vector3.RIGHT, PI)
+		skeleton.set_bone_pose_rotation(wrist_bone,
+			skeleton.get_bone_pose_rotation(wrist_bone).slerp(fingers_down_local, t))
+	for i in bone_map.size():
+		var bone_idx := bone_map[i]
+		if bone_idx < 0 or bone_idx == wrist_bone:
+			continue
+		skeleton.set_bone_pose_rotation(bone_idx, skeleton.get_bone_pose_rotation(bone_idx).slerp(Quaternion.IDENTITY, t))
+
 
 func _apply_joints(skeleton: Skeleton3D, bone_map: PackedInt32Array, joints: Array[Transform3D]) -> void:
 	if skeleton == null:
 		return
 
-	# Convert recorded transforms (calibration space) into skeleton model space.
 	var to_model := skeleton.global_transform.affine_inverse() * global_transform
 
 	var model_xforms: Array[Transform3D] = []
@@ -292,37 +423,11 @@ func _apply_joints(skeleton: Skeleton3D, bone_map: PackedInt32Array, joints: Arr
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-func _set_skeleton_visible(v: bool) -> void:
-	for node in [
-		_left_shoulder, _right_shoulder, _left_elbow, _right_elbow,
-		_left_upper_arm, _right_upper_arm, _left_forearm, _right_forearm,
-		_clavicle, _torso
-	]:
-		if node:
-			node.visible = v
-
-
-func _make_sphere(radius: float, mat: StandardMaterial3D) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var mesh := SphereMesh.new()
-	mesh.radius = radius
-	mesh.height = radius * 2.0
-	mi.mesh = mesh
-	mi.material_override = mat
-	add_child(mi)
-	return mi
-
-
-func _make_cylinder(radius: float, mat: StandardMaterial3D) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
-	mesh.height = 0.1  # updated per-frame by _orient_limb
-	mi.mesh = mesh
-	mi.material_override = mat
-	add_child(mi)
-	return mi
+func _apply_material_recursive(node: Node, mat: Material) -> void:
+	if node is MeshInstance3D:
+		(node as MeshInstance3D).material_override = mat
+	for child in node.get_children():
+		_apply_material_recursive(child, mat)
 
 
 func _find_skeleton(node: Node) -> Skeleton3D:
