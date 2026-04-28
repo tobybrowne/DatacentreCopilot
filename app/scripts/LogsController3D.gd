@@ -22,6 +22,8 @@ signal replay_started
 var world_anchored_fab := false
 var fab_local_pos      := Vector3.ZERO
 var fab_ray_enabled    := true
+## If set, the fab tracks this node's global position + fab_local_pos each frame.
+var tracked_node: Node3D = null
 
 ## Override to avoid temp-file collisions when multiple controllers are active.
 var video_tmp_path := "user://replay_video.ogv"
@@ -45,6 +47,11 @@ func _ready() -> void:
 	if fab:
 		fab.logs_requested.connect(_on_fab_pressed)
 	tree_exiting.connect(_cleanup)
+
+
+func _process(_delta: float) -> void:
+	if tracked_node and _fab_3d:
+		_fab_3d.global_position = tracked_node.global_position + fab_local_pos
 
 
 ## Re-initialise the browser context (e.g. on step change). If the browser is

@@ -17,15 +17,21 @@ const _TRACKERS := {
 
 signal interacted
 
-var _mat:      StandardMaterial3D
-var _light:    OmniLight3D
-var _lbl:      Label3D
-var _asset_id: String
-var _logs:     LogsController3D = null
+var _mat:        StandardMaterial3D
+var _light:      OmniLight3D
+var _lbl:        Label3D
+var _asset_id:   String
+var _asset_name: String
+var _asset_type: String
+var _logs:       LogsController3D = null
 
 var _dwell_time := 0.0
 var _hold_timer := 0.0
 var _fired      := false
+
+
+func get_asset_label() -> String:
+	return _asset_name
 
 
 func _ready() -> void:
@@ -41,6 +47,10 @@ func _ready() -> void:
 	_asset_id = row.get("id", "")
 	var name: String = row.get("name", "")
 	var asset_type: String = row.get("asset_type", "")
+	_asset_name = name
+	_asset_type = asset_type
+	add_to_group("asset_markers")
+	interacted.connect(func(): ContextManager.on_asset_interacted(_asset_name, _asset_type))
 
 	var mi := MeshInstance3D.new()
 	var sphere := SphereMesh.new()
@@ -79,7 +89,9 @@ func _ready() -> void:
 		if check.error == null and check.data != null and not check.data.is_empty():
 			_logs = LogsController3D.new()
 			_logs.world_anchored_fab = true
-			_logs.fab_local_pos = position + Vector3(0, 0.15, 0)
+			_logs.fab_ray_enabled = false
+			_logs.fab_local_pos = Vector3(0.20, 0, 0)
+			_logs.tracked_node = self
 			_logs.video_tmp_path = "user://asset_replay_%s.ogv" % _asset_id.left(8)
 			_logs.refresh({"asset_id": _asset_id})
 			get_parent().add_child(_logs)

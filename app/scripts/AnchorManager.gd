@@ -200,6 +200,26 @@ func clear_markers() -> void:
 				child.queue_free()
 
 
+func spawn_note_marker(anchor: Anchor, text: String, world_pos: Vector3) -> void:
+	var marker := NoteAnchorMarker.new()
+	marker.anchor = anchor
+	marker.note_text = text
+	get_parent().add_child(marker)
+	marker.global_position = world_pos
+	_virtual_markers.append({ "marker": marker, "anchor": anchor })
+
+
+func clear_note_markers() -> void:
+	var remaining: Array[Dictionary] = []
+	for entry in _virtual_markers:
+		if entry.anchor.anchor_type == Anchor.TYPE_NOTE:
+			if is_instance_valid(entry.marker):
+				entry.marker.queue_free()
+		else:
+			remaining.append(entry)
+	_virtual_markers = remaining
+
+
 # ── Anchor loading ────────────────────────────────────────────────────────────
 
 # sets the global anchor vars for this new space: _all_anchors, _next_num
@@ -242,7 +262,7 @@ func _setup_space_for_calibration(space_id: String) -> void:
 	for anchor in _all_anchors.values():
 		if anchor.space_id != space_id:
 			continue
-		if anchor.anchor_type == Anchor.TYPE_TEMP or anchor.anchor_type == Anchor.TYPE_NOTE:
+		if anchor.anchor_type == Anchor.TYPE_TEMP:
 			continue
 		elif anchor.anchor_type == Anchor.TYPE_REFERENCE:
 			if anchor.glb_position != null:
@@ -388,6 +408,10 @@ func _create_tracked_marker(anchor: Anchor) -> Node3D:
 			return m
 		Anchor.TYPE_REFERENCE:
 			var m := ReferenceAnchorMarker.new()
+			m.anchor = anchor
+			return m
+		Anchor.TYPE_NOTE:
+			var m := NoteAnchorMarker.new()
 			m.anchor = anchor
 			return m
 		_:
