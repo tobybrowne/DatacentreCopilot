@@ -175,13 +175,14 @@ func _on_localization_changed(state: int, _confidence: int, _error_flags: int) -
 	print("LocationManager: _on_localization_changed state=", state, " confidence=", _confidence, " error_flags=", _error_flags)
 	match state:
 		1: # LOCALIZED — success
+			var was_relocalising := _relocalising
 			_relocalising = false
 			if _tracking_label:
 				_tracking_label.text = ""
 			var ext := _ml2_ext()
 			if ext:
 				var new_uuid: String = ext.get_localization_map_uuid()
-				if not new_uuid.is_empty() and new_uuid != _anchor_manager.get_current_space_id():
+				if was_relocalising and not new_uuid.is_empty() and new_uuid != _anchor_manager.get_current_space_id():
 					print("LocationManager: relocalised to ", new_uuid)
 					current_coarse_space = new_uuid
 					_anchor_manager.calibrate_to_space(new_uuid)
