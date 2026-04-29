@@ -192,12 +192,10 @@ func _close_info() -> void:
 
 func _create_beam() -> MeshInstance3D:
 	var box := BoxMesh.new()
-	box.size = Vector3(0.003, 0.003, 1.0)
+	box.size = Vector3(0.001, 0.001, 1.0)
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = COLOR
-	mat.emission_enabled = true
-	mat.emission = COLOR
-	mat.emission_energy_multiplier = 1.5
+	mat.albedo_color = Color(0.15, 0.15, 0.22, 0.95)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var mi := MeshInstance3D.new()
 	mi.mesh = box
@@ -205,15 +203,33 @@ func _create_beam() -> MeshInstance3D:
 	return mi
 
 
+func _panel_edge_point() -> Vector3:
+	var center := _info_3d.global_position
+	var hw     := _info_3d.quad_size.x * 0.5
+	var hh     := _info_3d.quad_size.y * 0.5
+	var right  := _info_3d.global_transform.basis.x
+	var up     := _info_3d.global_transform.basis.y
+	var to_orb := global_position - center
+	var px     := to_orb.dot(right)
+	var py     := to_orb.dot(up)
+	if absf(px) < 0.0001 and absf(py) < 0.0001:
+		return center
+	var t := INF
+	if absf(px) > 0.0001: t = minf(t, hw / absf(px))
+	if absf(py) > 0.0001: t = minf(t, hh / absf(py))
+	return center + right * (px * t) + up * (py * t)
+
+
 func _update_beam() -> void:
 	var start := global_position
-	var end   := _info_3d.global_position
+	var end   := _panel_edge_point()
 	var dir   := end - start
 	var dist  := dir.length()
 	if dist < 0.001:
 		return
 	_beam.global_position = (start + end) * 0.5
-	_beam.look_at(end, Vector3.UP)
+	var up_ref := Vector3.RIGHT if absf(dir.normalized().dot(Vector3.UP)) > 0.99 else Vector3.UP
+	_beam.look_at(end, up_ref)
 	_beam.scale = Vector3(1.0, 1.0, dist)
 
 
