@@ -20,7 +20,7 @@ func enter(data: Dictionary) -> void:
 	var space_id: String = data.get("space_id", "")
 	var space := data.get("space") as Space
 	if space_id.is_empty() and space:
-		if not await location_manager.ensure_space_local(space):
+		if not await space_manager.ensure_space_local(space):
 			return
 		space_id = space.id
 	if not space_id.is_empty() and not data.get("pre_calibrated", false):
@@ -37,8 +37,8 @@ func exit() -> void:
 	_context_pending = false
 	progress_indicator.clear()
 	route_manager.clear_goto_route()
-	location_manager.clear_markers()
-	NoteManager.clear()
+	anchor_manager.clear_markers()
+	note_manager.clear()
 
 
 # ── Gestures ──────────────────────────────────────────────────────────────────

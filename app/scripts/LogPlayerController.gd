@@ -1,12 +1,9 @@
-class_name LogsController3D
-extends Node3D
+# Wrapper class for the logs fab button, browser, and replay lifecycle.
+# This is imported during procedure mode for direct step replays as well as by asset markers for asset-specific logs.
+# Only handles log replaying
 
-## Self-contained logs fab + browser + replay lifecycle.
-## Add as a child of XROrigin3D. All panels are spawned as siblings (also
-## children of XROrigin3D) so ViewportPanel3D ray/poke input works correctly.
-##
-## Set properties before add_child, then call refresh() each time the context
-## changes (e.g. step changed) and play_log_id() for direct step-viewer replay.
+class_name LogPlayerController
+extends Node3D
 
 const _FAB_SCENE     := preload("res://ui/standalone/logs_fab/logs_fab_3d.tscn")
 const _BROWSER_SCENE := preload("res://ui/standalone/log_browser/log_browser_panel_3d.tscn")
@@ -160,15 +157,15 @@ func _play_paths(geo_path: String, ogv_path: String, loop: bool) -> bool:
 	if not geo_path.is_empty():
 		var dl = await Supabase.storage.from("log_bucket").download(geo_path, "", true).completed
 		if dl.error != null:
-			push_warning("LogsController3D: geo download failed — %s" % dl.error.message)
+			push_warning("LogPlayerController: geo download failed — %s" % dl.error.message)
 		else:
 			var frames := PoseRec.frames_from_bytes(dl.data)
 			if not frames.is_empty():
-				var lm := get_parent().get_node_or_null("LocationManager") as LocationManager
+				var am := get_parent().get_node_or_null("AnchorManager") as AnchorManager
 				_replayer = PoseReplayer.new()
 				_replayer.skeleton_enabled = true
 				get_parent().add_child(_replayer)
-				_replayer.global_transform = lm.get_calibration() if lm else Transform3D.IDENTITY
+				_replayer.global_transform = am.get_calibration() if am else Transform3D.IDENTITY
 				_replayer.playback_finished.connect(_on_playback_finished)
 				_replayer.play(frames, loop)
 				started = true
@@ -176,7 +173,7 @@ func _play_paths(geo_path: String, ogv_path: String, loop: bool) -> bool:
 	if not ogv_path.is_empty():
 		var vdl = await Supabase.storage.from("log_bucket").download(ogv_path, "", true).completed
 		if vdl.error != null:
-			push_warning("LogsController3D: video download failed — %s" % vdl.error.message)
+			push_warning("LogPlayerController: video download failed — %s" % vdl.error.message)
 		else:
 			_launch_video(vdl.data)
 			started = true

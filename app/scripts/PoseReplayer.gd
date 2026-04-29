@@ -1,9 +1,12 @@
+# Takes an array of PoseRec frames, and overlays them onto a humanoid model for playback
+# Performs IK to infer shoulder and elbow positions
+
 class_name PoseReplayer
 extends Node3D
 
 const LEFT_HAND_SCENE  := preload("res://assets/hands/LeftHandHumanoid.gltf")
 const RIGHT_HAND_SCENE := preload("res://assets/hands/RightHandHumanoid.gltf")
-# Body model uses Mannequiny (CC BY 4.0 – credit: GDQuest, gdquest.com)
+# Body model uses Mannequiny
 # Loaded at runtime so the editor can reimport without breaking preload.
 const BODY_SCENE_PATH  := "res://assets/body/Mannequin.glb"
 
@@ -96,16 +99,16 @@ func _ready() -> void:
 
 
 func _init_async() -> void:
-	# Hand models – instantiated across frames to avoid hitching
+	# Hand models
 	var left_inst := LEFT_HAND_SCENE.instantiate()
 	_left_hand_inst = left_inst
 	add_child(left_inst)
-	await get_tree().process_frame
+	await get_tree().process_frame # wait a frame to stop hanging
 
 	var right_inst := RIGHT_HAND_SCENE.instantiate()
 	_right_hand_inst = right_inst
 	add_child(right_inst)
-	await get_tree().process_frame
+	await get_tree().process_frame # wait a frame to stop hanging
 
 	_left_skeleton  = _find_skeleton(left_inst)
 	_right_skeleton = _find_skeleton(right_inst)
@@ -182,7 +185,7 @@ func _init_async() -> void:
 		push_warning("PoseReplayer: body model not found at %s – open editor to import" % BODY_SCENE_PATH)
 
 	# Ghost material – fresnel rim shader gives edge definition without external lighting.
-	# Edges are bright (fresnel ~ 1), centres are dim, producing a hologram silhouette.
+	# Edges are bright, centres are dim, producing a hologram silhouette.
 	var ghost_shader := Shader.new()
 	ghost_shader.code = """
 shader_type spatial;

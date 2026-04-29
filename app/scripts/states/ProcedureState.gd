@@ -8,10 +8,11 @@ extends State
 const _STEP_VIEWER_SCENE := preload("res://ui/standalone/step_viewer/step_viewer_3d.tscn")
 
 var _step_viewer_3d: ViewportPanel3D = null
-var _logs: LogsController3D = null
+var _logs: LogPlayerController = null
 var _wrist_panel: WristPanel3D = null
 var _current_step: Step = null
 var _current_log_id: String = ""
+var _procedure_title: String = ""
 
 
 func enter(data: Dictionary) -> void:
@@ -41,10 +42,12 @@ func enter(data: Dictionary) -> void:
 	CopilotManager.function_called.connect(_on_copilot_function)
 
 	var procedure := data.get("procedure") as Procedure
+	if procedure:
+		_procedure_title = procedure.title
 	var space_id: String = data.get("space_id", "")
 	var space := data.get("space") as Space
 	if space_id.is_empty() and space:
-		if not await location_manager.ensure_space_local(space):
+		if not await space_manager.ensure_space_local(space):
 			return
 		space_id = space.id
 	if not space_id.is_empty() and not data.get("pre_calibrated", false):
@@ -54,16 +57,21 @@ func enter(data: Dictionary) -> void:
 	gesture_manager.get_parent().add_child(_step_viewer_3d)
 	if procedure:
 		var site_id: String = space.site_id if space else ""
-		await LogManager.start_procedure(procedure, site_id)
+		await LogRecordManager.start_procedure(procedure, site_id)
 		var sv := _step_viewer_3d.get_panel() as StepViewer
 		if sv:
-			sv.step_changed.connect(LogManager.on_step_changed)
+			sv.step_changed.connect(LogRecordManager.on_step_changed)
 			sv.step_changed.connect(_on_step_changed_for_replay)
 			sv.replay_requested.connect(_on_replay_requested)
+			sv.stop_requested.connect(func(): _logs.stop())
 			sv.init({"procedure": procedure})
 
-	_logs = LogsController3D.new()
+	_logs = LogPlayerController.new()
 	gesture_manager.get_parent().add_child(_logs)
+	_logs.replay_started.connect(func():
+		var sv := _step_viewer()
+		if sv: sv.notify_playback_started()
+	)
 	_logs.replay_ended.connect(func():
 		var sv := _step_viewer()
 		if sv: sv.reset_replay_button()
@@ -79,8 +87,9 @@ func exit() -> void:
 	PanelRouter.action_requested.disconnect(_on_action)
 	CopilotManager.update_tools([])
 	CopilotManager.function_called.disconnect(_on_copilot_function)
+	ContextManager.clear_procedure_context()
 
-	LogManager.end_procedure()
+	LogRecordManager.end_procedure()
 
 	if _step_viewer_3d:
 		_step_viewer_3d.queue_free()
@@ -98,8 +107,8 @@ func exit() -> void:
 	_context_pending = false
 	progress_indicator.clear()
 	route_manager.clear_goto_route()
-	location_manager.clear_markers()
-	NoteManager.clear()
+	anchor_manager.clear_markers()
+	note_manager.clear()
 
 
 func _on_action(action: String, data: Dictionary) -> void:
@@ -165,6 +174,12 @@ func _on_step_changed_for_replay(_prev: Step, next_step: Step) -> void:
 	var sv := _step_viewer()
 	if sv:
 		sv.show_replay_button(not _current_log_id.is_empty())
+		if next_step:
+			ContextManager.set_procedure_context(
+				_procedure_title,
+				sv._current + 1, sv._steps.size(),
+				next_step.text
+			)
 	if _logs:
 		_logs.refresh({"step_id": next_step.id} if next_step else {})
 

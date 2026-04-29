@@ -104,18 +104,18 @@ ON spaces FOR DELETE USING (
 );
 
 -- Storage RLS: spaces_bucket access gated on path existence in accessible spaces/navmeshes
-CREATE POLICY "spaces_bucket: select"
+CREATE POLICY "Users can read space files they have access to"
 ON storage.objects FOR SELECT USING (
   bucket_id = 'spaces_bucket'
   AND (
     EXISTS (
       SELECT 1 FROM spaces
-      WHERE spaces.blob_path = name
-         OR spaces.glb_path = name
+      WHERE spaces.blob_path = objects.name
+         OR spaces.glb_path = objects.name
     )
     OR EXISTS (
       SELECT 1 FROM navmeshes
-      WHERE navmeshes.navmesh_path = name
+      WHERE navmeshes.navmesh_path = objects.name
     )
   )
 );
@@ -124,23 +124,22 @@ CREATE POLICY "spaces_bucket: insert"
 ON storage.objects FOR INSERT WITH CHECK (
   bucket_id = 'spaces_bucket'
   AND EXISTS (
-    SELECT 1 FROM site_users
-    WHERE site_users.user_id = (SELECT auth.uid())
+    SELECT 1 FROM users WHERE users.site_id IS NOT NULL
   )
 );
 
-CREATE POLICY "spaces_bucket: delete"
+CREATE POLICY "Users can delete space files they have access to"
 ON storage.objects FOR DELETE USING (
   bucket_id = 'spaces_bucket'
   AND (
     EXISTS (
       SELECT 1 FROM spaces
-      WHERE spaces.blob_path = name
-         OR spaces.glb_path = name
+      WHERE spaces.blob_path = objects.name
+         OR spaces.glb_path = objects.name
     )
     OR EXISTS (
       SELECT 1 FROM navmeshes
-      WHERE navmeshes.navmesh_path = name
+      WHERE navmeshes.navmesh_path = objects.name
     )
   )
 );

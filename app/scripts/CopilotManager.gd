@@ -11,7 +11,36 @@ signal disconnected
 @export var send_interval_ms := 100
 @export var playback_volume_db := 16.0
 
-var tools: Array = []
+var tools: Array = [
+	{
+		"type": "function",
+		"name": "query_table",
+		"description": "Query the database. Chain calls to simulate joins. Tables: users, assets, procedures, procedure_runs, logs, log_assets.",
+		"parameters": {
+			"type": "object",
+			"properties": {
+				"table": {"type": "string"},
+				"select": {"type": "string", "description": "Comma-separated plain column names only (e.g. 'id,name,created_at'). No SQL keywords, no DISTINCT, no expressions."},
+				"filters": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"column": {"type": "string"},
+							"op": {"type": "string", "enum": ["eq", "neq", "gt", "gte", "lt", "lte", "like", "ilike"]},
+							"value": {"type": "string"},
+						},
+						"required": ["column", "op", "value"],
+					},
+				},
+				"order_by": {"type": "string"},
+				"order_desc": {"type": "boolean"},
+				"limit": {"type": "integer"},
+			},
+			"required": ["table"],
+		},
+	}
+]
 
 var _ws := WebSocketPeer.new()
 var _mic_player: AudioStreamPlayer
@@ -107,8 +136,8 @@ func _send_session_update() -> void:
 			"prefix_padding_ms": 300,
 		},
 		"input_audio_transcription": {"model": "whisper-1"},
-		"tools": tools,
-		"tool_choice": "auto" if tools.size() > 0 else "none",
+		"tools": tools + _extra_tools,
+		"tool_choice": "auto",
 	}
 	_send({"type": "session_update", "session": session})
 
@@ -165,8 +194,11 @@ func _handle_message(msg: Dictionary) -> void:
 		"audio":
 			_queue_audio(msg["data"])
 		"function_call":
-			print("CopilotManager: function_call %s args=%s" % [msg["name"], msg["args"]])
-			function_called.emit(msg["name"], msg["call_id"], msg["args"])
+			print("CopilotManager: function_call '%s' args=%s" % [msg["name"], msg["args"]])
+			if msg["name"] == "query_table":
+				_execute_query_table(msg["call_id"], msg["args"])
+			else:
+				function_called.emit(msg["name"], msg["call_id"], msg["args"])
 		"transcript":
 			print("CopilotManager: [%s] %s" % [msg["role"], msg["text"]])
 			transcript_received.emit(msg["role"], msg["text"])
@@ -209,8 +241,10 @@ func _send(msg: Dictionary) -> void:
 
 # --- Public API ---
 
+var _extra_tools: Array = []
+
 func update_tools(new_tools: Array) -> void:
-	tools = new_tools
+	_extra_tools = new_tools
 	if _is_connected:
 		_send_session_update()
 
@@ -229,3 +263,53 @@ func inject_context(text: String) -> void:
 func send_function_output(call_id: String, output: String) -> void:
 	if _is_connected:
 		_send({"type": "function_output", "call_id": call_id, "output": output})
+
+
+func _execute_query_table(call_id: String, args: Dictionary) -> void:
+	var table: String = args.get("table", "")
+	if table.is_empty():
+		send_function_output(call_id, JSON.stringify({"error": "table required"}))
+		return
+
+	var cols: String = args.get("select", "*")
+	var col_array := PackedStringArray()
+	for c in cols.split(",", false):
+		col_array.append(c.strip_edges())
+
+	var q := SupabaseQuery.new().from(table).select(col_array)
+
+	for f: Dictionary in args.get("filters", []):
+		var col: String = f.get("column", "")
+		var op: String = f.get("op", "eq")
+		var val: String = str(f.get("value", ""))
+		match op:
+			"eq":    q.eq(col, val)
+			"neq":   q.neq(col, val)
+			"gt":    q.gt(col, val)
+			"gte":   q.gte(col, val)
+			"lt":    q.lt(col, val)
+			"lte":   q.lte(col, val)
+			"like":  q.like(col, val)
+			"ilike": q.ilike(col, val)
+
+	var order_by: String = args.get("order_by", "")
+	if not order_by.is_empty():
+		var dir := SupabaseQuery.Directions.Descending if args.get("order_desc", false) \
+				else SupabaseQuery.Directions.Ascending
+		q.order(order_by, dir)
+
+	var limit: int = args.get("limit", 10)
+	q.range(0, limit - 1)
+
+	print("CopilotManager: query_table table=%s select=%s filters=%s" % [table, cols, args.get("filters", [])])
+	var task: DatabaseTask = Supabase.database.query(q)
+	await task.completed
+	print("CopilotManager: query_table result data=%s error=%s" % [task.data, task.error])
+	if task.data != null:
+		var result := JSON.stringify(task.data)
+		print("CopilotManager: query_table sending output (%d chars)" % result.length())
+		send_function_output(call_id, result)
+	else:
+		var msg_err: String = task.error.message if task.error else "query failed"
+		print("CopilotManager: query_table error: %s" % msg_err)
+		send_function_output(call_id, JSON.stringify({"error": msg_err}))

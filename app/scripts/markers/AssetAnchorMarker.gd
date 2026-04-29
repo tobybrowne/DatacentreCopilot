@@ -6,24 +6,37 @@ var anchor: Anchor  # set before add_child
 const COLOR          := Color(0.2, 0.5, 1.0)
 const COLOR_INTERACT := Color(1.0, 1.0, 1.0)
 
-const PROXIMITY_RADIUS := 0.50  # metres — palm must be within this distance
-const DWELL_THRESHOLD  := 10.0  # seconds hand must dwell nearby to fire
-const INTERACT_HOLD    := 1.5   # seconds to keep highlight after interaction
+const PROXIMITY_RADIUS := 0.50
+const DWELL_THRESHOLD  := 10.0
+const INTERACT_HOLD    := 1.5
+
+const GAZE_RADIUS         := 1.5   # metres — must be within this to show fab
+const GAZE_DOT_THRESHOLD  := 0.97  # cos(~14°)
+const GAZE_HIDE_DELAY     := 0.4   # seconds before fab hides after losing gaze
 
 const _TRACKERS := {
 	"left":  "/user/hand_tracker/left",
 	"right": "/user/hand_tracker/right",
 }
 
+const _FAB_SCENE  := preload("res://ui/standalone/asset_fab/asset_fab_3d.tscn")
+const _INFO_SCENE := preload("res://ui/standalone/asset_info/asset_info_panel_3d.tscn")
+
 signal interacted
 
-var _mat:        StandardMaterial3D
-var _light:      OmniLight3D
-var _lbl:        Label3D
-var _asset_id:   String
+var _mat:       StandardMaterial3D
+var _light:     OmniLight3D
+var _asset_id:  String
 var _asset_name: String
 var _asset_type: String
-var _logs:       LogsController3D = null
+var _logs:      LogPlayerController = null
+
+var _fab_3d:  ViewportPanel3D = null
+var _info_3d: ViewportPanel3D = null
+var _beam:    MeshInstance3D  = null
+
+var _info_open      := false
+var _gaze_hide_timer := 0.0
 
 var _dwell_time := 0.0
 var _hold_timer := 0.0
@@ -44,57 +57,29 @@ func _ready() -> void:
 		return
 
 	var row: Dictionary = task.data[0]
-	_asset_id = row.get("id", "")
-	var name: String = row.get("name", "")
-	var asset_type: String = row.get("asset_type", "")
-	_asset_name = name
-	_asset_type = asset_type
+	_asset_id   = row.get("id", "")
+	_asset_name = row.get("name", "")
+	_asset_type = row.get("asset_type", "")
+
 	add_to_group("asset_markers")
 	interacted.connect(func(): ContextManager.on_asset_interacted(_asset_name, _asset_type))
 
-	var mi := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.05
-	sphere.height = 0.10
-	mi.mesh = sphere
-	_mat = StandardMaterial3D.new()
-	_mat.albedo_color = COLOR
-	_mat.emission_enabled = true
-	_mat.emission = COLOR
-	_mat.emission_energy_multiplier = 2.0
-	_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mi.material_override = _mat
-	add_child(mi)
-
-	_light = OmniLight3D.new()
-	_light.light_color = COLOR
-	_light.light_energy = 0.5
-	_light.omni_range = 0.5
-	add_child(_light)
-
-	_lbl = Label3D.new()
-	_lbl.text = name if asset_type.is_empty() else "%s\n(%s)" % [name, asset_type]
-	_lbl.position = Vector3(0, 0.10, 0)
-	_lbl.font_size = 128
-	_lbl.pixel_size = 0.0005
-	_lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-	_lbl.no_depth_test = true
-	_lbl.modulate = COLOR
-	add_child(_lbl)
+	_build_orb()
+	_build_fab()
 
 	if not _asset_id.is_empty():
 		var check = await Supabase.database.query(
 			SupabaseQuery.new().from("log_assets").select(["log_id"]).eq("asset_id", _asset_id).range(0, 0)
 		).completed
 		if check.error == null and check.data != null and not check.data.is_empty():
-			_logs = LogsController3D.new()
+			_logs = LogPlayerController.new()
 			_logs.world_anchored_fab = true
 			_logs.fab_ray_enabled = false
 			_logs.fab_local_pos = Vector3(0.20, 0, 0)
 			_logs.tracked_node = self
 			_logs.video_tmp_path = "user://asset_replay_%s.ogv" % _asset_id.left(8)
 			_logs.refresh({"asset_id": _asset_id})
-			get_parent().add_child(_logs)
+			_get_xr_origin().add_child(_logs)
 			tree_exiting.connect(func(): if _logs: _logs.queue_free())
 
 
@@ -102,15 +87,15 @@ func _process(delta: float) -> void:
 	if _mat == null:
 		return
 
+	# Dwell interaction
 	var hand_nearby := _is_hand_nearby()
-
 	if hand_nearby:
 		_dwell_time += delta
 		if not _fired and _dwell_time >= DWELL_THRESHOLD:
 			_fired = true
 			_hold_timer = INTERACT_HOLD
 			if not _asset_id.is_empty():
-				LogManager.record_asset_interaction(_asset_id)
+				LogRecordManager.record_asset_interaction(_asset_id)
 			interacted.emit()
 	else:
 		_dwell_time = 0.0
@@ -118,16 +103,136 @@ func _process(delta: float) -> void:
 
 	if _hold_timer > 0.0:
 		_hold_timer = maxf(0.0, _hold_timer - delta)
-
 	_set_color(COLOR_INTERACT if _hold_timer > 0.0 else COLOR)
+
+	# Gaze → fab visibility (only when info panel not open)
+	if _fab_3d and not _info_open:
+		_fab_3d.global_position = global_position
+		if _is_gazed_at():
+			_gaze_hide_timer = GAZE_HIDE_DELAY
+			if not _fab_3d.visible:
+				_fab_3d.visible = true
+		else:
+			_gaze_hide_timer -= delta
+			if _gaze_hide_timer <= 0.0 and _fab_3d.visible:
+				_fab_3d.visible = false
+
+	# Beam
+	if _info_open and _beam and _info_3d:
+		_update_beam()
+
+
+func _build_orb() -> void:
+	var mi := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.015
+	sphere.height = 0.030
+	mi.mesh = sphere
+	_mat = StandardMaterial3D.new()
+	_mat.albedo_color = COLOR
+	_mat.emission_enabled = true
+	_mat.emission = COLOR
+	_mat.emission_energy_multiplier = 2.5
+	_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mi.material_override = _mat
+	add_child(mi)
+
+	_light = OmniLight3D.new()
+	_light.light_color = COLOR
+	_light.light_energy = 0.3
+	_light.omni_range = 0.3
+	add_child(_light)
+
+
+func _build_fab() -> void:
+	var xr_origin := _get_xr_origin()
+	if not xr_origin:
+		return
+	_fab_3d = _FAB_SCENE.instantiate()
+	_fab_3d.position = xr_origin.to_local(global_position)
+	_fab_3d.visible = false
+	xr_origin.add_child(_fab_3d)
+	var fab := _fab_3d.get_panel() as AssetFab
+	if fab:
+		fab.info_requested.connect(_open_info)
+		fab.setup(_asset_type)
+	tree_exiting.connect(func(): if _fab_3d: _fab_3d.queue_free())
+
+
+func _open_info() -> void:
+	if _info_open:
+		return
+	_info_open = true
+	_fab_3d.visible = false
+
+	var xr_origin := _get_xr_origin()
+	_info_3d = _INFO_SCENE.instantiate()
+	_info_3d.position = xr_origin.to_local(global_position + Vector3(0.25, 0.05, 0))
+	xr_origin.add_child(_info_3d)
+
+	var panel := _info_3d.get_panel() as AssetInfoPanel
+	if panel:
+		panel.init({"asset_name": _asset_name, "asset_type": _asset_type})
+		panel.close_requested.connect(_close_info)
+
+	_beam = _create_beam()
+	xr_origin.add_child(_beam)
+	_update_beam()
+
+
+func _close_info() -> void:
+	_info_open = false
+	if _info_3d:
+		_info_3d.queue_free()
+		_info_3d = null
+	if _beam:
+		_beam.queue_free()
+		_beam = null
+
+
+func _create_beam() -> MeshInstance3D:
+	var box := BoxMesh.new()
+	box.size = Vector3(0.003, 0.003, 1.0)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = COLOR
+	mat.emission_enabled = true
+	mat.emission = COLOR
+	mat.emission_energy_multiplier = 1.5
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var mi := MeshInstance3D.new()
+	mi.mesh = box
+	mi.material_override = mat
+	return mi
+
+
+func _update_beam() -> void:
+	var start := global_position
+	var end   := _info_3d.global_position
+	var dir   := end - start
+	var dist  := dir.length()
+	if dist < 0.001:
+		return
+	_beam.global_position = (start + end) * 0.5
+	_beam.look_at(end, Vector3.UP)
+	_beam.scale = Vector3(1.0, 1.0, dist)
+
+
+func _is_gazed_at() -> bool:
+	var camera := _get_camera()
+	if not camera:
+		return false
+	var to_orb := global_position - camera.global_position
+	var dist   := to_orb.length()
+	if dist > GAZE_RADIUS:
+		return false
+	return to_orb.normalized().dot(-camera.global_transform.basis.z) > GAZE_DOT_THRESHOLD
 
 
 func _is_hand_nearby() -> bool:
-	var xr_origin := get_parent() as XROrigin3D
+	var xr_origin := _get_xr_origin()
 	if not xr_origin:
 		return false
 	var xr_tf := xr_origin.global_transform
-
 	for tracker_path: String in _TRACKERS.values():
 		var tracker := XRServer.get_tracker(tracker_path)
 		if not tracker or not tracker is XRHandTracker:
@@ -145,4 +250,21 @@ func _set_color(c: Color) -> void:
 	_mat.albedo_color = c
 	_mat.emission = c
 	_light.light_color = c
-	_lbl.modulate = c
+
+
+func _get_xr_origin() -> Node3D:
+	var node := get_parent()
+	while node:
+		if node is XROrigin3D:
+			return node
+		node = node.get_parent()
+	return null
+
+
+func _get_camera() -> Camera3D:
+	var xr_origin := _get_xr_origin()
+	if xr_origin:
+		var cam := xr_origin.get_node_or_null("XRCamera3D") as Camera3D
+		if cam:
+			return cam
+	return get_viewport().get_camera_3d()

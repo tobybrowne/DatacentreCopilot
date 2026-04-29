@@ -1,17 +1,21 @@
+# Very thin class, just implements the logic for creating a new Note.
+# All the note styling and retrieval is handled by AnchorManager and NoteAnchorMarker.
+
+class_name NoteManager
 extends Node
 
 var _location_manager: LocationManager
 var _anchor_manager: AnchorManager
 
 
-func setup(location_manager: LocationManager, anchor_manager: AnchorManager) -> void:
-	_location_manager = location_manager
-	_anchor_manager = anchor_manager
+func _ready() -> void:
+	_location_manager = get_parent().get_node_or_null("LocationManager")
+	_anchor_manager = get_parent().get_node_or_null("AnchorManager")
 
 
 func create_note_at(world_pos: Vector3, text: String) -> void:
 	var space_id := _location_manager.get_current_space_id()
-	var glb_pos  := _location_manager.world_to_glb(world_pos)
+	var glb_pos  := _anchor_manager.world_to_glb(world_pos)
 
 	var anchor := Anchor.new()
 	anchor.anchor_type  = Anchor.TYPE_NOTE

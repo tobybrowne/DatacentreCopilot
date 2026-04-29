@@ -24,15 +24,15 @@ driver/enable_input=true
 PanelRouter="*res://ui/panelrouter/panel_router.gd"
 SpeakManager="*res://scripts/SpeakManager.gd"
 KeyboardManager="*res://scripts/KeyboardManager.gd"
-NoteManager="*res://scripts/NoteManager.gd"
 XRToolsUserSettings="*uid://bqgb8i74tm0t"
 XRToolsRumbleManager="*uid://by853dk86g1qw"
 Supabase="*uid://ocnh0cal4jt1"
 SupabaseManager="*uid://bkm7clkns3jgq"
 AuthManager="*res://scripts/AuthManager.gd"
-LogManager="*res://scripts/LogManager.gd"
+LogRecordManager="*res://scripts/LogRecordManager.gd"
 CVCameraManager="*res://scripts/CVCameraManager.gd"
 CopilotManager="*res://scripts/CopilotManager.gd"
+ContextManager="*res://scripts/ContextManager.gd"
 
 [display]
 

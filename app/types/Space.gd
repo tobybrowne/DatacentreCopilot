@@ -2,6 +2,7 @@ class_name Space
 
 var id: String
 var name: String
+var site_id: String
 var blob_path: String
 var glb_path: String
 var offset_transformation: Transform3D
@@ -12,6 +13,7 @@ static func from_dict(data: Dictionary) -> Space:
 	var space := Space.new()
 	space.id = data.get("id", "")
 	space.name = data.get("name", "")
+	space.site_id = data.get("site_id", "")
 	space.blob_path = data.get("blob_path", "")
 	space.glb_path = data.get("glb_path", "")
 	var ot = data.get("offset_transformation", null)

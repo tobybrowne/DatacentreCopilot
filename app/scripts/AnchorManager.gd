@@ -85,13 +85,6 @@ func calibrate_to_space(space_id: String) -> void:
 	_setup_space_for_calibration(space_id)
 
 
-## Load anchors from Supabase and record the active space without running calibration.
-func localize_to_space(space_id: String) -> void:
-	await load_anchors_from_db() # sets the global _all_anchors to the curr spaces anchors
-	_current_space_id = space_id
-	print("AnchorManager: localize_to_space ", space_id)
-
-
 func get_calibration() -> Transform3D:
 	return _calibration
 
@@ -114,7 +107,7 @@ func get_space_offsets() -> Dictionary:
 func get_current_space_id() -> String:
 	return _current_space_id
 
-func get_space_anchors(space_id: String) -> Array[Anchor]:
+func get_ml2_anchors(space_id: String) -> Array[Anchor]:
 	var result: Array[Anchor] = []
 	for anchor in _all_anchors.values():
 		if anchor.space_id == space_id and anchor.ml2_id:
@@ -131,7 +124,7 @@ func ref_anchor_count(space_id: String) -> int:
 
 ## Create a transient anchor at an ML2 local-space position, saving the computed
 ## GLB position to Supabase. Returns the new Supabase UUID or "" on failure.
-func create_content_anchor(local_pos: Vector3) -> String:
+func create_temp_anchor(local_pos: Vector3) -> String:
 	if not _calibrated:
 		push_warning("AnchorManager: not calibrated — cannot create content anchor")
 		return ""

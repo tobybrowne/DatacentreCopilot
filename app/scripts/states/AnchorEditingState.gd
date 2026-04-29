@@ -27,11 +27,9 @@ func exit() -> void:
 
 
 func _load_space(space: Space) -> void:
-	if not await location_manager.ensure_space_local(space):
+	if not await space_manager.ensure_space_local(space):
 		return
-	await location_manager.localize_to_space(space.id)
-	for anchor in location_manager.get_space_anchors(space.id):
-		anchor_manager.load_anchor(anchor.ml2_id)
+	location_manager.calibrate_to_space(space.id)
 
 
 # ── Gestures ──────────────────────────────────────────────────────────────────

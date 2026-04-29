@@ -1,80 +1,70 @@
+# Handles "go-to" steps, finds the route and renders it
+
 extends Node
 class_name RouteManager
-
-## Renders routes from Supabase once LocationManager has calibrated.
-## Also handles on-demand GOTO route: fetching from the nav API and displaying
-## a temporary route for the currently active GOTO step.
-##
-## Waypoints are stored in building world-space and converted to headset local
-## space via LocationManager.world_to_local().
 
 @export var nav_api_url: String = "https://room-finder.tobybrowne.co.uk"
 
 const GOTO_COLOR := Color(0.2, 0.85, 1.0)
 const ROUTE_Y_OFFSET := 0.08  # float above floor
 
-# The single on-demand route shown for the active GOTO step.
+# The single route shown for the active GOTO step.
 var _goto_route_node: Node3D = null
 var _location_manager: LocationManager
+var _anchor_manager: AnchorManager
 
 
 func _ready() -> void:
 	_location_manager = get_parent().get_node_or_null("LocationManager")
+	_anchor_manager = get_parent().get_node_or_null("AnchorManager")
 
 
-
-# ── On-demand GOTO route ──────────────────────────────────────────────────────
-
-## Entry point called by main — creates a temp anchor at the camera position then fetches the route.
+# Entry point, creates a temp anchor for the users current position, and renders a path to dest_anchor_id
 func handle_goto_step(dest_anchor_id: String) -> void:
 	if dest_anchor_id.is_empty():
 		push_warning("RouteManager: goto_step has no anchor_id")
 		return
-	if not _location_manager:
-		push_warning("RouteManager: no LocationManager")
+	if not _anchor_manager:
+		push_warning("RouteManager: no AnchorManager")
 		return
 	var camera := get_viewport().get_camera_3d()
 	if not camera:
 		push_warning("RouteManager: no camera")
 		return
-	var start_id := await _location_manager.create_content_anchor(camera.global_position)
+	var start_id := await _anchor_manager.create_temp_anchor(camera.global_position)
 	if start_id.is_empty():
 		push_warning("RouteManager: could not create start anchor")
 		return
-	await fetch_and_display_goto(start_id, dest_anchor_id, _location_manager)
+	await _fetch_and_display_goto(start_id, dest_anchor_id, _anchor_manager)
 
 
-## Call the nav API to compute a path, then display it as the active GOTO route.
-## anchor_a_id — Supabase UUID of the start anchor (created at user's position)
-## anchor_b_id — Supabase UUID of the destination anchor
-## lm          — LocationManager for world→local coordinate conversion
-## Returns the waypoints on success, or [] on failure.
-func fetch_and_display_goto(anchor_a_id: String, anchor_b_id: String, lm: LocationManager) -> Array[Vector3]:
-	var waypoints := await request_path(anchor_a_id, anchor_b_id)
-	if waypoints.is_empty():
-		return []
-	display_goto_route(waypoints, lm)
-	return waypoints
-
-
-## Display already-computed waypoints as the active GOTO route.
-func display_goto_route(waypoints: Array[Vector3], lm: LocationManager) -> void:
-	clear_goto_route()
-	if waypoints.size() < 2:
-		return
-	_goto_route_node = Node3D.new()
-	get_parent().add_child(_goto_route_node)
-	_build_route_line(_goto_route_node, waypoints, lm, GOTO_COLOR)
-
-
-## Remove the active GOTO route from the scene.
+# Remove the active go-to route from the scene, called by app states
 func clear_goto_route() -> void:
 	if _goto_route_node:
 		_goto_route_node.queue_free()
 		_goto_route_node = null
 
 
-## HTTP POST to /nav/path — returns Array[Vector3] in building world-space, or [].
+# Call the nav API to compute a path, then display it as the active GOTO route.
+func _fetch_and_display_goto(anchor_a_id: String, anchor_b_id: String, am: AnchorManager) -> Array[Vector3]:
+	var waypoints := await request_path(anchor_a_id, anchor_b_id)
+	if waypoints.is_empty():
+		return []
+	_display_goto_route(waypoints, am)
+	return waypoints
+
+
+# display already-computed waypoints as the active GOTO route.
+func _display_goto_route(waypoints: Array[Vector3], am: AnchorManager) -> void:
+	clear_goto_route()
+	if waypoints.size() < 2:
+		return
+	_goto_route_node = Node3D.new()
+	get_parent().add_child(_goto_route_node)
+	_build_route_line(_goto_route_node, waypoints, am, GOTO_COLOR)
+
+
+# HTTP request to the mono service, function returns Array[Vector3] in building world-space, or [].
 func request_path(anchor_a_id: String, anchor_b_id: String) -> Array[Vector3]:
 	var http := HTTPRequest.new()
 	add_child(http)
@@ -118,12 +108,10 @@ func request_path(anchor_a_id: String, anchor_b_id: String) -> Array[Vector3]:
 	return waypoints
 
 
-# ── Shared rendering helpers ──────────────────────────────────────────────────
-
-func _build_route_line(parent: Node3D, waypoints: Array[Vector3], lm: LocationManager, color: Color) -> void:
+func _build_route_line(parent: Node3D, waypoints: Array[Vector3], am: AnchorManager, color: Color) -> void:
 	var local_pts: Array[Vector3] = []
 	for wp in waypoints:
-		local_pts.append(lm.world_to_local(wp) + Vector3(0, ROUTE_Y_OFFSET, 0))
+		local_pts.append(am.world_to_local(wp) + Vector3(0, ROUTE_Y_OFFSET, 0))
 
 	var mesh := ImmediateMesh.new()
 	var mat  := StandardMaterial3D.new()

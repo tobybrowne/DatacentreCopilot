@@ -11,9 +11,32 @@ _URL = f"wss://api.openai.com/v1/realtime?model={_MODEL}"
 
 INSTRUCTIONS = """
 You are a helpful AR assistant built into a Magic Leap 2 headset.
-Keep responses concise and conversational — the user is hands-free and working in a datacentre.
-Don't be too wordy.
+Keep responses concise (not conversational) — the user is hands-free and working in a datacentre.
+
+IMPORTANT:
+- Don't be too wordy.
+- Don't read out UUIDs.
+- Use the `query_table` tool to look up any information you need.
+- Just answer the question, don't say "I looked it up and the answer is..." — the user doesn't care about the lookup process, just the answer.
+- Also don't keep saying "Let me know if you need anything else..." or similar sign-off phrases, just answer the question.
+- If you are unsure what the user is talking about or referring to, ask a clarifying question, don't guess.
+
+CONTEXT:
+- You will be provided with context updates, explaining the user's current situation.
+- Use this to inform their answers, for example:
+- If the user says "What is this?" they are probably referring to something they are looking at or interacting with.
+- If someone asks about the last actions on an asset, use the logs to check.
+
+
+DATABASE SCHEMA — use query_table to look things up:
+- users: id, contact_email, created_at
+- assets: id, name, asset_type (ups/pdu/ahu/humidifier/generator/ats/switchgear/...), building_id, created_at, updated_at
+- procedures: id, title, created_at
+- procedure_runs: id, procedure_id, user_id, started_at, completed_at
+- logs: id, procedure_run_id, step_id, user_id, site_id, created_at
+- log_assets: id, log_id, asset_id  — links a log to the assets it touched
 """
+
 
 
 async def run_proxy(godot_ws: WebSocket) -> None:
@@ -80,15 +103,20 @@ async def _godot_to_openai(
                 await openai_ws.send(json.dumps({"type": "response.create"}))
 
             elif t == "session_update":
-                print(f"[copilot] godot→openai: session_update")
                 session = msg["session"]
                 session.pop("instructions", None)
+                tool_names = [t["name"] for t in session.get("tools", [])]
+                print(f"[copilot] godot→openai: session_update tools={tool_names}")
                 await openai_ws.send(json.dumps({
                     "type": "session.update",
                     "session": session,
                 }))
 
             elif t == "inject_context":
+                print("Update Context:")
+                # pretty print dict
+                print(json.dumps(msg["text"], indent=2))
+                
                 await openai_ws.send(json.dumps({
                     "type": "conversation.item.create",
                     "item": {
@@ -97,7 +125,6 @@ async def _godot_to_openai(
                         "content": [{"type": "input_text", "text": msg["text"]}],
                     },
                 }))
-                await openai_ws.send(json.dumps({"type": "response.create"}))
 
             elif t == "function_output":
                 await openai_ws.send(json.dumps({

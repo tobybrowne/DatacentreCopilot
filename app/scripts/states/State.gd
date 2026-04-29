@@ -10,7 +10,9 @@ var ui_panel: ViewportPanel3D
 var gesture_manager: GestureManager
 var location_manager: LocationManager
 var anchor_manager: AnchorManager
+var space_manager: SpaceManager
 var route_manager: RouteManager
+var note_manager: NoteManager
 var voice_manager: VoiceManager
 var progress_indicator: ProgressIndicator
 
@@ -91,7 +93,7 @@ func _on_context_item_selected(_idx: int, label: String) -> void:
 	if label == "Add Sticky Note":
 		KeyboardManager.open("Add a note", "", func(text: String) -> void:
 			if not text.is_empty():
-				NoteManager.create_note_at(pos, text)
+				note_manager.create_note_at(pos, text)
 		)
 
 

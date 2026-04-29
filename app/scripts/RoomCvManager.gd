@@ -1,3 +1,5 @@
+# Not currently used, experimental script for room recognition via CV.
+
 extends Node
 
 const SERVICE_URL := "https://room-finder.tobybrowne.co.uk/jobs/room-inference"
@@ -15,8 +17,6 @@ func _ready() -> void:
 		cv_camera.frame_captured.connect(_on_frame_captured)
 	else:
 		push_warning("LocationManager: CVCameraManager not found")
-
-
 
 func _on_frame_captured(image: Image) -> void:
 	var jpeg := image.save_jpg_to_buffer()

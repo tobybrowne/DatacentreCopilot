@@ -21,8 +21,9 @@ func _ready() -> void:
 	print("[main] _ready start")
 	PanelRouter.push("start_menu")
 	KeyboardManager.register(keyboard_panel)
-	NoteManager.setup(location_manager, anchor_manager)
-	LogManager.setup(gesture_manager, location_manager, CVCameraManager)
+	var note_manager := NoteManager.new()
+	$XROrigin3D.add_child(note_manager)
+	LogRecordManager.setup(gesture_manager, anchor_manager, CVCameraManager)
 
 	progress_indicator = ProgressIndicator.new()
 	add_child(progress_indicator)
@@ -49,7 +50,9 @@ func _ready() -> void:
 		gesture_manager,
 		location_manager,
 		anchor_manager,
+		space_manager,
 		route_manager,
+		note_manager,
 		voice_manager,
 		progress_indicator,
 	)

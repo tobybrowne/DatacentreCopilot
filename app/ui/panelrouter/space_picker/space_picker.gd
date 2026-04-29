@@ -6,11 +6,13 @@ extends BasePanel
 
 var _spaces: Array[Space] = []
 var _mode := ""
+var _space_manager: SpaceManager
 
 
 func init(data: Dictionary) -> void:
 	_spaces = data.get("spaces", [])
 	_mode = data.get("mode", "")
+	_space_manager = data.get("space_manager")
 	call_deferred("_populate")
 
 
@@ -41,7 +43,7 @@ func _add_row(space: Space) -> void:
 	name_label.add_theme_font_size_override("font_size", FONT_BODY)
 	hbox.add_child(name_label)
 
-	var is_local := _is_local(space.id)
+	var is_local := _space_manager.is_space_local(space.id) if _space_manager else false
 
 	var local_badge := Label.new()
 	local_badge.text = "local" if is_local else ""
@@ -64,19 +66,9 @@ func _on_localise_pressed(space: Space) -> void:
 	_back_button.disabled = true
 	_status.text = "Localising…"
 
-	if _mode == "navigate":
+	if _mode == "start_navigate":
 		PanelRouter.request("start_nav_for_space", { "space": space })
 	elif _mode == "procedure":
 		PanelRouter.request("start_nav_for_procedure", { "space": space })
 	else:
 		PanelRouter.request("localise_space", { "space": space })
-
-
-func _is_local(space_id: String) -> bool:
-	if not Engine.has_singleton("OpenXRMlLocalizationMapExtension"):
-		return false
-	var maps: Array = Engine.get_singleton("OpenXRMlLocalizationMapExtension").get_localization_maps()
-	for m in maps:
-		if m.get("uuid", "") == space_id:
-			return true
-	return false

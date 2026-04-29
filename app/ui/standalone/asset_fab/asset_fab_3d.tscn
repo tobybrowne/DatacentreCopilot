@@ -1,0 +1,13 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://ui/viewport_panel_3d.gd" id="1"]
+[ext_resource type="PackedScene" path="res://ui/standalone/asset_fab/asset_fab.tscn" id="2"]
+
+[node name="AssetFab3D" type="Node3D"]
+script = ExtResource("1")
+panel_scene = ExtResource("2")
+world_anchored = true
+follow_speed = 3.0
+viewport_size = Vector2i(120, 120)
+quad_size = Vector2(0.1, 0.1)
+corner_radius_m = 0.05

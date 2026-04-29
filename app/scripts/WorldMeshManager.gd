@@ -5,9 +5,12 @@ class_name WorldMeshManager
 extends Node3D
 
 @export var bounding_extents := Vector3(10, 10, 10)
-@export var lod: int = 1  # 0=minimum, 1=medium, 2=maximum
+# level-of-detail, passed directly to the ML2, to state the resolution of the meshes required
+@export var lod: int = 1  # 0 = minimum, 1 = medium, 2 = maximum
 @export var mesh_material: Material
 
+# Godot has "collision layers", only objects on the same layer can collide with each other
+# for some reason these are set using a bitmask :/
 const COLLISION_LAYER := 1 << 19  # bit 20: world-mesh occluders
 
 var _ext = null  # OpenXRMlWorldMeshDetectionExtension singleton
@@ -15,7 +18,8 @@ var _blocks: Dictionary = {}  # block_id (String) -> StaticBody3D (with MeshInst
 
 
 func _ready() -> void:
-	# Defer initialization to ensure OpenXR singletons are registered.
+	# defer initialization to ensure OpenXR singletons are registered
+	# (queues this function to run at the end of the frame)
 	call_deferred("_initialize")
 
 
@@ -35,12 +39,6 @@ func _initialize() -> void:
 	if not _ext.is_available():
 		return
 
-	_start_meshing()
-
-
-func _start_meshing() -> void:
-	if _ext == null or _ext.is_running():
-		return
 	# FLAG_COMPUTE_NORMALS (2) | FLAG_REMOVE_MESH_SKIRT (16)
 	var mesh_flags := 2 | 16
 	_ext.start(bounding_extents, lod, mesh_flags)

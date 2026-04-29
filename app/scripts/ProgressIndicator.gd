@@ -1,9 +1,9 @@
+# Camera-facing ring that fills clockwise from 0.0 to 1.0 (used for gesture progess)
+# objects call update(pos, progress, color) each frame while a gesture is held,
+# and clear() when the gesture ends or completes.
+
 class_name ProgressIndicator
 extends Node3D
-
-## Camera-facing ring that fills clockwise from 0.0 to 1.0.
-## States call update(pos, progress, color) each frame while a gesture is held,
-## and clear() when the gesture ends or completes.
 
 const _R_IN  := 0.04
 const _R_OUT := 0.08

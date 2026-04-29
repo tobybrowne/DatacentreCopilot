@@ -1,12 +1,13 @@
 extends BasePanel
 
-@onready var _name_label: Label      = $MarginContainer/VBoxContainer/Name
-@onready var _id_label: Label        = $MarginContainer/VBoxContainer/Id
-@onready var _local_label: Label     = $MarginContainer/VBoxContainer/Local
-@onready var _created_label: Label   = $MarginContainer/VBoxContainer/Created
-@onready var _updated_label: Label   = $MarginContainer/VBoxContainer/Updated
-@onready var _update_button: Button  = $MarginContainer/VBoxContainer/Buttons/UpdateButton
-@onready var _calibrate_button: Button = $MarginContainer/VBoxContainer/Buttons/CalibrateButton
+@onready var _name_label: Label       = $MarginContainer/VBoxContainer/Name
+@onready var _id_label: Label         = $MarginContainer/VBoxContainer/Id
+@onready var _local_label: Label      = $MarginContainer/VBoxContainer/Local
+@onready var _created_label: Label    = $MarginContainer/VBoxContainer/Created
+@onready var _updated_label: Label    = $MarginContainer/VBoxContainer/Updated
+@onready var _update_button: Button      = $MarginContainer/VBoxContainer/Buttons/UpdateButton
+@onready var _calibrate_button: Button   = $MarginContainer/VBoxContainer/Buttons/CalibrateButton
+@onready var _remove_local_button: Button = $MarginContainer/VBoxContainer/Buttons/RemoveLocalButton
 
 var _space: Space
 
@@ -24,6 +25,8 @@ func init(data: Dictionary) -> void:
 	var is_local := _check_local(_space.id)
 	_local_label.text = "Local: " + ("Yes" if is_local else "No")
 	_local_label.modulate = Color("#00ff88") if is_local else Color("#ff4444")
+	# delete_space_local disabled — PW_MAP is signature-protected
+	_remove_local_button.visible = false
 
 	_update_button.pressed.connect(_on_update_pressed)
 	_calibrate_button.pressed.connect(_on_calibrate_pressed)
@@ -32,19 +35,42 @@ func init(data: Dictionary) -> void:
 func _on_calibrate_pressed() -> void:
 	_calibrate_button.text = "Loading..."
 	_calibrate_button.disabled = true
-	PanelRouter.request("localise_space_load_anchors", { "space": _space })
+	PanelRouter.request("start_anchor_edit", { "space": _space })
 
 
 func _on_update_pressed() -> void:
 	PanelRouter.request("update_space", { "space": _space })
 
 
+func _on_remove_local_pressed() -> void:
+	_remove_local_button.text = "Removing..."
+	_remove_local_button.disabled = true
+	PanelRouter.request("delete_space_local", { "space": _space })
+	_local_label.text = "Local: No"
+	_local_label.modulate = Color("#ff4444")
+	_remove_local_button.visible = false
+
+
 func _check_local(space_id: String) -> bool:
 	if not Engine.has_singleton("OpenXRMlLocalizationMapExtension"):
 		return false
 	var ext = Engine.get_singleton("OpenXRMlLocalizationMapExtension")
-	for map in ext.get_localization_maps():
-		if map.get("uuid", "") == space_id:
+	var maps: Array = ext.get_localization_maps()
+	for m in maps:
+		if m.get("uuid", "") == space_id:
+			return true
+	var f := FileAccess.open("user://space_uuid_map.json", FileAccess.READ)
+	if not f:
+		return false
+	var data = JSON.parse_string(f.get_as_text())
+	f.close()
+	if not data is Dictionary:
+		return false
+	var ml2_uuid: String = data.get(space_id, "")
+	if ml2_uuid.is_empty():
+		return false
+	for m in maps:
+		if m.get("uuid", "") == ml2_uuid:
 			return true
 	return false
 

@@ -2,6 +2,8 @@
 # Register phrases via the `intents` export, then connect to the typed signals below.
 # Falls back to no-op gracefully when the GDExtension is unavailable (e.g. in-editor).
 
+# NOTE: this code is currently unused (we use the LLM copilot for voice commands)
+
 class_name VoiceManager
 extends Node
 

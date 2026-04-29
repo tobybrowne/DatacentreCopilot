@@ -1,3 +1,6 @@
+# Uses OpenXRExtPlaneDetectionExtension to detect planes in the environment.
+# Currently, this is only used for plane avoidance mode in UI panels (which doesn't work great)
+
 class_name PlaneManager
 extends Node
 

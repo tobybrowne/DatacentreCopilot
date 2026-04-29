@@ -24,4 +24,4 @@ func init(data: Dictionary) -> void:
 func _on_navigate_pressed() -> void:
 	_nav_button.text = "Finding location..."
 	_nav_button.disabled = true
-	PanelRouter.request("navigate", { "building_id": _building.id })
+	PanelRouter.request("start_navigate", { "building_id": _building.id })

@@ -1,14 +1,10 @@
-extends Node
+# Pretty boring, mainly implements getters/setters for Supabase, plus the sign_in function
 
-## Set to false to disable all Supabase calls (offline / local-only testing).
-@export var enabled := true
+extends Node
 
 var auth_user = null
 
 func sign_in(email, password):
-	if not enabled:
-		print("SupabaseManager: offline mode — skipping sign_in")
-		return false
 	var auth_task = await Supabase.auth.sign_in(email, password).completed
 
 	if auth_task.error == null:
@@ -22,8 +18,6 @@ func sign_in(email, password):
 
 
 func get_procedures() -> Array[Procedure]:
-	if not enabled:
-		return []
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("procedures").select()
 	).completed
@@ -41,8 +35,6 @@ func get_procedures() -> Array[Procedure]:
 		return []
 
 func get_anchors() -> Array[Anchor]:
-	if not enabled:
-		return []
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("anchors").select()
 	).completed
@@ -60,8 +52,6 @@ func get_anchors() -> Array[Anchor]:
 		return []
 
 func get_spaces() -> Array[Space]:
-	if not enabled:
-		return []
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("spaces").select()
 	).completed
@@ -79,9 +69,7 @@ func get_spaces() -> Array[Space]:
 		return []
 
 func get_space_blob(space: Space) -> PackedByteArray:
-	if not enabled:
-		return PackedByteArray()
-	var task = await Supabase.storage.from("spaces_bucket").download(space.blob_path).completed
+	var task = await Supabase.storage.from("spaces_bucket").download(space.blob_path, "", true).completed
 
 	if task.error == null and task.data != null:
 		return task.data
@@ -92,13 +80,23 @@ func get_space_blob(space: Space) -> PackedByteArray:
 			print("get_space_blob error: null response (check Supabase connection)")
 		return PackedByteArray()
 
+func get_user_site_id() -> String:
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("users").select(["site_id"]).eq("id", auth_user.id if auth_user else "")
+	).completed
+	if task.error != null or task.data == null or task.data.is_empty():
+		if task.error != null:
+			print("get_user_site_id error: ", task.error.message)
+		return ""
+	return task.data[0].get("site_id", "")
+
+
 func upsert_space(space: Space) -> bool:
-	if not enabled:
-		return false
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("spaces").insert([{
 			"id": space.id,
 			"name": space.name,
+			"site_id": space.site_id,
 			"blob_path": space.blob_path,
 			"glb_path": space.glb_path,
 		}], true)
@@ -112,8 +110,6 @@ func upsert_space(space: Space) -> bool:
 
 
 func insert_anchor(anchor: Anchor) -> Anchor:
-	if not enabled:
-		return null
 	var row := {
 		"name": anchor.name,
 		"anchor_type": anchor.anchor_type,
@@ -141,8 +137,6 @@ func insert_anchor(anchor: Anchor) -> Anchor:
 		return null
 
 func update_anchor_glb_position(anchor_id: String, glb_position: Vector3) -> bool:
-	if not enabled:
-		return false
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("anchors").update({
 			"glb_position": {
@@ -161,8 +155,6 @@ func update_anchor_glb_position(anchor_id: String, glb_position: Vector3) -> boo
 		return false
 
 func update_user_glb_position(glb_position: Vector3) -> bool:
-	if not enabled:
-		return false
 	# temp dummy user id
 	var auth_user_id := '00000000-0000-0000-0000-000000000000'
 
@@ -184,8 +176,6 @@ func update_user_glb_position(glb_position: Vector3) -> bool:
 
 
 func get_sibling_spaces(space_id: String) -> Array[Space]:
-	if not enabled:
-		return []
 	# First get the space to find its building_id
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("spaces").select().eq("id", space_id)
@@ -200,9 +190,18 @@ func get_sibling_spaces(space_id: String) -> Array[Space]:
 	return await get_spaces_for_building(building_id)
 
 
+func get_building_site_id(building_id: String) -> String:
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("buildings").select(["site_id"]).eq("id", building_id)
+	).completed
+	if task.error != null or task.data == null or task.data.is_empty():
+		if task.error != null:
+			print("get_building_site_id error: ", task.error.message)
+		return ""
+	return task.data[0].get("site_id", "")
+
+
 func get_buildings() -> Array[Building]:
-	if not enabled:
-		return []
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("buildings").select()
 	).completed
@@ -217,8 +216,6 @@ func get_buildings() -> Array[Building]:
 
 
 func get_spaces_for_building(building_id: String) -> Array[Space]:
-	if not enabled:
-		return []
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("spaces").select().eq("building_id", building_id)
 	).completed
@@ -233,8 +230,6 @@ func get_spaces_for_building(building_id: String) -> Array[Space]:
 
 
 func get_routes() -> Array[Route]:
-	if not enabled:
-		return []
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("routes").select()
 	).completed
@@ -253,8 +248,6 @@ func get_routes() -> Array[Route]:
 
 
 func insert_note(note: StickyNote) -> StickyNote:
-	if not enabled:
-		return null
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("notes").insert([{"text": note.text, "anchor_id": note.anchor_id}])
 	).completed
@@ -267,8 +260,6 @@ func insert_note(note: StickyNote) -> StickyNote:
 
 
 func get_notes_for_space(space_id: String) -> Array[StickyNote]:
-	if not enabled:
-		return []
 	# Fetch note-type anchors for this space, then load the text from the notes table.
 	var anchors_task = await Supabase.database.query(
 		SupabaseQuery.new().from("anchors").select().eq("space_id", space_id).eq("anchor_type", "note")
@@ -300,8 +291,6 @@ func get_notes_for_space(space_id: String) -> Array[StickyNote]:
 
 
 func remove_anchor(anchor_id: String) -> bool:
-	if not enabled:
-		return false
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("anchors").delete().eq("id", anchor_id)
 	).completed
@@ -312,6 +301,58 @@ func remove_anchor(anchor_id: String) -> bool:
 	else:
 		print("Error removing anchor: ", task.error.message)
 		return false
+
+
+func insert_procedure_run(procedure_id: String) -> String:
+	var user_id: String = auth_user.id if auth_user else ""
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("procedure_runs").insert([{
+			"procedure_id": procedure_id,
+			"user_id": user_id,
+		}])
+	).completed
+	if task.error != null:
+		print("insert_procedure_run error: ", task.error.message)
+		return ""
+	if task.data == null or task.data.is_empty():
+		print("insert_procedure_run error: no data returned")
+		return ""
+	return task.data[0].get("id", "")
+
+
+func insert_log(step_id: String, site_id: String, procedure_run_id: String, geometry_path: String, camera_path: String) -> String:
+	var user_id: String = auth_user.id if auth_user else ""
+	var row := {
+		"step_id": step_id,
+		"site_id": site_id,
+		"user_id": user_id,
+	}
+	if not procedure_run_id.is_empty():
+		row["procedure_run_id"] = procedure_run_id
+	if not geometry_path.is_empty():
+		row["geometry_recording_path"] = geometry_path
+	if not camera_path.is_empty():
+		row["camera_recording_path"] = camera_path
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("logs").insert([row])
+	).completed
+	if task.error != null:
+		print("insert_log error: ", task.error.message)
+		return ""
+	if task.data == null or task.data.is_empty():
+		return ""
+	return task.data[0].get("id", "")
+
+
+func insert_log_assets(log_id: String, asset_ids: Array[String]) -> void:
+	var rows := []
+	for asset_id in asset_ids:
+		rows.append({"log_id": log_id, "asset_id": asset_id})
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("log_assets").insert(rows)
+	).completed
+	if task.error != null:
+		print("insert_log_assets error: ", task.error.message)
 
 
 func _ready() -> void:

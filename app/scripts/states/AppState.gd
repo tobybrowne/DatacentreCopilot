@@ -16,7 +16,9 @@ var ui_panel: ViewportPanel3D
 var gesture_manager: GestureManager
 var location_manager: LocationManager
 var anchor_manager: AnchorManager
+var space_manager: SpaceManager
 var route_manager: RouteManager
+var note_manager: NoteManager
 var voice_manager: VoiceManager
 var progress_indicator: ProgressIndicator
 
@@ -30,7 +32,9 @@ func setup(
 	gm: GestureManager,
 	lm: LocationManager,
 	am: AnchorManager,
+	sm: SpaceManager,
 	rm: RouteManager,
+	nm: NoteManager,
 	vm: VoiceManager,
 	pi: ProgressIndicator,
 ) -> void:
@@ -39,7 +43,9 @@ func setup(
 	gesture_manager    = gm
 	location_manager   = lm
 	anchor_manager     = am
+	space_manager      = sm
 	route_manager      = rm
+	note_manager       = nm
 	voice_manager      = vm
 	progress_indicator = pi
 
@@ -51,7 +57,9 @@ func setup(
 			child.gesture_manager    = gm
 			child.location_manager   = lm
 			child.anchor_manager     = am
+			child.space_manager      = sm
 			child.route_manager      = rm
+			child.note_manager       = nm
 			child.voice_manager      = vm
 			child.progress_indicator = pi
 
