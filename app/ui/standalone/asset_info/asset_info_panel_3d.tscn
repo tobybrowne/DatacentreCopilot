@@ -7,6 +7,8 @@
 script = ExtResource("1")
 panel_scene = ExtResource("2")
 world_anchored = true
+track_camera = false
+eye_level = true
 viewport_size = Vector2i(600, 500)
 quad_size = Vector2(0.35, 0.29)
 corner_radius_m = 0.015

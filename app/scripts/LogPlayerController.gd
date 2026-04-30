@@ -19,6 +19,8 @@ signal replay_started
 var world_anchored_fab := false
 var fab_local_pos      := Vector3.ZERO
 var fab_ray_enabled    := true
+## Set false before add_child to skip creating the floating logs fab entirely.
+var show_fab           := true
 ## If set, the fab tracks this node's global position + fab_local_pos each frame.
 var tracked_node: Node3D = null
 
@@ -34,15 +36,16 @@ var _init_data:     Dictionary      = {}
 
 
 func _ready() -> void:
-	_fab_3d = _FAB_SCENE.instantiate()
-	if world_anchored_fab:
-		_fab_3d.world_anchored = true
-		_fab_3d.position = fab_local_pos
-	_fab_3d.ray_enabled = fab_ray_enabled
-	get_parent().add_child(_fab_3d)
-	var fab := _fab_3d.get_panel() as LogsFab
-	if fab:
-		fab.logs_requested.connect(_on_fab_pressed)
+	if show_fab:
+		_fab_3d = _FAB_SCENE.instantiate()
+		if world_anchored_fab:
+			_fab_3d.world_anchored = true
+			_fab_3d.position = fab_local_pos
+		_fab_3d.ray_enabled = fab_ray_enabled
+		get_parent().add_child(_fab_3d)
+		var fab := _fab_3d.get_panel() as LogsFab
+		if fab:
+			fab.logs_requested.connect(_on_fab_pressed)
 	tree_exiting.connect(_cleanup)
 
 
@@ -100,6 +103,11 @@ func stop() -> void:
 func close() -> void:
 	stop()
 	_close_browser()
+
+
+## Open (or close if already open) the log browser — callable externally when show_fab is false.
+func open_browser() -> void:
+	_on_fab_pressed()
 
 
 # ── Internal ──────────────────────────────────────────────────────────────────

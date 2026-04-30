@@ -44,6 +44,10 @@ extends Node3D
 # with the visible panel hanging below.
 @export var mesh_offset: Vector3 = Vector3.ZERO
 @export var pinnable: bool = false
+# When false, world_anchored panels face the camera once on spawn then stay put.
+@export var track_camera: bool = true
+# When true, snaps the panel's Y to camera height on the first frame.
+@export var eye_level: bool = false
 
 
 const _PANEL_SHADER_CODE := """
@@ -86,6 +90,8 @@ var _sliding := false
 var _slide_target_pos := Vector3.ZERO
 var _slide_target_y := 0.0
 var _pinned := false
+var _camera_faced := false
+var _eye_leveled := false
 var _pin_bg: ColorRect = null
 var _pin_strip: HBoxContainer = null
 var _pin_button: Button = null
@@ -317,10 +323,15 @@ func _process(delta: float) -> void:
 				rotation.x = deg_to_rad(tilt_degrees)
 	elif not _pinned:
 		if world_anchored:
-			# Face camera each frame — look_at points -Z toward camera, quads face +Z so flip 180°
-			if global_position.distance_to(_camera.global_position) > 0.01:
+			if eye_level and not _eye_leveled:
+				global_position.y = _camera.global_position.y
+				_eye_leveled = true
+			# look_at points -Z toward camera; quads face +Z so flip 180°
+			var far_enough := global_position.distance_to(_camera.global_position) > 0.01
+			if far_enough and (track_camera or not _camera_faced):
 				look_at(_camera.global_position, Vector3.UP)
 				rotate_object_local(Vector3.UP, PI)
+				_camera_faced = true
 		elif locked_to_head:
 			# uses the cameras projection matrix (given by ML2 at runtime)
 			# to positions things relative to the users FOV (great for HUD stuff)

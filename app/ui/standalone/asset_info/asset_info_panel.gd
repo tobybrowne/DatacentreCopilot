@@ -1,12 +1,17 @@
 class_name AssetInfoPanel
 extends BasePanel
 
+signal logs_requested
+
 
 func _ready() -> void:
 	super._ready()
 	var close_btn := get_node_or_null("VBoxContainer/TopBar/CloseButton") as Button
 	if close_btn:
 		close_btn.pressed.connect(func(): close_requested.emit())
+	var logs_btn := get_node_or_null("VBoxContainer/ContentArea/ViewLogsButton") as Button
+	if logs_btn:
+		logs_btn.pressed.connect(func(): logs_requested.emit())
 
 
 func init(data: Dictionary) -> void:
@@ -14,8 +19,16 @@ func init(data: Dictionary) -> void:
 	if name_label:
 		name_label.text = data.get("asset_name", "Asset")
 
-	var type_label := get_node_or_null("VBoxContainer/TypeLabel") as Label
-	if type_label:
+	var icon_rect := get_node_or_null("VBoxContainer/TopBar/AssetIcon") as TextureRect
+	if icon_rect:
 		var asset_type: String = data.get("asset_type", "")
-		type_label.text = asset_type
-		type_label.visible = not asset_type.is_empty()
+		var path := "res://ui/standalone/asset_fab/icons/" + asset_type + ".svg"
+		if not asset_type.is_empty() and ResourceLoader.exists(path):
+			icon_rect.texture = load(path)
+			icon_rect.visible = true
+		else:
+			icon_rect.visible = false
+
+	var logs_btn := get_node_or_null("VBoxContainer/ContentArea/ViewLogsButton") as Button
+	if logs_btn:
+		logs_btn.visible = data.get("has_logs", false)

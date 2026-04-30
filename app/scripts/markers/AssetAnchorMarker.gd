@@ -73,10 +73,7 @@ func _ready() -> void:
 		).completed
 		if check.error == null and check.data != null and not check.data.is_empty():
 			_logs = LogPlayerController.new()
-			_logs.world_anchored_fab = true
-			_logs.fab_ray_enabled = false
-			_logs.fab_local_pos = Vector3(0.20, 0, 0)
-			_logs.tracked_node = self
+			_logs.show_fab = false
 			_logs.video_tmp_path = "user://asset_replay_%s.ogv" % _asset_id.left(8)
 			_logs.refresh({"asset_id": _asset_id})
 			_get_xr_origin().add_child(_logs)
@@ -165,15 +162,37 @@ func _open_info() -> void:
 	_info_open = true
 	_fab_3d.visible = false
 
+	const MIN_DIST := 0.8
+
 	var xr_origin := _get_xr_origin()
-	_info_3d = _INFO_SCENE.instantiate()
-	_info_3d.position = xr_origin.to_local(global_position + Vector3(0.25, 0.05, 0))
+	var camera    := _get_camera()
+	_info_3d      = _INFO_SCENE.instantiate()
+
+	if camera:
+		var cam_pos  := camera.global_position
+		var to_asset := global_position - cam_pos
+		to_asset.y   = 0.0
+		var horiz    := to_asset.length()
+		var dir: Vector3
+		if horiz > 0.05:
+			dir = to_asset / horiz
+		else:
+			dir = -camera.global_transform.basis.z
+			dir.y = 0.0
+			dir = dir.normalized() if dir.length_squared() > 0.001 else Vector3.FORWARD
+		var spawn_world   := cam_pos + dir * maxf(MIN_DIST, horiz)
+		_info_3d.position = xr_origin.to_local(spawn_world)
+	else:
+		_info_3d.position = xr_origin.to_local(global_position + Vector3(0.25, 0.05, 0))
+
 	xr_origin.add_child(_info_3d)
 
 	var panel := _info_3d.get_panel() as AssetInfoPanel
 	if panel:
-		panel.init({"asset_name": _asset_name, "asset_type": _asset_type})
+		panel.init({"asset_name": _asset_name, "asset_type": _asset_type, "has_logs": _logs != null})
 		panel.close_requested.connect(_close_info)
+		if _logs:
+			panel.logs_requested.connect(_logs.open_browser)
 
 	_beam = _create_beam()
 	xr_origin.add_child(_beam)
@@ -182,6 +201,8 @@ func _open_info() -> void:
 
 func _close_info() -> void:
 	_info_open = false
+	if _logs:
+		_logs.close()
 	if _info_3d:
 		_info_3d.queue_free()
 		_info_3d = null
