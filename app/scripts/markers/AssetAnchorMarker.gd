@@ -26,9 +26,7 @@ signal interacted
 
 var _mat:       StandardMaterial3D
 var _light:     OmniLight3D
-var _asset_id:  String
-var _asset_name: String
-var _asset_type: String
+var _asset: Asset = null
 var _logs:      LogPlayerController = null
 
 var _fab_3d:  ViewportPanel3D = null
@@ -44,7 +42,7 @@ var _fired      := false
 
 
 func get_asset_label() -> String:
-	return _asset_name
+	return _asset.name if _asset else ""
 
 
 func _ready() -> void:
@@ -56,26 +54,23 @@ func _ready() -> void:
 	if task.error != null or task.data == null or task.data.is_empty():
 		return
 
-	var row: Dictionary = task.data[0]
-	_asset_id   = row.get("id", "")
-	_asset_name = row.get("name", "")
-	_asset_type = row.get("asset_type", "")
+	_asset = Asset.from_dict(task.data[0])
 
 	add_to_group("asset_markers")
-	interacted.connect(func(): ContextManager.on_asset_interacted(_asset_name, _asset_type))
+	interacted.connect(func(): ContextManager.set_interacted(_asset))
 
 	_build_orb()
 	_build_fab()
 
-	if not _asset_id.is_empty():
+	if _asset and not _asset.id.is_empty():
 		var check = await Supabase.database.query(
-			SupabaseQuery.new().from("log_assets").select(["log_id"]).eq("asset_id", _asset_id).range(0, 0)
+			SupabaseQuery.new().from("log_assets").select(["log_id"]).eq("asset_id", _asset.id).range(0, 0)
 		).completed
 		if check.error == null and check.data != null and not check.data.is_empty():
 			_logs = LogPlayerController.new()
 			_logs.show_fab = false
-			_logs.video_tmp_path = "user://asset_replay_%s.ogv" % _asset_id.left(8)
-			_logs.refresh({"asset_id": _asset_id})
+			_logs.video_tmp_path = "user://asset_replay_%s.ogv" % _asset.id.left(8)
+			_logs.refresh({"asset_id": _asset.id})
 			_get_xr_origin().add_child(_logs)
 			tree_exiting.connect(func(): if _logs: _logs.queue_free())
 
@@ -91,8 +86,8 @@ func _process(delta: float) -> void:
 		if not _fired and _dwell_time >= DWELL_THRESHOLD:
 			_fired = true
 			_hold_timer = INTERACT_HOLD
-			if not _asset_id.is_empty():
-				LogRecordManager.record_asset_interaction(_asset_id)
+			if _asset and not _asset.id.is_empty():
+				LogRecordManager.record_asset_interaction(_asset.id)
 			interacted.emit()
 	else:
 		_dwell_time = 0.0
@@ -109,10 +104,12 @@ func _process(delta: float) -> void:
 			_gaze_hide_timer = GAZE_HIDE_DELAY
 			if not _fab_3d.visible:
 				_fab_3d.visible = true
+				ContextManager.set_looking_at(_asset)
 		else:
 			_gaze_hide_timer -= delta
 			if _gaze_hide_timer <= 0.0 and _fab_3d.visible:
 				_fab_3d.visible = false
+				ContextManager.set_looking_at(null)
 
 	# Beam
 	if _info_open and _beam and _info_3d:
@@ -152,7 +149,7 @@ func _build_fab() -> void:
 	var fab := _fab_3d.get_panel() as AssetFab
 	if fab:
 		fab.info_requested.connect(_open_info)
-		fab.setup(_asset_type)
+		fab.setup(_asset.asset_type if _asset else "")
 	tree_exiting.connect(func(): if _fab_3d: _fab_3d.queue_free())
 
 
@@ -189,7 +186,7 @@ func _open_info() -> void:
 
 	var panel := _info_3d.get_panel() as AssetInfoPanel
 	if panel:
-		panel.init({"asset_name": _asset_name, "asset_type": _asset_type, "has_logs": _logs != null})
+		panel.init({"asset_name": _asset.name if _asset else "", "asset_type": _asset.asset_type if _asset else "", "has_logs": _logs != null})
 		panel.close_requested.connect(_close_info)
 		if _logs:
 			panel.logs_requested.connect(_logs.open_browser)

@@ -16,6 +16,7 @@ func enter(data: Dictionary) -> void:
 	_space_label_3d = _SPACE_LABEL_SCENE.instantiate()
 	gesture_manager.get_parent().add_child(_space_label_3d)
 	location_manager.coarse_space_changed.connect(_on_coarse_space_changed)
+	location_manager.localised_space_changed.connect(_on_localised_space_changed)
 
 	var space_id: String = data.get("space_id", "")
 	var space := data.get("space") as Space
@@ -29,6 +30,7 @@ func enter(data: Dictionary) -> void:
 
 func exit() -> void:
 	location_manager.coarse_space_changed.disconnect(_on_coarse_space_changed)
+	location_manager.localised_space_changed.disconnect(_on_localised_space_changed)
 	if _space_label_3d:
 		_space_label_3d.queue_free()
 		_space_label_3d = null
@@ -43,10 +45,16 @@ func exit() -> void:
 
 # ── Gestures ──────────────────────────────────────────────────────────────────
 
-func _on_coarse_space_changed(coarse_id: String, active_id: String) -> void:
+func _on_coarse_space_changed(space_id: String) -> void:
 	var sl := _space_label_3d.get_panel() as SpaceLabel if _space_label_3d else null
 	if sl:
-		sl.update(coarse_id, active_id)
+		sl.update_coarse(space_id)
+
+
+func _on_localised_space_changed(space_id: String) -> void:
+	var sl := _space_label_3d.get_panel() as SpaceLabel if _space_label_3d else null
+	if sl:
+		sl.update_localised(space_id)
 
 
 func on_pinch_held(hand: String, position: Vector3, duration: float) -> void:

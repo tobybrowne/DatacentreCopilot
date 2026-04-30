@@ -31,16 +31,12 @@ func _ready() -> void:
 	app_state = AppState.new()
 	app_state.name = "AppState"
 	var idle := IdleState.new()
-	idle.name = "idle"
 	app_state.add_child(idle)
 	var anchor_editing := AnchorEditingState.new()
-	anchor_editing.name = "anchor_editing"
 	app_state.add_child(anchor_editing)
 	var navigating := NavigatingState.new()
-	navigating.name = "navigating"
 	app_state.add_child(navigating)
 	var procedure := ProcedureState.new()
-	procedure.name = "procedure"
 	app_state.add_child(procedure)
 	add_child(app_state)
 
@@ -56,8 +52,13 @@ func _ready() -> void:
 		voice_manager,
 		progress_indicator,
 	)
-	app_state.transition_to("idle")
-	ContextManager.setup(location_manager, app_state, $XROrigin3D/XRCamera3D)
+	app_state.transition_to(AppState.States.IDLE)
+	ContextManager.setup()
+	location_manager.coarse_space_changed.connect(ContextManager.set_space)
+	app_state.state_changed.connect(func(_from, to): ContextManager.set_app_state(AppState.States.find_key(to).to_lower()))
+	PanelRouter.panel_changed.connect(func(panel_id, _data): ContextManager.set_panel(panel_id))
+	CopilotManager.connect_voice_manager(voice_manager)
+	CopilotManager.setup_hud($XROrigin3D/XRCamera3D)
 
 	if OS.get_name() == "Android":
 		OS.request_permissions()

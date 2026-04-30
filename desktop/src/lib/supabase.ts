@@ -74,7 +74,7 @@ export async function upsertCentroidAnchor(spaceId: string, glbPosition: Positio
     name: '__centroid__',
     glb_position: glbPosition,
     space_id: spaceId,
-    is_reference: false,
+    anchor_type: 'content',
   })
   if (error) throw error
 }

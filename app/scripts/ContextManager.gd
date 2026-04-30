@@ -1,100 +1,61 @@
 extends Node
 
-const GAZE_CONE_DEG  := 20.0
-const GAZE_DWELL_SEC := 2.0
-
-var _location_manager: LocationManager = null
-var _app_state = null
-var _camera: Camera3D = null
-
-var _state := {}
+# ── Internal refs ─────────────────────────────────────────────────────────────
 var _debounce_timer: SceneTreeTimer = null
 
-var _gaze_candidate: String = ""
-var _gaze_dwell: float = 0.0
-var _gaze_reported: String = ""
+# ── Context state ─────────────────────────────────────────────────────────────
+var ctx_space:      Space = null
+var ctx_app_state:  String = ""
+var ctx_panel:      String = ""
+var ctx_procedure:  Procedure = null
+var ctx_step:       Step = null
+var ctx_looking_at:  Asset = null
+var ctx_interacted:  Asset = null
 
 
-func setup(location_manager: LocationManager, app_state, camera: Camera3D) -> void:
-	_location_manager = location_manager
-	_app_state = app_state
-	_camera = camera
-	location_manager.coarse_space_changed.connect(_on_space_changed)
-	app_state.state_changed.connect(_on_app_state_changed)
-	PanelRouter.panel_changed.connect(_on_panel_changed)
+func setup() -> void:
+	pass
 
 
-func _process(delta: float) -> void:
-	if _camera == null:
-		return
-	_update_gaze(delta)
+# ── Setters ───────────────────────────────────────────────────────────────────
 
-# detects what the user is looking at
-func _update_gaze(delta: float) -> void:
-	var cam_pos := _camera.global_position
-	var cam_fwd := -_camera.global_basis.z
-	var best_name := ""
-	var best_angle := GAZE_CONE_DEG
-
-	for node in get_tree().get_nodes_in_group("asset_markers"):
-		var m := node as AssetAnchorMarker
-		if not m or m.get_asset_label().is_empty():
-			continue
-		var dir := (m.global_position - cam_pos).normalized()
-		var angle := rad_to_deg(cam_fwd.angle_to(dir))
-		if angle < best_angle:
-			best_angle = angle
-			best_name = m.get_asset_label()
-
-	if best_name == _gaze_candidate:
-		_gaze_dwell += delta
-		# if you're looking at something new, schedule a context update
-		if _gaze_dwell >= GAZE_DWELL_SEC and _gaze_reported != best_name:
-			_gaze_reported = best_name
-			if best_name.is_empty():
-				_state.erase("looking_at")
-			else:
-				_state["looking_at"] = best_name
-			_schedule_update()
-	else:
-		_gaze_candidate = best_name
-		_gaze_dwell = 0.0
-
-
-func _on_space_changed(coarse_id: String, active_id: String) -> void:
-	_state["space"] = active_id if not active_id.is_empty() else coarse_id
+func set_space(space_id: String) -> void:
+	ctx_space = await SupabaseManager.get_space(space_id)
 	_schedule_update()
 
 
-func _on_app_state_changed(_from_name: String, to_name: String) -> void:
-	_state["app_state"] = to_name
+func set_app_state(name: String) -> void:
+	ctx_app_state = name
 	_schedule_update()
 
 
-func _on_panel_changed(panel_id: String, _data: Dictionary) -> void:
-	_state["panel"] = panel_id
+func set_panel(panel_id: String) -> void:
+	ctx_panel = panel_id
 	_schedule_update()
 
 
-func set_procedure_context(procedure_title: String, step_num: int, step_total: int, step_text: String) -> void:
-	_state["procedure"] = procedure_title
-	_state["step"] = "%d/%d: %s" % [step_num, step_total, step_text]
+func set_looking_at(asset: Asset) -> void:
+	ctx_looking_at = asset
 	_schedule_update()
 
 
-func clear_procedure_context() -> void:
-	_state.erase("procedure")
-	_state.erase("step")
+func set_procedure(procedure: Procedure) -> void:
+	ctx_procedure = procedure
 	_schedule_update()
 
 
-func on_asset_interacted(asset_name: String, asset_type: String) -> void:
-	var label := asset_name if asset_type.is_empty() else "%s (%s)" % [asset_name, asset_type]
-	var text := "User just interacted with asset: %s" % label
-	print("ContextManager: %s" % text)
-	if CopilotManager._is_connected:
-		CopilotManager.inject_context(text)
+func set_step(step: Step) -> void:
+	ctx_step = step
+	_schedule_update()
 
+
+
+func set_interacted(asset: Asset) -> void:
+	ctx_interacted = asset
+	_schedule_update()
+
+
+# ── Internal ──────────────────────────────────────────────────────────────────
 
 func _schedule_update() -> void:
 	if _debounce_timer:
@@ -108,10 +69,13 @@ func _flush() -> void:
 	if not CopilotManager._is_connected:
 		return
 	var parts := PackedStringArray()
-	for key in _state:
-		parts.append("%s: %s" % [key, _state[key]])
-	if parts.is_empty():
-		return
+	parts.append("space: %s"      % (ctx_space.id if ctx_space else "null"))
+	parts.append("app_state: %s"  % (ctx_app_state if ctx_app_state else "null"))
+	parts.append("panel: %s"      % (ctx_panel if ctx_panel else "null"))
+	parts.append("procedure: %s"  % (ctx_procedure.title if ctx_procedure else "null"))
+	parts.append("step: %s"       % (ctx_step.text if ctx_step else "null"))
+	parts.append("looking_at: %s" % ("%s (%s)" % [ctx_looking_at.name, ctx_looking_at.asset_type] if ctx_looking_at else "null"))
+	parts.append("interacted: %s" % ("%s (%s)" % [ctx_interacted.name, ctx_interacted.asset_type] if ctx_interacted else "null"))
 	var text := "[context update]\n" + "\n".join(parts)
 	print("ContextManager: %s" % text)
 	CopilotManager.inject_context(text)

@@ -9,7 +9,9 @@ extends Node
 ## transition_to() once to pick the initial state. After that, states drive
 ## their own transitions.
 
-signal state_changed(from_name: String, to_name: String)
+enum States { IDLE, ANCHOR_EDITING, NAVIGATING, PROCEDURE }
+
+signal state_changed(from: States, to: States)
 
 var app: Node3D
 var ui_panel: ViewportPanel3D
@@ -23,7 +25,8 @@ var voice_manager: VoiceManager
 var progress_indicator: ProgressIndicator
 
 var _current: State = null
-var _states: Dictionary = {}  # snake_case name → State
+var _current_id: States = States.IDLE
+var _states: Dictionary = {}  # States → State
 
 
 func setup(
@@ -50,8 +53,11 @@ func setup(
 	progress_indicator = pi
 
 	for child in get_children():
+		if child is IdleState:          _states[States.IDLE]           = child
+		elif child is AnchorEditingState: _states[States.ANCHOR_EDITING] = child
+		elif child is NavigatingState:  _states[States.NAVIGATING]     = child
+		elif child is ProcedureState:   _states[States.PROCEDURE]      = child
 		if child is State:
-			_states[String(child.name)] = child
 			child.app                = app
 			child.ui_panel           = ui_panel
 			child.gesture_manager    = gm
@@ -73,24 +79,25 @@ func setup(
 	gesture_manager.home_gesture_ended.connect(func(_h: String): progress_indicator.clear())
 
 
-func transition_to(state_name: String, data: Dictionary = {}) -> void:
-	var next: State = _states.get(state_name)
+func transition_to(state: States, data: Dictionary = {}) -> void:
+	var next: State = _states.get(state)
 	if next == null:
-		push_warning("AppState: unknown state '%s'" % state_name)
+		push_warning("AppState: unknown state %d" % state)
 		return
 	if _current == next:
 		return
-	var from_name: String = String(_current.name) if _current else ""
+	var from_id := _current_id
 	if _current:
 		_current.exit()
 	_current = next
-	print("AppState: → ", state_name)
+	_current_id = state
+	print("AppState: → ", States.find_key(state))
 	_current.enter(data)
-	state_changed.emit(from_name, state_name)
+	state_changed.emit(from_id, state)
 
 
-func current_name() -> String:
-	return String(_current.name) if _current else ""
+func current_state() -> States:
+	return _current_id
 
 
 # ── Gesture forwarding ────────────────────────────────────────────────────────
@@ -121,6 +128,6 @@ func _on_home_completed(_hand: String) -> void:
 
 func go_home() -> void:
 	PanelRouter.pop_to_root()
-	transition_to("idle")
+	transition_to(States.IDLE)
 
 

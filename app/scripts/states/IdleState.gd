@@ -20,7 +20,7 @@ func _on_action(action: String, data: Dictionary) -> void:
 	match action:
 		"start_anchor_edit":
 			# anchor editing "on_enter" will handle loading the space and anchors
-			_machine().transition_to("anchor_editing", {"space": data.get("space")})
+			_machine().transition_to(AppState.States.ANCHOR_EDITING, {"space": data.get("space")})
 
 		# "delete_space_local" disabled — PW_MAP is signature-protected
 
@@ -49,7 +49,7 @@ func _on_action(action: String, data: Dictionary) -> void:
 				return
 			location_manager.calibrate_to_space(space.id)
 			await location_manager.calibrated
-			_machine().transition_to("navigating", {"space_id": space.id, "pre_calibrated": true})
+			_machine().transition_to(AppState.States.NAVIGATING, {"space_id": space.id, "pre_calibrated": true})
 
 		# called by space picker when a location is chosen
 		"start_nav_for_procedure":
@@ -60,7 +60,7 @@ func _on_action(action: String, data: Dictionary) -> void:
 				return
 			location_manager.calibrate_to_space(space.id)
 			await location_manager.calibrated
-			_machine().transition_to("procedure", {"procedure": _pending_procedure, "space_id": space.id, "pre_calibrated": true})
+			_machine().transition_to(AppState.States.PROCEDURE, {"procedure": _pending_procedure, "space_id": space.id, "pre_calibrated": true})
 			_pending_procedure = null
 
 

@@ -7,7 +7,8 @@ extends Node
 class_name LocationManager
 
 signal calibrated
-signal coarse_space_changed(coarse_id: String, active_id: String)
+signal coarse_space_changed(space_id: String)
+signal localised_space_changed(space_id: String)
 
 var _anchor_manager: AnchorManager
 var _space_manager: SpaceManager
@@ -125,8 +126,11 @@ func _update_room_label(building_pos: Vector3) -> void:
 
 	if closest_id.is_empty():
 		return
-	current_coarse_space = closest_id
-	coarse_space_changed.emit(closest_id, _anchor_manager.get_current_space_id())
+
+	if closest_id != current_coarse_space:
+		coarse_space_changed.emit(closest_id)
+		current_coarse_space = closest_id
+	
 
 
 # called by _process on a timer
@@ -202,6 +206,7 @@ func _on_localization_changed(state: int, _confidence: int, _error_flags: int) -
 						if supabase_id != _anchor_manager.get_current_space_id():
 							print("LocationManager: relocalised to ", supabase_id)
 							current_coarse_space = supabase_id
+							localised_space_changed.emit(supabase_id)
 							# calibrate to the new space, load anchors, etc...
 							_anchor_manager.calibrate_to_space(supabase_id)
 
@@ -225,6 +230,7 @@ func calibrate_to_space(space_id: String) -> void:
 	_request_localization(space_id)
 	await _anchor_manager.calibrate_to_space(space_id)
 	print("LocationManager: calibrate_to_space ", space_id)
+	localised_space_changed.emit(space_id)
 
 
 # TO-DO: check how this behaves if no space is localised

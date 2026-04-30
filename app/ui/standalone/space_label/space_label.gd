@@ -5,6 +5,9 @@ extends BasePanel
 @onready var _active_label: Label = $MarginContainer/VBoxContainer/ActiveLabel
 
 
-func update(coarse_id: String, active_id: String) -> void:
-	_coarse_label.text = coarse_id
-	_active_label.text = "active: " + active_id
+func update_coarse(space_id: String) -> void:
+	_coarse_label.text = space_id
+
+
+func update_localised(space_id: String) -> void:
+	_active_label.text = "active: " + space_id

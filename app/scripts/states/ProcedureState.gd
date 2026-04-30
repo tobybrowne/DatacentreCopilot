@@ -12,7 +12,7 @@ var _logs: LogPlayerController = null
 var _wrist_panel: WristPanel3D = null
 var _current_step: Step = null
 var _current_log_id: String = ""
-var _procedure_title: String = ""
+var _procedure: Procedure = null
 
 
 func enter(data: Dictionary) -> void:
@@ -43,7 +43,8 @@ func enter(data: Dictionary) -> void:
 
 	var procedure := data.get("procedure") as Procedure
 	if procedure:
-		_procedure_title = procedure.title
+		_procedure = procedure
+		ContextManager.set_procedure(procedure)
 	var space_id: String = data.get("space_id", "")
 	var space := data.get("space") as Space
 	if space_id.is_empty() and space:
@@ -87,7 +88,8 @@ func exit() -> void:
 	PanelRouter.action_requested.disconnect(_on_action)
 	CopilotManager.update_tools([])
 	CopilotManager.function_called.disconnect(_on_copilot_function)
-	ContextManager.clear_procedure_context()
+	ContextManager.set_procedure(null)
+	ContextManager.set_step(null)
 
 	LogRecordManager.end_procedure()
 
@@ -175,11 +177,7 @@ func _on_step_changed_for_replay(_prev: Step, next_step: Step) -> void:
 	if sv:
 		sv.show_replay_button(not _current_log_id.is_empty())
 		if next_step:
-			ContextManager.set_procedure_context(
-				_procedure_title,
-				sv._current + 1, sv._steps.size(),
-				next_step.text
-			)
+			ContextManager.set_step(next_step)
 	if _logs:
 		_logs.refresh({"step_id": next_step.id} if next_step else {})
 

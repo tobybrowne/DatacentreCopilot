@@ -68,6 +68,20 @@ func get_spaces() -> Array[Space]:
 			print("get_spaces error: null response (check Supabase connection)")
 		return []
 
+func get_space(space_id: String) -> Space:
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("spaces").select().eq("id", space_id).range(0, 0)
+	).completed
+
+	if task.error == null and task.data != null and not task.data.is_empty():
+		return Space.from_dict(task.data[0])
+	else:
+		if task.error != null:
+			print("get_space error: ", task.error.message)
+		else:
+			print("get_space error: null response (check Supabase connection)")
+		return null
+
 func get_space_blob(space: Space) -> PackedByteArray:
 	var task = await Supabase.storage.from("spaces_bucket").download(space.blob_path, "", true).completed
 

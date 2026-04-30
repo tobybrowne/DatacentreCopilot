@@ -3,6 +3,7 @@ extends Node
 signal function_called(name: String, call_id: String, args: Dictionary)
 signal transcript_received(role: String, text: String)
 signal status_changed(state: String)
+signal listening_changed(is_listening: bool)
 signal connected
 signal disconnected
 
@@ -67,6 +68,10 @@ var _playback_queue := PackedVector2Array()
 
 var _send_timer := 0.0
 var _is_connected := false
+var _listening := false
+var _followup_timer: SceneTreeTimer = null
+
+const _FOLLOWUP_WINDOW := 7.0
 
 const _CHUNK_BYTES := 4800  # 100ms @ 24kHz mono PCM16
 
@@ -103,7 +108,6 @@ func _setup_mic() -> void:
 	_mic_player.stream = AudioStreamMicrophone.new()
 	_mic_player.bus = "CopilotMic"
 	add_child(_mic_player)
-	_mic_player.play()
 
 
 func _setup_playback() -> void:
@@ -129,10 +133,11 @@ func _process(delta: float) -> void:
 				_on_ws_connected()
 			_receive_messages()
 			_drain_playback_queue()
-			_send_timer += delta
-			if _send_timer >= send_interval_ms / 1000.0:
-				_send_timer = 0.0
-				_capture_and_send()
+			if _listening:
+				_send_timer += delta
+				if _send_timer >= send_interval_ms / 1000.0:
+					_send_timer = 0.0
+					_capture_and_send()
 
 		WebSocketPeer.STATE_CLOSED:
 			if _is_connected:
@@ -229,6 +234,12 @@ func _handle_message(msg: Dictionary) -> void:
 			transcript_received.emit(msg["role"], msg["text"])
 		"status":
 			print("CopilotManager: status → %s" % msg["state"])
+			if msg["state"] == "idle":
+				_followup_timer = get_tree().create_timer(_FOLLOWUP_WINDOW)
+				_followup_timer.timeout.connect(_stop_listening)
+			elif msg["state"] == "listening":
+				if _followup_timer:
+					_followup_timer = null
 			status_changed.emit(msg["state"])
 		"error":
 			push_warning("CopilotManager: %s" % msg.get("message", ""))
@@ -278,6 +289,49 @@ func update_instructions(new_instructions: String) -> void:
 	instructions = new_instructions
 	if _is_connected:
 		_send_session_update()
+
+
+func connect_voice_manager(vm: VoiceManager) -> void:
+	print("CopilotManager: connecting voice manager")
+	vm.copilot.connect(_on_wake_word)
+
+
+var _listen_dot: MeshInstance3D = null
+
+func setup_hud(camera: Camera3D) -> void:
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.004
+	sphere.height = 0.008
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(0.6, 0.0, 1.0)
+	_listen_dot = MeshInstance3D.new()
+	_listen_dot.mesh = sphere
+	_listen_dot.material_override = mat
+	_listen_dot.position = Vector3(0.098, 0.07, -0.3)
+	_listen_dot.visible = false
+	camera.add_child(_listen_dot)
+
+
+func _stop_listening() -> void:
+	_listening = false
+	_followup_timer = null
+	_mic_player.stop()
+	if _listen_dot: _listen_dot.visible = false
+	print("CopilotManager: follow-up window closed")
+
+
+func _on_wake_word() -> void:
+	print("CopilotManager: _on_wake_word called, _is_connected=", _is_connected)
+	if not _is_connected:
+		return
+	_followup_timer = null
+	_listening = true
+	_mic_buffer.clear()
+	_capture.clear_buffer()
+	_mic_player.play()
+	if _listen_dot: _listen_dot.visible = true
+	print("CopilotManager: wake word — listening")
 
 
 func inject_context(text: String) -> void:
