@@ -3,9 +3,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
-from supabase import Client, create_client
+
+from common import get_supabase
 
 router = APIRouter(prefix='/video')
 
@@ -17,16 +18,8 @@ class ConvertRequest(BaseModel):
     log_id: str
 
 
-def _supabase() -> Client:
-    url = os.environ.get('SUPABASE_URL')
-    key = os.environ.get('SUPABASE_KEY')
-    if not url or not key:
-        raise HTTPException(500, 'SUPABASE_URL and SUPABASE_KEY must be set')
-    return create_client(url, key)
-
-
 def _convert(log_id: str) -> None:
-    sb = _supabase()
+    sb = get_supabase()
 
     row = (
         sb.table('logs')

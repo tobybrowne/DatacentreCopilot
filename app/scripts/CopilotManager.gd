@@ -14,6 +14,18 @@ signal disconnected
 var tools: Array = [
 	{
 		"type": "function",
+		"name": "set_volume",
+		"description": "Adjust the headset master volume up or down by one step, or set it to a specific level.",
+		"parameters": {
+			"type": "object",
+			"properties": {
+				"direction": {"type": "string", "enum": ["up", "down"], "description": "Increase or decrease volume by one step."},
+				"level": {"type": "integer", "description": "Set volume to an absolute level from 0 (silent) to 10 (max). Use instead of direction for specific levels."},
+			},
+		},
+	},
+	{
+		"type": "function",
 		"name": "query_table",
 		"description": "Query the database. Chain calls to simulate joins. Tables: users, assets, procedures, procedure_runs, logs, log_assets.",
 		"parameters": {
@@ -63,6 +75,17 @@ func _ready() -> void:
 	_engine_rate = float(AudioServer.get_mix_rate())
 	_setup_mic()
 	_setup_playback()
+	_connect_when_ready()
+
+
+func _connect_when_ready() -> void:
+	var authed: bool = await AuthManager.wait_for_auth()
+	if not authed:
+		push_warning("CopilotManager: skipping connection — not authenticated")
+		return
+	if SupabaseManager.auth_user:
+		_ws.handshake_headers = PackedStringArray(["Authorization: Bearer " + SupabaseManager.auth_user.access_token])
+	print("CopilotManager: connecting...")
 	_ws.connect_to_url(service_url)
 
 
@@ -197,6 +220,8 @@ func _handle_message(msg: Dictionary) -> void:
 			print("CopilotManager: function_call '%s' args=%s" % [msg["name"], msg["args"]])
 			if msg["name"] == "query_table":
 				_execute_query_table(msg["call_id"], msg["args"])
+			elif msg["name"] == "set_volume":
+				_execute_set_volume(msg["call_id"], msg["args"])
 			else:
 				function_called.emit(msg["name"], msg["call_id"], msg["args"])
 		"transcript":
@@ -263,6 +288,25 @@ func inject_context(text: String) -> void:
 func send_function_output(call_id: String, output: String) -> void:
 	if _is_connected:
 		_send({"type": "function_output", "call_id": call_id, "output": output})
+
+
+func _execute_set_volume(call_id: String, args: Dictionary) -> void:
+	const STEP_DB := 3.0
+	const MIN_DB  := -40.0
+	const MAX_DB  :=  0.0
+	var bus := AudioServer.get_bus_index("Master")
+	var current_db := AudioServer.get_bus_volume_db(bus)
+	var new_db: float
+	if args.has("level"):
+		new_db = lerpf(MIN_DB, MAX_DB, clampf(float(args["level"]) / 10.0, 0.0, 1.0))
+	elif args.get("direction") == "up":
+		new_db = minf(current_db + STEP_DB, MAX_DB)
+	else:
+		new_db = maxf(current_db - STEP_DB, MIN_DB)
+	AudioServer.set_bus_volume_db(bus, new_db)
+	var level := roundi((new_db - MIN_DB) / (MAX_DB - MIN_DB) * 10.0)
+	print("CopilotManager: volume set to %d/10 (%.1f dB)" % [level, new_db])
+	send_function_output(call_id, JSON.stringify({"level": level, "db": snappedf(new_db, 0.1)}))
 
 
 func _execute_query_table(call_id: String, args: Dictionary) -> void:

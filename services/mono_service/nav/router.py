@@ -1,10 +1,9 @@
-import os
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
-from supabase import Client, create_client
+from supabase import Client
 
+from common import get_supabase, require_auth
 from .pathfinding import apply_transform, query_navmesh
 from .render import render_path_image
 
@@ -14,14 +13,6 @@ router = APIRouter(prefix='/nav')
 class PathRequest(BaseModel):
     anchor_a_id: str
     anchor_b_id: str
-
-
-def _supabase() -> Client:
-    url = os.environ.get('SUPABASE_URL')
-    key = os.environ.get('SUPABASE_KEY')
-    if not url or not key:
-        raise HTTPException(500, 'SUPABASE_URL and SUPABASE_KEY must be set')
-    return create_client(url, key)
 
 
 def _resolve_path(sb: Client, req: PathRequest) -> tuple[dict, dict, list[dict]]:
@@ -48,16 +39,16 @@ def _resolve_path(sb: Client, req: PathRequest) -> tuple[dict, dict, list[dict]]
 
     space_ids = list({anchor_a['space_id'], anchor_b['space_id']})
     rows = (
-        sb.table('building_spaces')
-        .select('space_id,offset_transformation,buildings(navmeshes(navmesh_path))')
-        .in_('space_id', space_ids)
+        sb.table('spaces')
+        .select('id,offset_transformation,buildings(navmeshes(navmesh_path))')
+        .in_('id', space_ids)
         .execute()
         .data
     )
     if not rows:
         raise HTTPException(404, "No building found for this anchor's space")
 
-    transform_by_space = {r['space_id']: r.get('offset_transformation') for r in rows}
+    transform_by_space = {r['id']: r.get('offset_transformation') for r in rows}
     building = rows[0].get('buildings') or {}
     navmesh_rec = building.get('navmeshes')
     navmesh_path = navmesh_rec.get('navmesh_path') if navmesh_rec else None
@@ -89,16 +80,16 @@ def _resolve_path(sb: Client, req: PathRequest) -> tuple[dict, dict, list[dict]]
 
 
 @router.post('/path')
-async def path(req: PathRequest) -> dict:
+async def path(req: PathRequest, _: None = Depends(require_auth)) -> dict:
     """Return computed waypoints as JSON for in-headset route display."""
-    sb = _supabase()
+    sb = get_supabase()
     _pos_a, _pos_b, waypoints, _result = _resolve_path(sb, req)
     return {'waypoints': waypoints}
 
 
 @router.post('/path-image')
-async def path_image(req: PathRequest) -> Response:
+async def path_image(req: PathRequest, _: None = Depends(require_auth)) -> Response:
     """Return a PNG visualisation of the computed path (debug/desktop tool)."""
-    sb = _supabase()
+    sb = get_supabase()
     pos_a, pos_b, _waypoints, result = _resolve_path(sb, req)
     return Response(content=render_path_image(pos_a, pos_b, result), media_type='image/png')

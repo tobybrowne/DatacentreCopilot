@@ -71,6 +71,8 @@ func request_path(anchor_a_id: String, anchor_b_id: String) -> Array[Vector3]:
 
 	var body    := JSON.stringify({"anchor_a_id": anchor_a_id, "anchor_b_id": anchor_b_id})
 	var headers := PackedStringArray(["Content-Type: application/json"])
+	if SupabaseManager.auth_user:
+		headers.append("Authorization: Bearer " + SupabaseManager.auth_user.access_token)
 	var err     := http.request(nav_api_url + "/nav/path", headers, HTTPClient.METHOD_POST, body)
 	if err != OK:
 		push_warning("RouteManager: HTTPRequest.request() failed err=", err)
