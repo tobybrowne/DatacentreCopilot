@@ -109,7 +109,7 @@
 <!-- ── Normal viewing mode ── -->
 {#if stitchPhase === 'idle'}
   {#if glbUrl}
-    <GLTF url={glbUrl} ondblclick={(e: IntersectionEvent<MouseEvent>) => { e.stopPropagation(); if (e.point) handleMeshClick(e.point) }} />
+    <GLTF url={glbUrl} onclick={(e: IntersectionEvent<MouseEvent>) => { e.stopPropagation(); if (e.point) handleMeshClick(e.point) }} />
   {/if}
 
   {#each mergedSpaces as space, i (space.url)}

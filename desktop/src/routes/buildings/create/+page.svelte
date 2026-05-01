@@ -1,43 +1,34 @@
 <script lang="ts">
-
+  import { goto } from '$app/navigation'
+  import { page } from '$app/stores'
   import { onMount } from 'svelte'
-  import { fetchSpaces, fetchDraftBuildings, fetchCompletedBuildings, getSpaceGlbUrl, createDraftBuilding, updateBuildingSpaceTransform, finalizeDraftBuilding, deleteBuilding, upsertCentroidAnchor, fetchAnchors } from './supabase'
-  import { computeTransform, posToV3 } from './stitching'
-  import { computeCentroids } from './centroid'
-  import Scene from './Scene.svelte'
-  import type { Anchor, Building, Position, RigidTransform, Space } from './types'
-  import * as THREE from 'three'
-  import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-  import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
+  import { fetchSpaces, fetchBuildingById, getSpaceGlbUrl, createDraftBuilding, updateBuildingSpaceTransform, finalizeDraftBuilding, upsertCentroidAnchor } from '$lib/supabase'
+  import { computeTransform, posToV3 } from '$lib/stitching'
+  import { computeCentroids } from '$lib/centroid'
+  import Scene from '$lib/Scene.svelte'
+  import Sidebar from '$lib/Sidebar.svelte'
+  import type { Building, Position, RigidTransform, Space } from '$lib/types'
+  import { downloadMergedGlb as mergeAndDownloadGlb } from '$lib/glbMerge'
 
-  interface Props {
-    onback?: () => void;
-  }
+  const draftId = $page.url.searchParams.get('draft') ?? undefined
 
-  let { onback }: Props = $props()
-
-  type Phase = 'setup' | 'view' | 'pickSource' | 'pickTarget' | 'preview' | 'complete'
+  type Phase = 'setup' | 'pickSource' | 'pickTarget' | 'preview' | 'complete'
 
   interface SpaceEntry {
     space: Space
     glbUrl: string
-    transform: RigidTransform | null  // null = reference (index 0)
+    transform: RigidTransform | null
   }
 
-  // Setup state
   let allSpaces: Space[] = $state([])
-  let draftBuildings: (Building & { spaces: Space[] })[] = $state([])
-  let completedBuildings: (Building & { spaces: Space[] })[] = $state([])
   let buildingName = $state('')
-  let orderedSpaceIds: string[] = $state([])  // user-chosen order; index 0 = reference
+  let orderedSpaceIds: string[] = $state([])
 
-  // Build-up state
   let phase = $state<Phase>('setup')
-  let builtSpaces: SpaceEntry[] = $state([])   // spaces confirmed so far (index 0 is reference)
-  let currentIdx = $state(1)                    // index into orderedSpaceIds being stitched now
+  let builtSpaces: SpaceEntry[] = $state([])
+  let currentIdx = $state(1)
   let activeBuildingId: string | null = null
 
-  // Current stitch point picking
   let srcPoints: Position[] = $state([])
   let tgtPoints: Position[] = $state([])
   let pointPlaced = $state(false)
@@ -48,13 +39,14 @@
 
   onMount(async () => {
     try {
-      [allSpaces, draftBuildings, completedBuildings] = await Promise.all([
-        fetchSpaces(), fetchDraftBuildings(), fetchCompletedBuildings()
-      ])
+      allSpaces = await fetchSpaces()
+      if (draftId) {
+        const draft = await fetchBuildingById(draftId)
+        await resumeBuilding(draft)
+      }
     } catch (e) { error = (e as Error).message }
   })
 
-  // ── Derived ──
   let glbSpaces = $derived(allSpaces.filter(s => s.glb_path))
   let unselectedSpaces = $derived(glbSpaces.filter(s => !orderedSpaceIds.includes(s.id)))
   let pickingSource = $derived(phase === 'pickSource')
@@ -69,14 +61,12 @@
     }
   })
 
-  // Only show the most recently confirmed space as the stitch target
   let lastBuilt = $derived(builtSpaces[builtSpaces.length - 1])
-  let mergedSpaces = $derived((phase === 'view' || phase === 'complete')
+  let mergedSpaces = $derived(phase === 'complete'
     ? builtSpaces.map(e => ({ url: e.glbUrl, transform: e.transform }))
     : lastBuilt ? [{ url: lastBuilt.glbUrl, transform: lastBuilt.transform }] : [])
 
-  // Scene stitchPhase: only show idle when setup/view/complete
-  let scenePhase = $derived((phase === 'setup' || phase === 'view' || phase === 'complete') ? 'idle' : phase as any)
+  let scenePhase = $derived((phase === 'setup' || phase === 'complete') ? 'idle' : phase as any)
 
   function addSpace(spaceId: string): void {
     if (!orderedSpaceIds.includes(spaceId)) orderedSpaceIds = [...orderedSpaceIds, spaceId]
@@ -127,34 +117,6 @@
     pointPlaced = false
     currentTransform = null
     phase = currentIdx >= orderedSpaceIds.length ? 'complete' : 'pickSource'
-  }
-
-  async function discardDraft(draft: Building & { spaces: Space[] }): Promise<void> {
-    try {
-      await deleteBuilding(draft.id)
-      draftBuildings = draftBuildings.filter(d => d.id !== draft.id)
-    } catch (e) {
-      error = (e as Error).message
-    }
-  }
-
-  async function deleteCompletedBuilding(building: Building & { spaces: Space[] }): Promise<void> {
-    try {
-      await deleteBuilding(building.id)
-      completedBuildings = completedBuildings.filter(b => b.id !== building.id)
-      if (activeBuildingId === building.id) resetBuilding()
-    } catch (e) {
-      error = (e as Error).message
-    }
-  }
-
-  async function viewBuilding(building: Building & { spaces: Space[] }): Promise<void> {
-    const sorted = [...building.spaces].sort((a, b) => (a.building_index ?? 0) - (b.building_index ?? 0))
-    builtSpaces = await Promise.all(sorted.map(async s => ({ space: s, glbUrl: await getSpaceGlbUrl(s.glb_path!), transform: s.offset_transformation })))
-    buildingName = building.name ?? ''
-    activeBuildingId = building.id
-    loadBuildingAnchors(builtSpaces)
-    phase = 'view'
   }
 
   function handleMeshClick(detail: { position: Position; spaceIndex: number | null }): void {
@@ -227,7 +189,6 @@
   }
 
   function resetBuilding(): void {
-    // Draft stays in DB and can be resumed later
     phase = 'setup'
     builtSpaces = []
     srcPoints = []
@@ -237,34 +198,12 @@
     activeBuildingId = null
     orderedSpaceIds = []
     buildingName = ''
-    Promise.all([fetchDraftBuildings(), fetchCompletedBuildings()])
-      .then(([drafts, completed]) => { draftBuildings = drafts; completedBuildings = completed })
-      .catch(() => {})
-  }
-
-  let buildingAnchors: Anchor[] = $state([])
-
-  async function loadBuildingAnchors(spaces: SpaceEntry[]): Promise<void> {
-    const all = await Promise.all(spaces.map(e => fetchAnchors(e.space.id)))
-    const flat = all.flat()
-    // Transform each anchor's glb_position into building frame using the space's offset transform
-    buildingAnchors = flat
-      .filter(a => a.glb_position)
-      .map(a => {
-        const entry = spaces.find(e => e.space.id === a.space_id)
-        if (!entry?.transform) return a  // reference space — identity, no transform needed
-        const { position: p, quaternion: q } = entry.transform
-        const v = new THREE.Vector3(a.glb_position!.x, a.glb_position!.y, a.glb_position!.z)
-        v.applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w))
-        v.add(new THREE.Vector3(p.x, p.y, p.z))
-        return { ...a, glb_position: { x: v.x, y: v.y, z: v.z } }
-      })
   }
 
   let recomputingCentroids = $state(false)
   let voxelSize = $state(0.5)
   let overlapPenalty = $state(1)
-  let pointClouds: Array<{ points: import('./types').Position[]; color: number }> = $state([])
+  let pointClouds: Array<{ points: import('$lib/types').Position[]; color: number }> = $state([])
 
   const SPACE_COLORS = [0xff6644, 0x44aaff, 0x44ff88, 0xffcc00, 0xff44cc, 0x00ffff]
 
@@ -281,7 +220,6 @@
 
       const { centroids, voronoiPoints } = await computeCentroids(entries, voxelSize, overlapPenalty)
 
-      // Colour each space's Voronoi region distinctly
       pointClouds = [...voronoiPoints.entries()].map(([spaceId, points], i) => ({
         points,
         color: SPACE_COLORS[i % SPACE_COLORS.length],
@@ -290,7 +228,6 @@
       await Promise.all([...centroids.entries()].map(([spaceId, pos]) =>
         upsertCentroidAnchor(spaceId, pos)
       ))
-      await loadBuildingAnchors(builtSpaces)
     } catch (e) {
       error = (e as Error).message
     } finally {
@@ -304,33 +241,7 @@
     if (downloading || builtSpaces.length === 0) return
     downloading = true
     try {
-      const loader = new GLTFLoader()
-      const root = new THREE.Group()
-
-      for (const entry of builtSpaces) {
-        const gltf = await new Promise<any>((resolve, reject) =>
-          loader.load(entry.glbUrl, resolve, undefined, reject)
-        )
-        const scene = gltf.scene as THREE.Group
-        if (entry.transform) {
-          const { position: p, quaternion: q } = entry.transform
-          scene.position.set(p.x, p.y, p.z)
-          scene.quaternion.set(q.x, q.y, q.z, q.w)
-        }
-        root.add(scene)
-      }
-
-      const exporter = new GLTFExporter()
-      const buffer = await new Promise<ArrayBuffer>((resolve, reject) =>
-        exporter.parse(root, resolve as any, reject, { binary: true })
-      )
-      const blob = new Blob([buffer], { type: 'model/gltf-binary' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${buildingName || 'building'}.glb`
-      a.click()
-      URL.revokeObjectURL(url)
+      await mergeAndDownloadGlb(builtSpaces.map(e => ({ glbUrl: e.glbUrl, transform: e.transform })), buildingName)
     } catch (e) {
       error = (e as Error).message
     } finally {
@@ -344,13 +255,7 @@
     try {
       await finalizeDraftBuilding(activeBuildingId)
       await recomputeCentroids()
-      draftBuildings = draftBuildings.filter(d => d.id !== activeBuildingId)
-      completedBuildings = await fetchCompletedBuildings()
-      phase = 'setup'
-      builtSpaces = []
-      orderedSpaceIds = []
-      buildingName = ''
-      activeBuildingId = null
+      goto('/buildings')
     } catch (e) {
       error = (e as Error).message
     } finally {
@@ -359,37 +264,8 @@
   }
 </script>
 
-<!-- sidebar -->
-<aside>
-  <div class="header">
-    <button class="back-btn" onclick={() => onback?.()}>← Back</button>
-    <span class="logo">Building Manager</span>
-  </div>
-
-  <!-- ── Setup ── -->
+<Sidebar title="Building Manager" onback={() => goto('/buildings')}>
   {#if phase === 'setup'}
-    {#if draftBuildings.length > 0}
-      <section>
-        <label class="section-label">Resume draft</label>
-        <ul class="pool-list">
-          {#each draftBuildings as draft (draft.id)}
-            {@const stitched = draft.spaces.filter(s => s.building_index === 0 || s.offset_transformation !== null).length}
-            {@const total = draft.spaces.length}
-            <li class="draft-item">
-              <div class="draft-info">
-                <span class="draft-name">{draft.name || 'Unnamed'}</span>
-                <span class="draft-progress">{stitched}/{total} spaces</span>
-              </div>
-              <div class="draft-actions">
-                <button class="primary small" onclick={() => resumeBuilding(draft)}>Resume</button>
-                <button class="discard-btn" onclick={() => discardDraft(draft)}>×</button>
-              </div>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
-
     <section>
       <label class="section-label">Building name</label>
       <input type="text" bind:value={buildingName} placeholder="e.g. Top Floor" />
@@ -433,21 +309,6 @@
       </section>
     {/if}
 
-    {#if completedBuildings.length > 0}
-      <section>
-        <label class="section-label">Buildings</label>
-        <ul class="pool-list">
-          {#each completedBuildings as b (b.id)}
-            <li class="pool-item">
-              <span class="building-name" onclick={() => viewBuilding(b)}>{b.name || 'Unnamed'}</span>
-              <span class="space-count">{b.spaces?.length ?? 0}</span>
-              <button class="discard-btn" onclick={(e) => { e.stopPropagation(); deleteCompletedBuilding(b) }}>×</button>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
-
     <section>
       <button
         class="primary" style="width:100%"
@@ -458,42 +319,6 @@
       </button>
     </section>
 
-  <!-- ── View ── -->
-  {:else if phase === 'view'}
-    <section>
-      <label class="section-label">Viewing</label>
-      <p class="hint space-name">{buildingName}</p>
-    </section>
-    <section>
-      <label class="section-label">Spaces</label>
-      <ul class="order-list">
-        {#each builtSpaces as entry, i (entry.space.id)}
-          <li class="order-item">
-            {#if i === 0}<span class="ref-badge">ref</span>{/if}
-            <span class="order-name">{entry.space.name || entry.space.id}</span>
-          </li>
-        {/each}
-      </ul>
-    </section>
-    <section>
-      <button class="primary" style="width:100%" onclick={downloadMergedGlb} disabled={downloading}>
-        {downloading ? 'Exporting…' : '↓ Download GLB'}
-      </button>
-      <label class="section-label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        Voxel size: {voxelSize.toFixed(2)}m
-        <input type="range" min="0.1" max="2" step="0.05" bind:value={voxelSize} style="flex:1" />
-      </label>
-      <label class="section-label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        Overlap penalty:
-        <input type="number" min="0" step="0.5" bind:value={overlapPenalty} style="width:70px" />
-      </label>
-      <button style="width:100%" onclick={recomputeCentroids} disabled={recomputingCentroids}>
-        {recomputingCentroids ? 'Computing…' : '⟳ Recompute centroids'}
-      </button>
-      <button style="width:100%" onclick={resetBuilding}>← Back</button>
-    </section>
-
-  <!-- ── Picking ── -->
   {:else if phase === 'pickSource' || phase === 'pickTarget'}
     <section>
       <label class="section-label">
@@ -535,7 +360,6 @@
       <button onclick={resetBuilding}>Cancel</button>
     </section>
 
-  <!-- ── Preview ── -->
   {:else if phase === 'preview'}
     <section>
       <label class="section-label">Preview — {currentIdx}/{orderedSpaceIds.length - 1}</label>
@@ -549,7 +373,6 @@
       </button>
     </section>
 
-  <!-- ── Complete ── -->
   {:else if phase === 'complete'}
     <section>
       <label class="section-label">All scans stitched</label>
@@ -568,13 +391,12 @@
       </button>
     </section>
   {/if}
-</aside>
+</Sidebar>
 
 <Scene
   stitchPhase={scenePhase}
   stitchSourceGlbUrl={currentSourceGlbUrl}
   {mergedSpaces}
-  anchors={buildingAnchors}
   {pointClouds}
   stitchSourcePoints={srcPoints}
   stitchTargetPoints={tgtPoints}
@@ -587,61 +409,9 @@
 {/if}
 
 <style>
-  aside {
-    width: 280px;
-    min-width: 280px;
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-  }
-
-  .header {
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  .back-btn {
-    padding: 3px 8px;
-    font-size: 11px;
-    border-radius: 4px;
-    color: var(--text-muted);
-    border-color: var(--border);
-    flex-shrink: 0;
-  }
-  .back-btn:hover { color: var(--text); }
-
-  .logo {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--accent);
-    letter-spacing: 0.02em;
-  }
-
-  section {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
   .row-section { flex-direction: row; }
   .row-section button { flex: 1; }
 
-  .section-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-muted);
-  }
   .muted { text-transform: none; letter-spacing: 0; font-size: 10px; }
 
   .hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0; }
@@ -651,7 +421,6 @@
   .src-label { color: #ff4444; }
   .tgt-label { color: #44ffcc; }
 
-  /* Space pool */
   .spaces-pool { overflow: hidden; }
   .pool-list { list-style: none; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
   .pool-item {
@@ -666,11 +435,7 @@
   }
   .pool-item:hover { background: #202020; }
   .add-icon { color: var(--accent); font-size: 16px; line-height: 1; }
-  .space-count { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
-  .building-name { flex: 1; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .building-name:hover { color: var(--accent); }
 
-  /* Order list */
   .order-section { overflow: hidden; }
   .order-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
   .order-item {
@@ -709,7 +474,6 @@
   }
   .remove-btn:hover { color: var(--danger); }
 
-  /* Pairs dots */
   .pairs-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -727,39 +491,4 @@
   }
   .pair-dot.src.filled { background: #ff4444; border-color: #ff4444; }
   .pair-dot.tgt.filled { background: #44ffcc; border-color: #44ffcc; }
-
-  .draft-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 4px;
-    font-size: 13px;
-    gap: 8px;
-  }
-  .draft-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-  .draft-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .draft-progress { font-size: 11px; color: var(--text-muted); }
-  .draft-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-  button.small { padding: 3px 8px; font-size: 11px; }
-  .discard-btn {
-    padding: 1px 6px;
-    font-size: 13px;
-    color: var(--text-muted);
-    border-color: transparent;
-    background: transparent;
-  }
-  .discard-btn:hover { color: var(--danger); }
-
-  .error-toast {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: #ff444488;
-    border: 1px solid var(--danger);
-    border-radius: 8px;
-    padding: 10px 16px;
-    font-size: 13px;
-    cursor: pointer;
-    z-index: 200;
-  }
 </style>

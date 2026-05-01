@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { Canvas } from '@threlte/core'
-  import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+  import { exportNavMesh, NavMeshQuery, type NavMesh } from 'recast-navigation'
   import * as THREE from 'three'
-  import { init as initRecast, NavMeshQuery, exportNavMesh, importNavMesh, type NavMesh } from 'recast-navigation'
-  import { threeToSoloNavMesh, NavMeshHelper } from '@recast-navigation/three'
   import NavigateSceneInner from './NavigateSceneInner.svelte'
+  import Sidebar from './Sidebar.svelte'
   import type { Position, RigidTransform } from './types'
   import { saveNavMesh } from './supabase'
+  import { buildNavMeshFromSpaces, loadNavMeshFromBuffer, computePath, type NavMeshParams } from './navmesh'
 
   interface Props {
     buildingId?: string | null;
@@ -33,7 +33,6 @@
   let navMesh: NavMesh | null = $state(null)
   let navQuery: NavMeshQuery | null = null
   let navMeshDebugMesh: THREE.Mesh | null = $state(null)
-  let recastInputDebug: THREE.Group | null = $state(null)
   let startPos: Position | null = $state(null)
   let endPos: Position | null = $state(null)
   let pathGeometry: THREE.TubeGeometry | null = $state(null)
@@ -43,23 +42,8 @@
   let saveState: 'idle' | 'saving' | 'saved' | 'error' = $state('idle')
   let saveError: string | null = $state(null)
 
-  async function handleSaveNavMesh(): Promise<void> {
-    if (!navMesh || !buildingId) return
-    saveState = 'saving'
-    saveError = null
-    try {
-      const data = exportNavMesh(navMesh)
-      await saveNavMesh(buildingId, data, { ...params } as unknown as Record<string, unknown>)
-      saveState = 'saved'
-    } catch (e) {
-      saveError = (e as Error).message
-      saveState = 'error'
-    }
-  }
-
-  // Navmesh generation parameters — all editable before building
-  let params = $state({
-    boundsYMax: 3,  // metres above detected floor — excludes roof geometry above this height
+  let params: NavMeshParams = $state({
+    boundsYMax: 3,
     cs: 0.1,
     ch: 0.1,
     walkableSlopeAngle: 35,
@@ -77,126 +61,37 @@
 
   let pickingEnabled = $derived(phase === 'pickStart' || phase === 'pickEnd')
 
-  async function generateNavMesh(): Promise<void> {
-    // Tear down any previous navmesh resources before rebuilding
-    if (navQuery) { navQuery.destroy(); navQuery = null }
-    if (navMesh) { navMesh.destroy(); navMesh = null }
-    navMeshDebugMesh = null
-
-    loadingMsg = 'Loading models…'
-    const meshes = await loadMeshes()
-
-    loadingMsg = 'Generating navigation mesh…'
-
-    const inputBox = new THREE.Box3()
-    let totalVerts = 0
-    meshes.forEach(m => {
-      inputBox.expandByObject(m)
-      totalVerts += m.geometry.attributes.position.count
-    })
-    console.log('[NavMesh] input meshes:', meshes.length, 'verts:', totalVerts, 'bounds:', inputBox.min, inputBox.max)
-
-    recastInputDebug = null
-
-    // Strip triangles where every vertex is above boundsYMax metres above the floor.
-    // Using bounds[] instead would clip walls and treat the cut edge as a new walkable surface.
-    const { boundsYMax, ...recastParams } = params
-    const yMax = inputBox.min.y + boundsYMax
-    const clipped = meshes.map(m => {
-      const pos = m.geometry.attributes.position
-      const idx = m.geometry.index
-      const outPos: number[] = []
-      const outIdx: number[] = []
-      const remap = new Int32Array(pos.count).fill(-1)
-      const triCount = idx ? idx.count / 3 : pos.count / 3
-      for (let t = 0; t < triCount; t++) {
-        const ia = idx ? idx.getX(t * 3)     : t * 3
-        const ib = idx ? idx.getX(t * 3 + 1) : t * 3 + 1
-        const ic = idx ? idx.getX(t * 3 + 2) : t * 3 + 2
-        // Keep triangle if any vertex is at or below yMax
-        if (pos.getY(ia) > yMax && pos.getY(ib) > yMax && pos.getY(ic) > yMax) continue
-        for (const vi of [ia, ib, ic]) {
-          if (remap[vi] === -1) {
-            remap[vi] = outPos.length / 3
-            outPos.push(pos.getX(vi), pos.getY(vi), pos.getZ(vi))
-          }
-          outIdx.push(remap[vi])
-        }
-      }
-      const g = new THREE.BufferGeometry()
-      g.setAttribute('position', new THREE.Float32BufferAttribute(outPos, 3))
-      g.setIndex(outIdx)
-      return new THREE.Mesh(g, m.material)
-    })
-
-    const result = threeToSoloNavMesh(clipped, { ...recastParams })
-    if (!result.success || !result.navMesh) {
-      throw new Error('Failed to generate navigation mesh. The scan geometry may be too noisy.')
+  async function handleSaveNavMesh(): Promise<void> {
+    if (!navMesh || !buildingId) return
+    saveState = 'saving'
+    saveError = null
+    try {
+      const data = exportNavMesh(navMesh)
+      await saveNavMesh(buildingId, data, { ...params } as unknown as Record<string, unknown>)
+      saveState = 'saved'
+    } catch (e) {
+      saveError = (e as Error).message
+      saveState = 'error'
     }
-    navMesh = result.navMesh
-
-    navQuery = new NavMeshQuery(navMesh)
-    navQuery.defaultQueryHalfExtents = { x: 2, y: 4, z: 2 }
-
-    const cx = (inputBox.min.x + inputBox.max.x) / 2
-    const cz = (inputBox.min.z + inputBox.max.z) / 2
-    const floorProbe = navQuery.findClosestPoint({ x: cx, y: inputBox.min.y + 0.5, z: cz })
-    console.log('[NavMesh] floor probe result:', floorProbe)
-
-    const helper = new NavMeshHelper(navMesh, {
-      navMeshMaterial: new THREE.MeshStandardMaterial({ color: '#00d4ff', opacity: 0.4, transparent: true, side: THREE.DoubleSide }),
-    })
-    navMeshDebugMesh = helper.mesh
-
-    const navBox = new THREE.Box3().setFromObject(helper.mesh)
-    const navPos = helper.mesh.geometry.attributes.position
-    console.log('[NavMesh] nav poly verts:', navPos.count, 'bounds (world):', navBox.min, navBox.max)
   }
 
   async function buildNavMesh(): Promise<void> {
+    if (navQuery) { navQuery.destroy(); navQuery = null }
+    if (navMesh) { navMesh.destroy(); navMesh = null }
+    navMeshDebugMesh = null
     phase = 'loading'
+    loadingMsg = 'Building navigation mesh…'
     error = null
     try {
-      await generateNavMesh()
+      const result = await buildNavMeshFromSpaces(spaces, params)
+      navMesh = result.navMesh
+      navQuery = result.navQuery
+      navMeshDebugMesh = result.debugMesh
       phase = 'pickStart'
     } catch (e) {
       error = (e as Error).message
       phase = 'error'
     }
-  }
-
-  async function loadMeshes(): Promise<THREE.Mesh[]> {
-    const loader = new GLTFLoader()
-    const meshes: THREE.Mesh[] = []
-
-    for (const [si, space] of spaces.entries()) {
-      const gltf = await loader.loadAsync(space.url)
-
-      console.log(`[NavMesh] space[${si}] gltf.scene pos:`, gltf.scene.position, 'quat:', gltf.scene.quaternion, 'transform:', space.transform)
-
-      const group = new THREE.Group()
-      if (space.transform) {
-        const { position: p, quaternion: q } = space.transform
-        group.position.set(p.x, p.y, p.z)
-        group.quaternion.set(q.x, q.y, q.z, q.w)
-      }
-      group.add(gltf.scene)
-      group.updateWorldMatrix(true, true)
-
-      const spaceBox = new THREE.Box3()
-      const beforeCount = meshes.length
-      group.traverse(obj => {
-        if ((obj as THREE.Mesh).isMesh) {
-          const src = obj as THREE.Mesh
-          const baked = src.geometry.clone().applyMatrix4(src.matrixWorld)
-          spaceBox.expandByObject(new THREE.Mesh(baked))
-          meshes.push(new THREE.Mesh(baked, src.material))
-        }
-      })
-      console.log(`[NavMesh] space[${si}] bounds:`, spaceBox.min, spaceBox.max, `(${meshes.length - beforeCount} meshes)`)
-    }
-
-    return meshes
   }
 
   async function loadExistingNavMesh(): Promise<void> {
@@ -207,23 +102,15 @@
       const res = await fetch(existingNavMesh.url)
       if (!res.ok) throw new Error(`Failed to fetch navmesh: ${res.status}`)
       const buffer = await res.arrayBuffer()
-      const result = importNavMesh(new Uint8Array(buffer))
-      if (!result.navMesh) throw new Error('Failed to import navmesh')
+      const result = await loadNavMeshFromBuffer(new Uint8Array(buffer))
       navMesh = result.navMesh
+      navQuery = result.navQuery
+      navMeshDebugMesh = result.debugMesh
 
-      // Restore build settings
       const bs = existingNavMesh.buildSettings
       for (const key of Object.keys(params) as (keyof typeof params)[]) {
         if (key in bs && typeof bs[key] === 'number') (params as Record<string, number>)[key] = bs[key] as number
       }
-
-      navQuery = new NavMeshQuery(navMesh)
-      navQuery.defaultQueryHalfExtents = { x: 2, y: 4, z: 2 }
-
-      const helper = new NavMeshHelper(navMesh, {
-        navMeshMaterial: new THREE.MeshStandardMaterial({ color: '#00d4ff', opacity: 0.4, transparent: true, side: THREE.DoubleSide }),
-      })
-      navMeshDebugMesh = helper.mesh
 
       phase = 'pickStart'
     } catch (e) {
@@ -233,7 +120,6 @@
   }
 
   onMount(async () => {
-    await initRecast()
     if (existingNavMesh) {
       await loadExistingNavMesh()
     } else {
@@ -247,41 +133,21 @@
       phase = 'pickEnd'
     } else if (phase === 'pickEnd') {
       endPos = pos
-      computePath()
+      doComputePath()
     }
   }
 
-  function computePath(): void {
+  function doComputePath(): void {
     if (!navQuery || !startPos || !endPos) return
-
-    const { point: snappedStart, success: startOk } = navQuery.findClosestPoint(startPos)
-    const { point: snappedEnd,   success: endOk   } = navQuery.findClosestPoint(endPos)
-
-    if (!startOk || !endOk) {
-      error = 'One or both points are too far from any walkable surface. Try clicking closer to the floor.'
+    try {
+      const result = computePath(navQuery, startPos, endPos)
+      pathGeometry = result.geometry
+      pathLength = result.length
+      phase = 'result'
+    } catch (e) {
+      error = (e as Error).message
       phase = 'error'
-      return
     }
-
-    const { path } = navQuery.computePath(snappedStart, snappedEnd)
-
-    if (path.length < 2) {
-      error = 'No path found — the two points may be in disconnected areas.'
-      phase = 'error'
-      return
-    }
-
-    const elevated = path.map(p => new THREE.Vector3(p.x, p.y + 0.05, p.z))
-    const curve = new THREE.CatmullRomCurve3(elevated)
-    pathGeometry = new THREE.TubeGeometry(curve, elevated.length * 4, 0.04, 8, false)
-
-    pathLength = path.reduce((acc, pt, i) => {
-      if (i === 0) return 0
-      const prev = path[i - 1]
-      return acc + Math.hypot(pt.x - prev.x, pt.z - prev.z)
-    }, 0)
-
-    phase = 'result'
   }
 
   function reset(): void {
@@ -294,12 +160,7 @@
   }
 </script>
 
-<aside>
-  <div class="header">
-    <button class="back-btn" onclick={() => onback?.()}>← Back</button>
-    <span class="logo">{buildingName}</span>
-  </div>
-
+<Sidebar title={buildingName} {onback}>
   {#if phase === 'loading'}
     <section>
       <label class="section-label">Preparing</label>
@@ -345,7 +206,6 @@
     </section>
   {/if}
 
-  <!-- Navmesh params panel -->
   <section class="params-header" onclick={() => showParams = !showParams}>
     <label class="section-label" style="cursor:pointer;flex:1">Navmesh Params</label>
     <span class="chevron" class:open={showParams}>›</span>
@@ -427,7 +287,7 @@
       {/if}
     </section>
   {/if}
-</aside>
+</Sidebar>
 
 <div class="canvas-wrap">
   <Canvas>
@@ -438,72 +298,16 @@
       {pathGeometry}
       {pickingEnabled}
       navMeshMesh={showNavMesh ? navMeshDebugMesh : null}
-      {recastInputDebug}
       onplace={handlePlace}
     />
   </Canvas>
 </div>
 
 <style>
-  aside {
-    width: 260px;
-    min-width: 260px;
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-  }
-
   .canvas-wrap {
     flex: 1;
     height: 100vh;
     overflow: hidden;
-  }
-
-  .header {
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  .back-btn {
-    padding: 3px 8px;
-    font-size: 11px;
-    color: var(--text-muted);
-    border-color: var(--border);
-    flex-shrink: 0;
-  }
-  .back-btn:hover { color: var(--text); }
-
-  .logo {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--accent);
-    letter-spacing: 0.02em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  section {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  .section-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-muted);
   }
 
   .hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0; }
@@ -554,9 +358,7 @@
   }
   .chevron.open { transform: rotate(90deg); }
 
-  .params-body {
-    gap: 6px;
-  }
+  .params-body { gap: 6px; }
 
   .param-row {
     display: flex;

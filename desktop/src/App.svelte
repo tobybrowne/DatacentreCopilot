@@ -1,14 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import HomeView from './lib/HomeView.svelte'
-  import AnchorView from './lib/AnchorView.svelte'
   import BuildingView from './lib/BuildingView.svelte'
   import LiveView from './lib/LiveView.svelte'
 
-  type Route = 'home' | 'anchors' | 'buildings' | 'navigate' | 'assets' | 'live'
+  type Route = 'home' | 'calibration' | 'buildings' | 'navigate' | 'assets' | 'live'
 
   function hashToRoute(hash: string): Route {
-    if (hash === '#/anchors') return 'anchors'
+    if (hash === '#/calibration') return 'calibration'
     if (hash === '#/buildings') return 'buildings'
     if (hash === '#/live') return 'live'
     return 'home'
@@ -30,8 +29,6 @@
 
 {#if route === 'home'}
   <HomeView onnavigate={(dest) => navigate(dest)} />
-{:else if route === 'anchors'}
-  <AnchorView onback={() => navigate('home')} />
 {:else if route === 'buildings'}
   <BuildingView onback={() => navigate('home')} />
 {:else if route === 'live'}
