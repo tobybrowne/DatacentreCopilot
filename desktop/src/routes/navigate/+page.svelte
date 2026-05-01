@@ -4,10 +4,10 @@
   import { fetchCompletedBuildings, fetchSpaces } from '$lib/supabase'
   import type { Building, Space } from '$lib/types'
 
-  let buildings: (Building & { spaces: Space[] })[] = []
-  let spaces: Space[] = []
-  let loading = true
-  let error: string | null = null
+  let buildings: (Building & { spaces: Space[] })[] = $state([])
+  let spaces: Space[] = $state([])
+  let loading = $state(true)
+  let error: string | null = $state(null)
 
   onMount(async () => {
     try {
@@ -23,7 +23,7 @@
 
 <div class="page">
   <div class="header">
-    <button class="back-btn" on:click={() => goto('/')}>← Back</button>
+    <button class="back-btn" onclick={() => goto('/')}>← Back</button>
     <span class="logo">Navigate</span>
   </div>
 
@@ -37,7 +37,7 @@
         <label class="section-label">Buildings</label>
         <ul class="list">
           {#each buildings as b (b.id)}
-            <li class="item" on:click={() => goto(`/navigate/${b.id}`)}>
+            <li class="item" onclick={() => goto(`/navigate/${b.id}`)}>
               <span class="name">{b.name || 'Unnamed'}</span>
               <span class="meta">{b.spaces?.length ?? 0} spaces</span>
               <span class="arrow">→</span>
@@ -50,7 +50,7 @@
         <label class="section-label">Individual spaces</label>
         <ul class="list">
           {#each spaces as s (s.id)}
-            <li class="item" on:click={() => goto(`/navigate/space/${s.id}`)}>
+            <li class="item" onclick={() => goto(`/navigate/space/${s.id}`)}>
               <span class="name">{s.name || 'Unnamed'}</span>
               <span class="meta">space</span>
               <span class="arrow">→</span>

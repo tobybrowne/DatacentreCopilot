@@ -2,10 +2,15 @@
   import '../app.css'
   import { session } from '$lib/auth'
   import Login from '$lib/Login.svelte'
+  interface Props {
+    children?: import('svelte').Snippet;
+  }
+
+  let { children }: Props = $props();
 </script>
 
 {#if $session}
-  <slot />
+  {@render children?.()}
 {:else}
   <Login />
 {/if}

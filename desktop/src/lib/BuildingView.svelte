@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount, createEventDispatcher } from 'svelte'
+
+  import { onMount } from 'svelte'
   import { fetchSpaces, fetchDraftBuildings, fetchCompletedBuildings, getSpaceGlbUrl, createDraftBuilding, updateBuildingSpaceTransform, finalizeDraftBuilding, deleteBuilding, upsertCentroidAnchor, fetchAnchors } from './supabase'
   import { computeTransform, posToV3 } from './stitching'
   import { computeCentroids } from './centroid'
@@ -9,7 +10,11 @@
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
   import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 
-  const dispatch = createEventDispatcher<{ back: void }>()
+  interface Props {
+    onback?: () => void;
+  }
+
+  let { onback }: Props = $props()
 
   type Phase = 'setup' | 'view' | 'pickSource' | 'pickTarget' | 'preview' | 'complete'
 
@@ -20,26 +25,26 @@
   }
 
   // Setup state
-  let allSpaces: Space[] = []
-  let draftBuildings: (Building & { spaces: Space[] })[] = []
-  let completedBuildings: (Building & { spaces: Space[] })[] = []
-  let buildingName = ''
-  let orderedSpaceIds: string[] = []  // user-chosen order; index 0 = reference
+  let allSpaces: Space[] = $state([])
+  let draftBuildings: (Building & { spaces: Space[] })[] = $state([])
+  let completedBuildings: (Building & { spaces: Space[] })[] = $state([])
+  let buildingName = $state('')
+  let orderedSpaceIds: string[] = $state([])  // user-chosen order; index 0 = reference
 
   // Build-up state
-  let phase: Phase = 'setup'
-  let builtSpaces: SpaceEntry[] = []   // spaces confirmed so far (index 0 is reference)
-  let currentIdx = 1                    // index into orderedSpaceIds being stitched now
+  let phase = $state<Phase>('setup')
+  let builtSpaces: SpaceEntry[] = $state([])   // spaces confirmed so far (index 0 is reference)
+  let currentIdx = $state(1)                    // index into orderedSpaceIds being stitched now
   let activeBuildingId: string | null = null
 
   // Current stitch point picking
-  let srcPoints: Position[] = []
-  let tgtPoints: Position[] = []
-  let pointPlaced = false
-  let currentTransform: RigidTransform | null = null
+  let srcPoints: Position[] = $state([])
+  let tgtPoints: Position[] = $state([])
+  let pointPlaced = $state(false)
+  let currentTransform: RigidTransform | null = $state(null)
 
-  let saving = false
-  let error: string | null = null
+  let saving = $state(false)
+  let error: string | null = $state(null)
 
   onMount(async () => {
     try {
@@ -50,26 +55,28 @@
   })
 
   // ── Derived ──
-  $: glbSpaces = allSpaces.filter(s => s.glb_path)
-  $: unselectedSpaces = glbSpaces.filter(s => !orderedSpaceIds.includes(s.id))
-  $: pickingSource = phase === 'pickSource'
-  $: pairsDone = tgtPoints.length
-  $: currentSpace = orderedSpaceIds[currentIdx] ? allSpaces.find(s => s.id === orderedSpaceIds[currentIdx]) ?? null : null
-  let currentSourceGlbUrl: string | null = null
-  $: if (currentSpace?.glb_path) {
-    getSpaceGlbUrl(currentSpace.glb_path).then(url => currentSourceGlbUrl = url).catch(() => currentSourceGlbUrl = null)
-  } else {
-    currentSourceGlbUrl = null
-  }
+  let glbSpaces = $derived(allSpaces.filter(s => s.glb_path))
+  let unselectedSpaces = $derived(glbSpaces.filter(s => !orderedSpaceIds.includes(s.id)))
+  let pickingSource = $derived(phase === 'pickSource')
+  let pairsDone = $derived(tgtPoints.length)
+  let currentSpace = $derived(orderedSpaceIds[currentIdx] ? allSpaces.find(s => s.id === orderedSpaceIds[currentIdx]) ?? null : null)
+  let currentSourceGlbUrl: string | null = $state(null)
+  $effect(() => {
+    if (currentSpace?.glb_path) {
+      getSpaceGlbUrl(currentSpace.glb_path).then(url => currentSourceGlbUrl = url).catch(() => currentSourceGlbUrl = null)
+    } else {
+      currentSourceGlbUrl = null
+    }
+  })
 
   // Only show the most recently confirmed space as the stitch target
-  $: lastBuilt = builtSpaces[builtSpaces.length - 1]
-  $: mergedSpaces = (phase === 'view' || phase === 'complete')
+  let lastBuilt = $derived(builtSpaces[builtSpaces.length - 1])
+  let mergedSpaces = $derived((phase === 'view' || phase === 'complete')
     ? builtSpaces.map(e => ({ url: e.glbUrl, transform: e.transform }))
-    : lastBuilt ? [{ url: lastBuilt.glbUrl, transform: lastBuilt.transform }] : []
+    : lastBuilt ? [{ url: lastBuilt.glbUrl, transform: lastBuilt.transform }] : [])
 
   // Scene stitchPhase: only show idle when setup/view/complete
-  $: scenePhase = (phase === 'setup' || phase === 'view' || phase === 'complete') ? 'idle' : phase as any
+  let scenePhase = $derived((phase === 'setup' || phase === 'view' || phase === 'complete') ? 'idle' : phase as any)
 
   function addSpace(spaceId: string): void {
     if (!orderedSpaceIds.includes(spaceId)) orderedSpaceIds = [...orderedSpaceIds, spaceId]
@@ -150,7 +157,8 @@
     phase = 'view'
   }
 
-  function handleMeshClick({ detail: position }: CustomEvent<Position>): void {
+  function handleMeshClick(detail: { position: Position; spaceIndex: number | null }): void {
+    const position = detail.position
     if (phase === 'pickSource' && !pointPlaced) {
       srcPoints = [...srcPoints, position]
       pointPlaced = true
@@ -234,7 +242,7 @@
       .catch(() => {})
   }
 
-  let buildingAnchors: Anchor[] = []
+  let buildingAnchors: Anchor[] = $state([])
 
   async function loadBuildingAnchors(spaces: SpaceEntry[]): Promise<void> {
     const all = await Promise.all(spaces.map(e => fetchAnchors(e.space.id)))
@@ -253,12 +261,12 @@
       })
   }
 
-  let recomputingCentroids = false
-  let voxelSize = 0.5
-  let overlapPenalty = 1
-  let pointClouds: Array<{ points: import('./types').Position[]; color: string }> = []
+  let recomputingCentroids = $state(false)
+  let voxelSize = $state(0.5)
+  let overlapPenalty = $state(1)
+  let pointClouds: Array<{ points: import('./types').Position[]; color: number }> = $state([])
 
-  const SPACE_COLORS = ['#ff6644', '#44aaff', '#44ff88', '#ffcc00', '#ff44cc', '#00ffff']
+  const SPACE_COLORS = [0xff6644, 0x44aaff, 0x44ff88, 0xffcc00, 0xff44cc, 0x00ffff]
 
   async function recomputeCentroids(): Promise<void> {
     if (recomputingCentroids || builtSpaces.length === 0) return
@@ -290,7 +298,7 @@
     }
   }
 
-  let downloading = false
+  let downloading = $state(false)
 
   async function downloadMergedGlb(): Promise<void> {
     if (downloading || builtSpaces.length === 0) return
@@ -354,7 +362,7 @@
 <!-- sidebar -->
 <aside>
   <div class="header">
-    <button class="back-btn" on:click={() => dispatch('back')}>← Back</button>
+    <button class="back-btn" onclick={() => onback?.()}>← Back</button>
     <span class="logo">Building Manager</span>
   </div>
 
@@ -373,8 +381,8 @@
                 <span class="draft-progress">{stitched}/{total} spaces</span>
               </div>
               <div class="draft-actions">
-                <button class="primary small" on:click={() => resumeBuilding(draft)}>Resume</button>
-                <button class="discard-btn" on:click={() => discardDraft(draft)}>×</button>
+                <button class="primary small" onclick={() => resumeBuilding(draft)}>Resume</button>
+                <button class="discard-btn" onclick={() => discardDraft(draft)}>×</button>
               </div>
             </li>
           {/each}
@@ -394,7 +402,7 @@
       {:else}
         <ul class="pool-list">
           {#each unselectedSpaces as s (s.id)}
-            <li class="pool-item" on:click={() => addSpace(s.id)}>
+            <li class="pool-item" onclick={() => addSpace(s.id)}>
               <span>{s.name || s.id}</span>
               <span class="add-icon">+</span>
             </li>
@@ -414,11 +422,11 @@
                 {#if i === 0}
                   <span class="ref-badge">ref</span>
                 {:else}
-                  <button class="up-btn" on:click={() => moveUp(i)} disabled={i === 1}>↑</button>
+                  <button class="up-btn" onclick={() => moveUp(i)} disabled={i === 1}>↑</button>
                 {/if}
                 <span class="order-name">{s?.name || id}</span>
               </div>
-              <button class="remove-btn" on:click={() => removeSpace(id)}>×</button>
+              <button class="remove-btn" onclick={() => removeSpace(id)}>×</button>
             </li>
           {/each}
         </ul>
@@ -431,9 +439,9 @@
         <ul class="pool-list">
           {#each completedBuildings as b (b.id)}
             <li class="pool-item">
-              <span class="building-name" on:click={() => viewBuilding(b)}>{b.name || 'Unnamed'}</span>
+              <span class="building-name" onclick={() => viewBuilding(b)}>{b.name || 'Unnamed'}</span>
               <span class="space-count">{b.spaces?.length ?? 0}</span>
-              <button class="discard-btn" on:click|stopPropagation={() => deleteCompletedBuilding(b)}>×</button>
+              <button class="discard-btn" onclick={(e) => { e.stopPropagation(); deleteCompletedBuilding(b) }}>×</button>
             </li>
           {/each}
         </ul>
@@ -444,7 +452,7 @@
       <button
         class="primary" style="width:100%"
         disabled={!buildingName.trim() || orderedSpaceIds.length < 2}
-        on:click={startBuilding}
+        onclick={startBuilding}
       >
         Start stitching →
       </button>
@@ -468,7 +476,7 @@
       </ul>
     </section>
     <section>
-      <button class="primary" style="width:100%" on:click={downloadMergedGlb} disabled={downloading}>
+      <button class="primary" style="width:100%" onclick={downloadMergedGlb} disabled={downloading}>
         {downloading ? 'Exporting…' : '↓ Download GLB'}
       </button>
       <label class="section-label" style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
@@ -479,10 +487,10 @@
         Overlap penalty:
         <input type="number" min="0" step="0.5" bind:value={overlapPenalty} style="width:70px" />
       </label>
-      <button style="width:100%" on:click={recomputeCentroids} disabled={recomputingCentroids}>
+      <button style="width:100%" onclick={recomputeCentroids} disabled={recomputingCentroids}>
         {recomputingCentroids ? 'Computing…' : '⟳ Recompute centroids'}
       </button>
-      <button style="width:100%" on:click={resetBuilding}>← Back</button>
+      <button style="width:100%" onclick={resetBuilding}>← Back</button>
     </section>
 
   <!-- ── Picking ── -->
@@ -498,8 +506,8 @@
       <label class="section-label">Pairs</label>
       <div class="pairs-grid">
         {#each [0, 1, 2] as i}
-          <span class="pair-dot src" class:filled={i < srcPoints.length} />
-          <span class="pair-dot tgt" class:filled={i < tgtPoints.length} />
+          <span class="pair-dot src" class:filled={i < srcPoints.length}></span>
+          <span class="pair-dot tgt" class:filled={i < tgtPoints.length}></span>
         {/each}
       </div>
     </section>
@@ -511,7 +519,7 @@
             {pickingSource ? 'new scan' : 'merged model'}
           </strong> placed.
         </p>
-        <button class="primary" style="width:100%" on:click={continueStitch}>Continue →</button>
+        <button class="primary" style="width:100%" onclick={continueStitch}>Continue →</button>
       {:else}
         <p class="hint">
           Pair {pairsDone + 1}/3 — double-click a point on the
@@ -523,8 +531,8 @@
     </section>
 
     <section class="row-section">
-      <button on:click={undoStitch} disabled={srcPoints.length === 0 && tgtPoints.length === 0}>Undo</button>
-      <button on:click={resetBuilding}>Cancel</button>
+      <button onclick={undoStitch} disabled={srcPoints.length === 0 && tgtPoints.length === 0}>Undo</button>
+      <button onclick={resetBuilding}>Cancel</button>
     </section>
 
   <!-- ── Preview ── -->
@@ -535,8 +543,8 @@
     </section>
 
     <section class="row-section">
-      <button on:click={() => { phase = 'pickSource'; srcPoints = []; tgtPoints = []; pointPlaced = false; currentTransform = null }}>Redo</button>
-      <button class="primary" on:click={confirmStitch}>
+      <button onclick={() => { phase = 'pickSource'; srcPoints = []; tgtPoints = []; pointPlaced = false; currentTransform = null }}>Redo</button>
+      <button class="primary" onclick={confirmStitch}>
         {currentIdx < orderedSpaceIds.length - 1 ? 'Next scan →' : 'Finish →'}
       </button>
     </section>
@@ -549,13 +557,13 @@
     </section>
 
     <section>
-      <button class="primary" style="width:100%" on:click={downloadMergedGlb} disabled={downloading}>
+      <button class="primary" style="width:100%" onclick={downloadMergedGlb} disabled={downloading}>
         {downloading ? 'Exporting…' : '↓ Download GLB'}
       </button>
     </section>
     <section class="row-section">
-      <button on:click={resetBuilding}>Reset</button>
-      <button class="primary" on:click={saveBuilding} disabled={saving}>
+      <button onclick={resetBuilding}>Reset</button>
+      <button class="primary" onclick={saveBuilding} disabled={saving}>
         {saving ? 'Saving…' : 'Save building'}
       </button>
     </section>
@@ -571,11 +579,11 @@
   stitchSourcePoints={srcPoints}
   stitchTargetPoints={tgtPoints}
   stitchTransform={currentTransform}
-  on:place={handleMeshClick}
+  onplace={handleMeshClick}
 />
 
 {#if error}
-  <div class="error-toast" on:click={() => error = null}>{error}</div>
+  <div class="error-toast" onclick={() => error = null}>{error}</div>
 {/if}
 
 <style>
@@ -593,8 +601,9 @@
     padding: 14px 16px;
     border-bottom: 1px solid var(--border);
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
     flex-shrink: 0;
   }
 

@@ -1,34 +1,43 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte'
   import { session, signOut } from './auth'
-  const dispatch = createEventDispatcher<{ navigate: 'anchors' | 'buildings' | 'navigate' | 'assets' }>()
+
+  interface Props {
+    onnavigate?: (value: 'anchors' | 'buildings' | 'navigate' | 'assets' | 'live') => void;
+  }
+
+  let { onnavigate }: Props = $props()
 </script>
 
 <div class="home">
-  <button class="sign-out" on:click={signOut}>Sign out</button>
+  <button class="sign-out" onclick={signOut}>Sign out</button>
   <div class="center">
-    <h1 class="logo">Entangl Desktop</h1>
+    <img src="/entangl-cyan.svg" alt="Entangl" class="logo" />
     <p class="subtitle">What would you like to do?</p>
     <div class="cards">
-      <button class="card" on:click={() => dispatch('navigate', 'anchors')}>
+      <button class="card" onclick={() => onnavigate?.('anchors')}>
         <span class="card-icon">⬡</span>
         <span class="card-title">Anchor Placement</span>
         <span class="card-desc">View spaces and map reference anchors to your 3D scans</span>
       </button>
-      <button class="card" on:click={() => dispatch('navigate', 'buildings')}>
+      <button class="card" onclick={() => onnavigate?.('buildings')}>
         <span class="card-icon">⬢</span>
         <span class="card-title">Building Manager</span>
         <span class="card-desc">Stitch multiple room scans together into a single building</span>
       </button>
-      <button class="card" on:click={() => dispatch('navigate', 'navigate')}>
+      <button class="card" onclick={() => onnavigate?.('navigate')}>
         <span class="card-icon">⟐</span>
         <span class="card-title">Navigate</span>
         <span class="card-desc">Find routes between points in a stitched building</span>
       </button>
-      <button class="card" on:click={() => dispatch('navigate', 'assets')}>
+      <button class="card" onclick={() => onnavigate?.('assets')}>
         <span class="card-icon">◈</span>
         <span class="card-title">Asset Manager</span>
         <span class="card-desc">Manage assets and map them to locations in your buildings</span>
+      </button>
+      <button class="card" onclick={() => onnavigate?.('live')}>
+        <span class="card-icon">◎</span>
+        <span class="card-title">Live View</span>
+        <span class="card-desc">Monitor real-time user position within a space</span>
       </button>
     </div>
   </div>
@@ -71,10 +80,8 @@
   }
 
   .logo {
-    font-size: 28px;
-    font-weight: 700;
-    color: var(--accent);
-    letter-spacing: 0.02em;
+    height: 64px;
+    width: auto;
   }
 
   .subtitle {

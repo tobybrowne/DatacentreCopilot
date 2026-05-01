@@ -3,4 +3,4 @@
   import AnchorView from '$lib/AnchorView.svelte'
 </script>
 
-<AnchorView on:back={() => goto('/')} />
+<AnchorView onback={() => goto('/')} />

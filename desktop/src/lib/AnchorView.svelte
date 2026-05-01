@@ -1,39 +1,32 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte'
-  import { fetchAnchors, insertAnchor, deleteAnchor, setGlbPosition, fetchUserPosition, subscribeUserPosition, fetchSpaces, getSpaceGlbUrl } from './supabase'
+  import { onMount } from 'svelte'
+  import { fetchAnchors, insertAnchor, deleteAnchor, setGlbPosition, fetchSpaces, getSpaceGlbUrl } from './supabase'
   import Scene from './Scene.svelte'
   import Sidebar from './Sidebar.svelte'
   import type { Anchor, Position, Space } from './types'
-  import { createEventDispatcher } from 'svelte'
 
-  const dispatch = createEventDispatcher<{ back: void }>()
+  interface Props {
+    onback?: () => void;
+  }
 
-  const DEMO_USER_ID = '00000000-0000-0000-0000-000000000000'
+  let { onback }: Props = $props()
 
-  let glbUrl: string | null = null
-  let anchors: Anchor[] = []
-  let selectedId: string | null = null
-  let pendingPosition: Position | null = null
-  let mappingAnchor: Anchor | null = null
-  let newAnchorName = ''
-  let saving = false
-  let error: string | null = null
+  let glbUrl: string | null = $state(null)
+  let anchors: Anchor[] = $state([])
+  let selectedId: string | null = $state(null)
+  let pendingPosition: Position | null = $state(null)
+  let mappingAnchor: Anchor | null = $state(null)
+  let newAnchorName = $state('')
+  let saving = $state(false)
+  let error: string | null = $state(null)
 
-  let monitoring = false
-  let userPosition: Position | null = null
-  let unsubscribeUser: (() => void) | null = null
+  let spaces: Space[] = $state([])
+  let selectedSpaceId: string | null = $state(null)
 
-  let spaces: Space[] = []
-  let selectedSpaceId: string | null = null
-
-  $: unmappedRefs = anchors.filter(a => a.is_reference && !a.glb_position)
+  let unmappedRefs = $derived(anchors.filter(a => a.anchor_type === 'reference' && !a.glb_position))
 
   onMount(async () => {
     await Promise.all([refresh(), loadSpaces()])
-  })
-
-  onDestroy(() => {
-    if (unsubscribeUser) unsubscribeUser()
   })
 
   async function refresh(): Promise<void> {
@@ -63,23 +56,7 @@
     }
   }
 
-  async function startMonitoring(): Promise<void> {
-    monitoring = true
-    try {
-      userPosition = await fetchUserPosition(DEMO_USER_ID)
-    } catch (e) {
-      error = (e as Error).message
-    }
-    unsubscribeUser = subscribeUserPosition(DEMO_USER_ID, (pos) => { userPosition = pos })
-  }
-
-  function stopMonitoring(): void {
-    monitoring = false
-    userPosition = null
-    if (unsubscribeUser) { unsubscribeUser(); unsubscribeUser = null }
-  }
-
-  function handleMeshClick({ detail }: CustomEvent<{ position: Position; spaceIndex: number | null }>): void {
+  function handleMeshClick(detail: { position: Position; spaceIndex: number | null }): void {
     const position = detail.position
     if (mappingAnchor) {
       confirmMapping(position)
@@ -117,11 +94,11 @@
     }
   }
 
-  async function handleDelete(e: CustomEvent<string>): Promise<void> {
+  async function handleDelete(id: string): Promise<void> {
     try {
-      await deleteAnchor(e.detail)
-      if (selectedId === e.detail) selectedId = null
-      if (mappingAnchor?.id === e.detail) mappingAnchor = null
+      await deleteAnchor(id)
+      if (selectedId === id) selectedId = null
+      if (mappingAnchor?.id === id) mappingAnchor = null
       await refresh()
     } catch (e) {
       error = (e as Error).message
@@ -139,22 +116,20 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 <Sidebar
   {anchors}
   {selectedId}
   {mappingAnchor}
-  {monitoring}
   {spaces}
   {selectedSpaceId}
-  on:back={() => dispatch('back')}
-  on:selectspace={(e) => selectSpace(e.detail)}
-  on:select={(e) => selectedId = e.detail}
-  on:delete={handleDelete}
-  on:startmapping={(e) => { mappingAnchor = e.detail; selectedId = e.detail.id }}
-  on:cancelmapping={cancel}
-  on:togglemonitor={() => monitoring ? stopMonitoring() : startMonitoring()}
+  onback={() => onback?.()}
+  onselectspace={(space) => selectSpace(space)}
+  onselect={(id) => selectedId = id}
+  ondelete={handleDelete}
+  onstartmapping={(anchor) => { mappingAnchor = anchor; selectedId = anchor.id }}
+  oncancelmapping={cancel}
 />
 
 <Scene
@@ -163,16 +138,15 @@
   {selectedId}
   {pendingPosition}
   {mappingAnchor}
-  {userPosition}
-  on:place={handleMeshClick}
-  on:select={(e) => selectedId = e.detail}
+  onplace={handleMeshClick}
+  onselect={(id) => selectedId = id}
 />
 
 {#if mappingAnchor}
   <div class="mapping-banner">
-    <span class="dot" />
+    <span class="dot"></span>
     Click the mesh to map: <strong>{mappingAnchor.name || 'Unnamed'}</strong>
-    <button on:click={cancel}>Cancel</button>
+    <button onclick={cancel}>Cancel</button>
   </div>
 {/if}
 
@@ -183,8 +157,8 @@
 {/if}
 
 {#if pendingPosition}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <div class="overlay" on:click|self={cancel}>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="overlay" onclick={(e) => { if (e.target === e.currentTarget) cancel() }}>
     <div class="dialog">
       <h3>Place content anchor</h3>
       <p class="coords">
@@ -194,8 +168,8 @@
       </p>
       <input type="text" bind:value={newAnchorName} placeholder="Anchor name (optional)" autofocus />
       <div class="dialog-actions">
-        <button on:click={cancel}>Cancel</button>
-        <button class="primary" on:click={confirmPlacement} disabled={saving || !selectedSpaceId}>
+        <button onclick={cancel}>Cancel</button>
+        <button class="primary" onclick={confirmPlacement} disabled={saving || !selectedSpaceId}>
           {saving ? 'Saving…' : 'Place'}
         </button>
         {#if !selectedSpaceId}<p class="warn">Select a space first</p>{/if}
@@ -205,7 +179,7 @@
 {/if}
 
 {#if error}
-  <div class="error-toast" on:click={() => error = null}>{error}</div>
+  <div class="error-toast" onclick={() => error = null}>{error}</div>
 {/if}
 
 <style>

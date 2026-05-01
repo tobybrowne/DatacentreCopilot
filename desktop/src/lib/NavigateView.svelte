@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, createEventDispatcher } from 'svelte'
+  import { onMount } from 'svelte'
   import { Canvas } from '@threlte/core'
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
   import * as THREE from 'three'
@@ -9,30 +9,39 @@
   import type { Position, RigidTransform } from './types'
   import { saveNavMesh } from './supabase'
 
-  export let buildingId: string | null = null
-  export let buildingName: string
-  export let spaces: Array<{ url: string; transform: RigidTransform | null }>
-  export let existingNavMesh: { url: string; buildSettings: Record<string, unknown> } | null = null
+  interface Props {
+    buildingId?: string | null;
+    buildingName: string;
+    spaces: Array<{ url: string; transform: RigidTransform | null }>;
+    existingNavMesh?: { url: string; buildSettings: Record<string, unknown> } | null;
+    onback?: () => void;
+  }
 
-  const dispatch = createEventDispatcher<{ back: void }>()
+  let {
+    buildingId = null,
+    buildingName,
+    spaces,
+    existingNavMesh = null,
+    onback
+  }: Props = $props();
 
   type Phase = 'loading' | 'pickStart' | 'pickEnd' | 'result' | 'error'
-  let phase: Phase = 'loading'
-  let loadingMsg = 'Loading models…'
-  let error: string | null = null
+  let phase = $state<Phase>('loading')
+  let loadingMsg = $state('Loading models…')
+  let error: string | null = $state(null)
 
-  let navMesh: NavMesh | null = null
+  let navMesh: NavMesh | null = $state(null)
   let navQuery: NavMeshQuery | null = null
-  let navMeshDebugMesh: THREE.Mesh | null = null
-  let recastInputDebug: THREE.Group | null = null
-  let startPos: Position | null = null
-  let endPos: Position | null = null
-  let pathGeometry: THREE.TubeGeometry | null = null
-  let pathLength = 0
-  let showNavMesh = true
-  let showParams = true
-  let saveState: 'idle' | 'saving' | 'saved' | 'error' = 'idle'
-  let saveError: string | null = null
+  let navMeshDebugMesh: THREE.Mesh | null = $state(null)
+  let recastInputDebug: THREE.Group | null = $state(null)
+  let startPos: Position | null = $state(null)
+  let endPos: Position | null = $state(null)
+  let pathGeometry: THREE.TubeGeometry | null = $state(null)
+  let pathLength = $state(0)
+  let showNavMesh = $state(true)
+  let showParams = $state(true)
+  let saveState: 'idle' | 'saving' | 'saved' | 'error' = $state('idle')
+  let saveError: string | null = $state(null)
 
   async function handleSaveNavMesh(): Promise<void> {
     if (!navMesh || !buildingId) return
@@ -49,7 +58,7 @@
   }
 
   // Navmesh generation parameters — all editable before building
-  let params = {
+  let params = $state({
     boundsYMax: 3,  // metres above detected floor — excludes roof geometry above this height
     cs: 0.1,
     ch: 0.1,
@@ -64,9 +73,9 @@
     maxVertsPerPoly: 6,
     detailSampleDist: 6,
     detailSampleMaxError: 1,
-  }
+  })
 
-  $: pickingEnabled = phase === 'pickStart' || phase === 'pickEnd'
+  let pickingEnabled = $derived(phase === 'pickStart' || phase === 'pickEnd')
 
   async function generateNavMesh(): Promise<void> {
     // Tear down any previous navmesh resources before rebuilding
@@ -232,7 +241,7 @@
     }
   })
 
-  function handlePlace({ detail: pos }: CustomEvent<Position>): void {
+  function handlePlace(pos: Position): void {
     if (phase === 'pickStart') {
       startPos = pos
       phase = 'pickEnd'
@@ -287,7 +296,7 @@
 
 <aside>
   <div class="header">
-    <button class="back-btn" on:click={() => dispatch('back')}>← Back</button>
+    <button class="back-btn" onclick={() => onback?.()}>← Back</button>
     <span class="logo">{buildingName}</span>
   </div>
 
@@ -295,7 +304,7 @@
     <section>
       <label class="section-label">Preparing</label>
       <p class="hint">{loadingMsg}</p>
-      <div class="spinner" />
+      <div class="spinner"></div>
     </section>
 
   {:else if phase === 'pickStart'}
@@ -316,7 +325,7 @@
       <p class="hint">Now click your <strong class="red">destination</strong>.</p>
     </section>
     <section>
-      <button style="width:100%" on:click={reset}>Reset</button>
+      <button style="width:100%" onclick={reset}>Reset</button>
     </section>
 
   {:else if phase === 'result'}
@@ -325,19 +334,19 @@
       <p class="distance">{pathLength.toFixed(1)}<span class="unit">m</span></p>
     </section>
     <section>
-      <button class="primary" style="width:100%" on:click={reset}>New route</button>
+      <button class="primary" style="width:100%" onclick={reset}>New route</button>
     </section>
 
   {:else if phase === 'error'}
     <section>
       <label class="section-label">Error</label>
       <p class="hint danger">{error}</p>
-      <button style="width:100%" on:click={reset}>Try again</button>
+      <button style="width:100%" onclick={reset}>Try again</button>
     </section>
   {/if}
 
   <!-- Navmesh params panel -->
-  <section class="params-header" on:click={() => showParams = !showParams}>
+  <section class="params-header" onclick={() => showParams = !showParams}>
     <label class="section-label" style="cursor:pointer;flex:1">Navmesh Params</label>
     <span class="chevron" class:open={showParams}>›</span>
   </section>
@@ -399,7 +408,7 @@
         <label>Detail sample max err<span class="param-hint">world units</span></label>
         <input type="number" step="0.1" min="0" bind:value={params.detailSampleMaxError} />
       </div>
-      <button class="primary" style="width:100%;margin-top:4px" on:click={buildNavMesh}>Rebuild</button>
+      <button class="primary" style="width:100%;margin-top:4px" onclick={buildNavMesh}>Rebuild</button>
     </section>
   {/if}
 
@@ -409,7 +418,7 @@
         class="primary"
         style="width:100%"
         disabled={saveState === 'saving'}
-        on:click={handleSaveNavMesh}
+        onclick={handleSaveNavMesh}
       >
         {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved ✓' : 'Save navmesh'}
       </button>
@@ -430,7 +439,7 @@
       {pickingEnabled}
       navMeshMesh={showNavMesh ? navMeshDebugMesh : null}
       {recastInputDebug}
-      on:place={handlePlace}
+      onplace={handlePlace}
     />
   </Canvas>
 </div>
@@ -456,8 +465,9 @@
     padding: 14px 16px;
     border-bottom: 1px solid var(--border);
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
     flex-shrink: 0;
   }
 

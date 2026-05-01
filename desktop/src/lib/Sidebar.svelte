@@ -1,32 +1,42 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte'
   import type { Anchor, Space } from './types'
 
-  export let anchors: Anchor[] = []
-  export let selectedId: string | null = null
-  export let mappingAnchor: Anchor | null = null
-  export let monitoring = false
-  export let spaces: Space[] = []
-  export let selectedSpaceId: string | null = null
+  interface Props {
+    anchors?: Anchor[];
+    selectedId?: string | null;
+    mappingAnchor?: Anchor | null;
+    spaces?: Space[];
+    selectedSpaceId?: string | null;
+    onback?: () => void;
+    onselectspace?: (space: Space) => void;
+    onselect?: (id: string) => void;
+    ondelete?: (id: string) => void;
+    onstartmapping?: (anchor: Anchor) => void;
+    oncancelmapping?: () => void;
+  }
 
-  const dispatch = createEventDispatcher<{
-    back: void
-    selectspace: Space
-    select: string
-    delete: string
-    startmapping: Anchor
-    cancelmapping: void
-    togglemonitor: void
-  }>()
+  let {
+    anchors = [],
+    selectedId = null,
+    mappingAnchor = null,
+    spaces = [],
+    selectedSpaceId = null,
+    onback,
+    onselectspace,
+    onselect,
+    ondelete,
+    onstartmapping,
+    oncancelmapping,
+  }: Props = $props();
 
-  $: unmappedRefs = anchors.filter(a => a.anchor_type === 'reference' && !a.glb_position)
-  $: mappedRefs   = anchors.filter(a => a.anchor_type === 'reference' && a.glb_position)
-  $: content      = anchors.filter(a => a.anchor_type !== 'reference')
+  let unmappedRefs = $derived(anchors.filter(a => a.anchor_type === 'reference' && !a.glb_position))
+  let mappedRefs   = $derived(anchors.filter(a => a.anchor_type === 'reference' && a.glb_position))
+  let content      = $derived(anchors.filter(a => a.anchor_type !== 'reference'))
 </script>
 
 <aside>
   <div class="header">
-    <button class="back-btn" on:click={() => dispatch('back')}>← Back</button>
+    <button class="back-btn" onclick={() => onback?.()}>← Back</button>
     <span class="logo">Anchor Placement</span>
   </div>
 
@@ -45,7 +55,7 @@
             class="space-item"
             class:selected={space.id === selectedSpaceId}
             class:no-glb={!space.glb_path}
-            on:click={() => space.glb_path && dispatch('selectspace', space)}
+            onclick={() => space.glb_path && onselectspace?.(space)}
             title={space.glb_path ? space.name : `${space.name} — no GLB exported yet`}
           >
             <span class="space-name">{space.name || space.id}</span>
@@ -58,18 +68,6 @@
         {/each}
       </ul>
     {/if}
-  </section>
-
-  <!-- Monitor mode -->
-  <section>
-    <label class="section-label">Monitoring</label>
-    <button
-      class="monitor-btn {monitoring ? 'active' : ''}"
-      on:click={() => dispatch('togglemonitor')}
-    >
-      <span class="dot" class:live={monitoring} />
-      {monitoring ? 'Stop monitoring' : 'Start monitoring'}
-    </button>
   </section>
 
   <!-- Unmapped reference anchors -->
@@ -85,9 +83,9 @@
           <li class:mapping={mappingAnchor?.id === anchor.id}>
             <span class="anchor-name">{anchor.name || 'Unnamed'}</span>
             {#if mappingAnchor?.id === anchor.id}
-              <button class="map-btn active" on:click={() => dispatch('cancelmapping')}>Cancel</button>
+              <button class="map-btn active" onclick={() => oncancelmapping?.()}>Cancel</button>
             {:else}
-              <button class="map-btn" on:click={() => dispatch('startmapping', anchor)}>Map</button>
+              <button class="map-btn" onclick={() => onstartmapping?.(anchor)}>Map</button>
             {/if}
           </li>
         {/each}
@@ -108,20 +106,22 @@
         {#each mappedRefs as anchor (anchor.id)}
           <li
             class:selected={anchor.id === selectedId}
-            on:click={() => dispatch('select', anchor.id)}
+            onclick={() => onselect?.(anchor.id)}
           >
             <div class="anchor-row">
               <span class="anchor-name">{anchor.name || 'Unnamed'}</span>
               <span class="tag ref">ref</span>
             </div>
+            {#if anchor.glb_position}
             <span class="coords">
               {anchor.glb_position.x.toFixed(2)},
               {anchor.glb_position.y.toFixed(2)},
               {anchor.glb_position.z.toFixed(2)}
             </span>
+            {/if}
             <button
               class="delete-btn danger"
-              on:click|stopPropagation={() => dispatch('delete', anchor.id)}
+              onclick={(e) => { e.stopPropagation(); ondelete?.(anchor.id) }}
             >✕</button>
           </li>
         {/each}
@@ -143,7 +143,7 @@
           <li
             class:selected={anchor.id === selectedId}
             class:no-position={!anchor.glb_position}
-            on:click={() => dispatch('select', anchor.id)}
+            onclick={() => onselect?.(anchor.id)}
           >
             <div class="anchor-row">
               <span class="anchor-name">{anchor.name || 'Unnamed'}</span>
@@ -160,7 +160,7 @@
             {/if}
             <button
               class="delete-btn danger"
-              on:click|stopPropagation={() => dispatch('delete', anchor.id)}
+              onclick={(e) => { e.stopPropagation(); ondelete?.(anchor.id) }}
             >✕</button>
           </li>
         {/each}
@@ -184,8 +184,9 @@
     padding: 14px 16px;
     border-bottom: 1px solid var(--border);
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
   }
 
   .back-btn {
@@ -341,36 +342,4 @@
     font-style: italic;
   }
 
-  .monitor-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    font-size: 12px;
-    cursor: pointer;
-    transition: border-color 0.15s, color 0.15s, background 0.15s;
-    width: 100%;
-  }
-  .monitor-btn:hover { border-color: var(--accent); color: var(--accent); }
-  .monitor-btn.active { border-color: #ff4dff; color: #ff4dff; background: #ff4dff11; }
-
-  .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    flex-shrink: 0;
-  }
-  .dot.live {
-    background: #ff4dff;
-    animation: pulse 1s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
 </style>

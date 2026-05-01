@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount, createEventDispatcher } from 'svelte'
+
+  import { onMount } from 'svelte'
   import {
     fetchCompletedBuildings,
     fetchAssetsWithAnchors,
@@ -14,7 +15,11 @@
   import Scene from './Scene.svelte'
   import type { AssetWithAnchor, Building, Position, RigidTransform, Space } from './types'
 
-  const dispatch = createEventDispatcher<{ back: void }>()
+  interface Props {
+    onback?: () => void;
+  }
+
+  let { onback }: Props = $props()
 
   const ASSET_TYPES = [
     'humidifier', 'ats', 'ups', 'pdu', 'generator', 'sts', 'switchgear',
@@ -41,28 +46,28 @@
 
   type Phase = 'buildings' | 'assets'
 
-  let phase: Phase = 'buildings'
-  let buildings: (Building & { spaces: Space[] })[] = []
-  let selectedBuilding: (Building & { spaces: Space[] }) | null = null
-  let assets: AssetWithAnchor[] = []
-  let mergedSpaces: { url: string; transform: RigidTransform | null }[] = []
+  let phase: Phase = $state('buildings')
+  let buildings: (Building & { spaces: Space[] })[] = $state([])
+  let selectedBuilding: (Building & { spaces: Space[] }) | null = $state(null)
+  let assets: AssetWithAnchor[] = $state([])
+  let mergedSpaces: { url: string; transform: RigidTransform | null }[] = $state([])
 
-  let selectedAssetId: string | null = null
-  let placingAsset: AssetWithAnchor | null = null
+  let selectedAssetId: string | null = $state(null)
+  let placingAsset: AssetWithAnchor | null = $state(null)
   let buildingSpaces: Space[] = []
 
-  let showNewDialog = false
-  let newName = ''
-  let newType = 'other'
-  let saving = false
-  let error: string | null = null
-  let loadingBuilding = false
+  let showNewDialog = $state(false)
+  let newName = $state('')
+  let newType = $state('other')
+  let saving = $state(false)
+  let error: string | null = $state(null)
+  let loadingBuilding = $state(false)
 
-  $: mergedSpacesClickable = !!placingAsset
-  $: sceneAnchors = assets.filter(a => a.anchor?.glb_position).map(a => a.anchor!)
-  $: selectedAnchorId = selectedAssetId
+  let mergedSpacesClickable = $derived(!!placingAsset)
+  let sceneAnchors = $derived(assets.filter(a => a.anchor?.glb_position).map(a => a.anchor!))
+  let selectedAnchorId = $derived(selectedAssetId
     ? (assets.find(a => a.id === selectedAssetId)?.anchor?.id ?? null)
-    : null
+    : null)
 
   onMount(async () => {
     try {
@@ -129,7 +134,7 @@
     }
   }
 
-  async function handlePlace({ detail }: CustomEvent<{ position: Position; spaceIndex: number | null }>): Promise<void> {
+  async function handlePlace(detail: { position: Position; spaceIndex: number | null }): Promise<void> {
     if (!placingAsset || saving) return
     saving = true
     try {
@@ -174,7 +179,7 @@
       placingAsset = null
       selectedAssetId = null
     } else {
-      dispatch('back')
+      onback?.()
     }
   }
 
@@ -186,29 +191,31 @@
   }
 </script>
 
-<svelte:window on:keydown={handleKeydown} />
+<svelte:window onkeydown={handleKeydown} />
 
 {#if phase === 'buildings'}
-  <div class="building-picker">
-    <div class="picker-header">
-      <button class="back-btn" on:click={() => dispatch('back')}>← Back</button>
-      <h1 class="picker-title">Asset Manager</h1>
-    </div>
-    <p class="picker-sub">Select a building to manage assets</p>
-    {#if loadingBuilding}
-      <p class="loading">Loading…</p>
-    {:else if buildings.length === 0}
-      <p class="empty">No completed buildings found.</p>
-    {:else}
-      <div class="building-list">
-        {#each buildings as b (b.id)}
-          <button class="building-card" on:click={() => selectBuilding(b)}>
-            <span class="building-name">{b.name ?? 'Unnamed Building'}</span>
-            <span class="building-meta">{b.spaces.length} space{b.spaces.length !== 1 ? 's' : ''}</span>
-          </button>
-        {/each}
+  <div class="asset-view">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <button class="back-btn" onclick={() => onback?.()}>← Back</button>
+        <span class="sidebar-title">Asset Manager</span>
       </div>
-    {/if}
+      <div class="asset-list">
+        {#if loadingBuilding}
+          <p class="empty-msg">Loading…</p>
+        {:else if buildings.length === 0}
+          <p class="empty-msg">No completed buildings found.</p>
+        {:else}
+          {#each buildings as b (b.id)}
+            <button class="building-card" onclick={() => selectBuilding(b)}>
+              <span class="building-name">{b.name ?? 'Unnamed Building'}</span>
+              <span class="building-meta">{b.spaces.length} space{b.spaces.length !== 1 ? 's' : ''}</span>
+            </button>
+          {/each}
+        {/if}
+      </div>
+    </aside>
+    <div class="scene-wrap empty-scene"></div>
   </div>
 
 {:else}
@@ -216,12 +223,12 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="sidebar-header">
-        <button class="back-btn" on:click={goBack}>← Back</button>
+        <button class="back-btn" onclick={goBack}>← Back</button>
         <span class="sidebar-title">{selectedBuilding?.name ?? 'Assets'}</span>
       </div>
 
       <div class="sidebar-actions">
-        <button class="primary new-btn" on:click={() => { showNewDialog = true }}>+ New Asset</button>
+        <button class="primary new-btn" onclick={() => { showNewDialog = true }}>+ New Asset</button>
       </div>
 
       <div class="asset-list">
@@ -233,7 +240,7 @@
               class="asset-item"
               class:selected={selectedAssetId === asset.id}
               class:placing={placingAsset?.id === asset.id}
-              on:click={() => selectedAssetId = asset.id}
+              onclick={() => selectedAssetId = asset.id}
             >
               <div class="asset-main">
                 <span class="asset-status" class:placed={!!asset.anchor?.glb_position} title={asset.anchor?.glb_position ? 'Placed on map' : 'Not placed'}>●</span>
@@ -243,14 +250,14 @@
                 </div>
               </div>
               <div class="asset-actions">
+                <button class="delete-btn danger" onclick={(e) => { e.stopPropagation(); handleDelete(asset) }}>✕</button>
                 <button
                   class="place-btn"
                   class:active={placingAsset?.id === asset.id}
-                  on:click|stopPropagation={() => placingAsset?.id === asset.id ? cancelPlacing() : startPlacing(asset)}
+                  onclick={(e) => { e.stopPropagation(); placingAsset?.id === asset.id ? cancelPlacing() : startPlacing(asset) }}
                 >
                   {placingAsset?.id === asset.id ? 'Cancel' : asset.anchor_id ? 'Re-place' : 'Place'}
                 </button>
-                <button class="delete-btn danger" on:click|stopPropagation={() => handleDelete(asset)}>✕</button>
               </div>
             </div>
           {/each}
@@ -266,23 +273,23 @@
         {mergedSpacesClickable}
         anchors={sceneAnchors}
         selectedId={selectedAnchorId}
-        on:place={handlePlace}
+        onplace={handlePlace}
       />
     </div>
   </div>
 
   {#if placingAsset}
     <div class="placement-banner">
-      <span class="pulse-dot" />
+      <span class="pulse-dot"></span>
       Click the map to place: <strong>{placingAsset.name ?? 'Unnamed'}</strong>
-      <button on:click={cancelPlacing}>Cancel</button>
+      <button onclick={cancelPlacing}>Cancel</button>
     </div>
   {/if}
 {/if}
 
 {#if showNewDialog}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <div class="overlay" on:click|self={() => showNewDialog = false}>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="overlay" onclick={(e) => { if (e.target === e.currentTarget) showNewDialog = false }}>
     <div class="dialog">
       <h3>New Asset</h3>
       <label>
@@ -298,8 +305,8 @@
         </select>
       </label>
       <div class="dialog-actions">
-        <button on:click={() => showNewDialog = false}>Cancel</button>
-        <button class="primary" on:click={handleCreateAsset} disabled={saving || !newName.trim()}>
+        <button onclick={() => showNewDialog = false}>Cancel</button>
+        <button class="primary" onclick={handleCreateAsset} disabled={saving || !newName.trim()}>
           {saving ? 'Saving…' : 'Create'}
         </button>
       </div>
@@ -308,84 +315,44 @@
 {/if}
 
 {#if error}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <div class="error-toast" on:click={() => error = null}>{error}</div>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="error-toast" onclick={() => error = null}>{error}</div>
 {/if}
 
 <style>
-  /* ── Building picker ── */
-  .building-picker {
-    width: 100vw;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    background: var(--bg);
-  }
-
-  .picker-header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-
-  .picker-title {
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--accent);
-    letter-spacing: 0.02em;
-  }
-
-  .picker-sub {
-    color: var(--text-muted);
-    font-size: 13px;
-    margin-top: -8px;
-  }
-
-  .building-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 320px;
-    max-width: 480px;
-    width: 100%;
-  }
-
   .building-card {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 4px;
-    padding: 16px 20px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
+    gap: 3px;
+    padding: 10px 16px;
+    width: 100%;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-top: none;
     cursor: pointer;
     text-align: left;
-    transition: border-color 0.15s, background 0.15s;
+    transition: background 0.1s;
   }
-  .building-card:hover {
-    border-color: var(--accent);
-    background: #1f1f1f;
-  }
+  .building-card:last-child { border-bottom: none; }
+  .building-card:hover { background: #1e1e1e; }
 
   .building-name {
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 500;
     color: var(--text);
   }
 
   .building-meta {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-muted);
   }
 
-  .loading, .empty {
-    color: var(--text-muted);
-    font-size: 13px;
-    font-style: italic;
+  .empty-scene {
+    background: var(--bg);
   }
 
   /* ── Asset view ── */
@@ -410,8 +377,9 @@
     padding: 14px 16px;
     border-bottom: 1px solid var(--border);
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
     flex-shrink: 0;
   }
 
@@ -452,7 +420,8 @@
 
   .asset-item {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: stretch;
     gap: 8px;
     padding: 10px 16px;
     border-bottom: 1px solid var(--border);
@@ -467,6 +436,8 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    flex: 1;
+    min-width: 0;
   }
 
   .asset-status {
@@ -502,8 +473,11 @@
 
   .asset-actions {
     display: flex;
-    gap: 6px;
-    align-items: center;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-end;
+    justify-content: center;
+    flex-shrink: 0;
   }
 
   .place-btn {
@@ -524,11 +498,8 @@
     padding: 3px 7px;
     font-size: 11px;
     border-radius: 4px;
-    opacity: 0.5;
-    transition: opacity 0.15s;
     flex-shrink: 0;
   }
-  .asset-item:hover .delete-btn { opacity: 1; }
 
   .space-picker {
     padding: 12px 16px;

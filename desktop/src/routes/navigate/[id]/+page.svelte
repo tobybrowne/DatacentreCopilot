@@ -3,7 +3,11 @@
   import NavigateView from '$lib/NavigateView.svelte'
   import type { PageData } from './$types'
 
-  export let data: PageData
+  interface Props {
+    data: PageData;
+  }
+
+  let { data }: Props = $props();
 </script>
 
 <NavigateView
@@ -11,5 +15,5 @@
   buildingName={data.buildingName}
   spaces={data.spaces}
   existingNavMesh={data.existingNavMesh}
-  on:back={() => goto('/navigate')}
+  onback={() => goto('/navigate')}
 />

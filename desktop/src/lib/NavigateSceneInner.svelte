@@ -1,44 +1,57 @@
 <script lang="ts">
   import { T } from '@threlte/core'
-  import { GLTF, OrbitControls, interactivity } from '@threlte/extras'
-  import { createEventDispatcher } from 'svelte'
+  import { GLTF, OrbitControls, interactivity, type IntersectionEvent } from '@threlte/extras'
   import * as THREE from 'three'
   import type { Position, RigidTransform } from './types'
 
-  export let spaces: Array<{ url: string; transform: RigidTransform | null }>
-  export let startPos: Position | null = null
-  export let endPos: Position | null = null
-  export let pathGeometry: THREE.TubeGeometry | null = null
-  export let navMeshMesh: THREE.Mesh | null = null
-  export let recastInputDebug: THREE.Group | null = null
-  export let pickingEnabled = false
+  interface Props {
+    spaces: Array<{ url: string; transform: RigidTransform | null }>;
+    startPos?: Position | null;
+    endPos?: Position | null;
+    pathGeometry?: THREE.TubeGeometry | null;
+    navMeshMesh?: THREE.Mesh | null;
+    recastInputDebug?: THREE.Group | null;
+    pickingEnabled?: boolean;
+    onplace?: (pos: Position) => void;
+  }
 
-  const dispatch = createEventDispatcher<{ place: Position }>()
+  let {
+    spaces,
+    startPos = null,
+    endPos = null,
+    pathGeometry = null,
+    navMeshMesh = null,
+    recastInputDebug = null,
+    pickingEnabled = false,
+    onplace
+  }: Props = $props();
 
   interactivity()
 
-  function handleClick(e: any): void {
+  function handleClick(e: IntersectionEvent<MouseEvent>): void {
     if (!pickingEnabled) return
     e.stopPropagation()
-    const point: THREE.Vector3 = e.point ?? e.detail?.point
+    const point: THREE.Vector3 = e.point
     if (!point) return
-    dispatch('place', { x: point.x, y: point.y, z: point.z })
+    onplace?.({ x: point.x, y: point.y, z: point.z })
   }
 
   // Per-space group refs for applying quaternion transforms
-  let groupRefs: (THREE.Group | undefined)[] = []
+  let groupRefs: (THREE.Group | undefined)[] = $state([])
 
-  $: spaces.forEach((space, i) => {
-    const g = groupRefs[i]
-    if (!g) return
-    if (space.transform) {
-      const { position: p, quaternion: q } = space.transform
-      g.position.set(p.x, p.y, p.z)
-      g.quaternion.set(q.x, q.y, q.z, q.w)
-    } else {
-      g.position.set(0, 0, 0)
-      g.quaternion.identity()
-    }
+  $effect(() => {
+    spaces.forEach((space, i) => {
+      const g = groupRefs[i]
+      if (!g) return
+      if (space.transform) {
+        const { position: p, quaternion: q } = space.transform
+        g.position.set(p.x, p.y, p.z)
+        g.quaternion.set(q.x, q.y, q.z, q.w)
+      } else {
+        g.position.set(0, 0, 0)
+        g.quaternion.identity()
+      }
+    })
   })
 </script>
 
@@ -51,27 +64,27 @@
 
 {#each spaces as space, i (space.url)}
   <T.Group bind:ref={groupRefs[i]}>
-    <GLTF url={space.url} on:click={handleClick} />
+    <GLTF url={space.url} onclick={handleClick} />
   </T.Group>
 {/each}
 
 {#if startPos}
   <T.Mesh position={[startPos.x, startPos.y + 0.1, startPos.z]}>
     <T.SphereGeometry args={[0.12, 16, 16]} />
-    <T.MeshStandardMaterial color="#00ff88" emissive="#00ff88" emissiveIntensity={0.8} />
+    <T.MeshStandardMaterial color={0x00ff88} emissive={0x00ff88} emissiveIntensity={0.8} />
   </T.Mesh>
 {/if}
 
 {#if endPos}
   <T.Mesh position={[endPos.x, endPos.y + 0.1, endPos.z]}>
     <T.SphereGeometry args={[0.12, 16, 16]} />
-    <T.MeshStandardMaterial color="#ff4444" emissive="#ff4444" emissiveIntensity={0.8} />
+    <T.MeshStandardMaterial color={0xff4444} emissive={0xff4444} emissiveIntensity={0.8} />
   </T.Mesh>
 {/if}
 
 {#if pathGeometry}
   <T.Mesh geometry={pathGeometry}>
-    <T.MeshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.6} />
+    <T.MeshStandardMaterial color={0x00d4ff} emissive={0x00d4ff} emissiveIntensity={0.6} />
   </T.Mesh>
 {/if}
 

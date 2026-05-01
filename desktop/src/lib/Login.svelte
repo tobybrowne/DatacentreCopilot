@@ -1,10 +1,10 @@
 <script lang="ts">
   import { signIn } from './auth'
 
-  let email = ''
-  let password = ''
-  let error: string | null = null
-  let loading = false
+  let email = $state('')
+  let password = $state('')
+  let error: string | null = $state(null)
+  let loading = $state(false)
 
   async function handleSubmit() {
     error = null
@@ -15,8 +15,8 @@
 </script>
 
 <div class="wrap">
-  <form class="card" on:submit|preventDefault={handleSubmit}>
-    <h1>Entangl</h1>
+  <form class="card" onsubmit={(e) => { e.preventDefault(); handleSubmit() }}>
+    <img src="/entangl-cyan.svg" alt="Entangl" class="logo" />
 
     <label>
       Email
@@ -59,11 +59,9 @@
     border-radius: 10px;
   }
 
-  h1 {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--accent);
-    letter-spacing: 0.02em;
+  .logo {
+    height: 48px;
+    width: auto;
     margin-bottom: 4px;
   }
 

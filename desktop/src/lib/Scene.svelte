@@ -3,21 +3,46 @@
   import SceneInner from './SceneInner.svelte'
   import type { Anchor, Position, RigidTransform } from './types'
 
-  export let glbUrl: string | null = null
-  export let anchors: Anchor[] = []
-  export let selectedId: string | null = null
-  export let pendingPosition: Position | null = null
-  export let userPosition: Position | null = null
 
-  // stitch mode
-  export let stitchPhase: 'idle' | 'pickSource' | 'pickTarget' | 'preview' = 'idle'
-  export let stitchSourceGlbUrl: string | null = null
-  export let mergedSpaces: Array<{ url: string; transform: RigidTransform | null }> = []
-  export let stitchSourcePoints: Position[] = []
-  export let stitchTargetPoints: Position[] = []
-  export let stitchTransform: RigidTransform | null = null
-  export let pointClouds: Array<{ points: Position[]; color: string }> = []
-  export let mergedSpacesClickable = false
+  
+  interface Props {
+    glbUrl?: string | null;
+    anchors?: Anchor[];
+    selectedId?: string | null;
+    pendingPosition?: Position | null;
+    mappingAnchor?: Anchor | null;
+    userPosition?: Position | null;
+    // stitch mode
+    stitchPhase?: 'idle' | 'pickSource' | 'pickTarget' | 'preview';
+    stitchSourceGlbUrl?: string | null;
+    mergedSpaces?: Array<{ url: string; transform: RigidTransform | null }>;
+    stitchSourcePoints?: Position[];
+    stitchTargetPoints?: Position[];
+    stitchTransform?: RigidTransform | null;
+    pointClouds?: Array<{ points: Position[]; color: number }>;
+    mergedSpacesClickable?: boolean;
+    onplace?: (detail: { position: Position; spaceIndex: number | null }) => void;
+    onselect?: (id: string) => void;
+  }
+
+  let {
+    glbUrl = null,
+    anchors = [],
+    selectedId = null,
+    pendingPosition = null,
+    mappingAnchor = null,
+    userPosition = null,
+    stitchPhase = 'idle',
+    stitchSourceGlbUrl = null,
+    mergedSpaces = [],
+    stitchSourcePoints = [],
+    stitchTargetPoints = [],
+    stitchTransform = null,
+    pointClouds = [],
+    mergedSpacesClickable = false,
+    onplace,
+    onselect
+  }: Props = $props();
 </script>
 
 <div class="canvas-wrap">
@@ -27,6 +52,7 @@
       {anchors}
       {selectedId}
       {pendingPosition}
+      {mappingAnchor}
       {userPosition}
       {stitchPhase}
       {stitchSourceGlbUrl}
@@ -36,8 +62,8 @@
       {stitchTransform}
       {pointClouds}
       {mergedSpacesClickable}
-      on:place
-      on:select
+      {onplace}
+      {onselect}
     />
   </Canvas>
 </div>

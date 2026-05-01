@@ -3,4 +3,4 @@
   import AssetView from '$lib/AssetView.svelte'
 </script>
 
-<AssetView on:back={() => goto('/')} />
+<AssetView onback={() => goto('/')} />
