@@ -1,4 +1,4 @@
-# Thin localisation manager, handles ML2 localization requests, quality polling, 
+# Thin localisation manager, handles ML2 localization requests, quality polling,
 # user position writing, coarse space detection, and relocalisation.
 # All anchor loading, calibration, and marker placement is owned by AnchorManager.
 # Must be a child of XROrigin3D.
@@ -27,8 +27,7 @@ var _poor_quality_timer := 0.0
 const POOR_RELOC_THRESHOLD := 10.0
 var _relocalising := false
 
-var _tracking_dot_mat: StandardMaterial3D
-var _tracking_label: Label3D
+var _indicator: TrackingIndicator
 
 # IdleState reads _calibrated directly on location_manager
 var _calibrated: bool:
@@ -54,33 +53,14 @@ func _ml2_ext() -> Object:
 		return Engine.get_singleton("OpenXRMlLocalizationMapExtension")
 	return null
 
-# onetime call, to instantiate the tracking quality dot
+
+# onetime call, to instantiate the tracking indicator
 func _create_tracking_indicator() -> void:
 	var camera := get_parent().get_node_or_null("XRCamera3D")
 	if not camera:
 		return
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.004
-	sphere.height = 0.008
-	_tracking_dot_mat = StandardMaterial3D.new()
-	_tracking_dot_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_tracking_dot_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-	_tracking_dot_mat.albedo_color = Color(0.5, 0.5, 0.5)
-	var dot := MeshInstance3D.new()
-	dot.mesh = sphere
-	dot.material_override = _tracking_dot_mat
-	dot.position = Vector3(0.11, 0.07, -0.3)
-	camera.add_child(dot)
-
-	_tracking_label = Label3D.new()
-	_tracking_label.text = ""
-	_tracking_label.font_size = 64
-	_tracking_label.pixel_size = 0.0003
-	_tracking_label.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-	_tracking_label.no_depth_test = true
-	_tracking_label.position = Vector3(0.11, 0.076, -0.3)
-	_tracking_label.modulate = Color(1.0, 1.0, 1.0)
-	camera.add_child(_tracking_label)
+	_indicator = TrackingIndicator.new()
+	camera.add_child(_indicator)
 
 
 func _process(delta: float) -> void:
@@ -100,24 +80,22 @@ func _process(delta: float) -> void:
 			var space_glb_pos: Vector3 = _anchor_manager.world_to_glb(camera.position)
 			var offsets := _anchor_manager.get_space_offsets()
 			var current_offset: Transform3D = offsets.get(_anchor_manager.get_current_space_id(), Transform3D.IDENTITY)
-			
-			# find the coarse space lable and update the user position in the database
+
+			# find the coarse space label and update the user position in the database
 			_update_room_label(current_offset * space_glb_pos)
 			if write_user_position:
 				SupabaseManager.update_user_glb_position(space_glb_pos)
 
 
-# uses the centroid anchors to find the user's closes space, updates current_coarse_space accordingly
+# uses the centroid anchors to find the user's closest space, updates current_coarse_space accordingly
 func _update_room_label(building_pos: Vector3) -> void:
 	var closest_id := ""
 	var closest_dist := INF
 	var offsets := _anchor_manager.get_space_offsets()
 
 	for anchor in _anchor_manager.get_all_anchors().values():
-		# TO-DO: if we continue with centroids then they need dedicated types
 		if anchor.name != "__centroid__" or anchor.glb_position == null:
 			continue
-
 		var offset: Transform3D = offsets.get(anchor.space_id, Transform3D.IDENTITY)
 		var dist: float = building_pos.distance_to(offset * anchor.glb_position)
 		if dist < closest_dist:
@@ -126,20 +104,16 @@ func _update_room_label(building_pos: Vector3) -> void:
 
 	if closest_id.is_empty():
 		return
-
 	if closest_id != current_coarse_space:
 		coarse_space_changed.emit(closest_id)
 		current_coarse_space = closest_id
-	
 
 
-# called by _process on a timer
 func _poll_localization() -> void:
 	var ext := _ml2_ext()
 	if not ext:
 		return
-	
-	# poll extension for localisation confidence
+
 	var confidence: int = ext.get_localization_confidence() if ext.has_method("get_localization_confidence") else -1
 	if confidence != _last_loc_confidence:
 		_last_loc_confidence = confidence
@@ -147,16 +121,9 @@ func _poll_localization() -> void:
 		var label: String = labels[confidence] if confidence >= 0 and confidence < labels.size() else str(confidence)
 		print("LocationManager: confidence=", label, " uuid=", ext.get_localization_map_uuid())
 
-	# update the tracking dot color
-	if _tracking_dot_mat:
-		match confidence:
-			3: _tracking_dot_mat.albedo_color = Color(0.0, 1.0, 0.2)   # EXCELLENT — green
-			2: _tracking_dot_mat.albedo_color = Color(0.0, 1.0, 0.2)   # GOOD — green
-			1: _tracking_dot_mat.albedo_color = Color(1.0, 0.55, 0.0)  # FAIR — orange
-			0: _tracking_dot_mat.albedo_color = Color(1.0, 0.2, 0.2)   # POOR — red
-			_: _tracking_dot_mat.albedo_color = Color(0.5, 0.5, 0.5)   # unknown — grey
+	if _indicator:
+		_indicator.set_confidence(confidence)
 
-	# if confidence if poor for POOR_RELOC_THRESHOLD seconds, attempt relocalisation to the current coarse space
 	if confidence == 0:
 		_poor_quality_timer += LOC_POLL_INTERVAL
 		if _poor_quality_timer >= POOR_RELOC_THRESHOLD:
@@ -168,7 +135,6 @@ func _poll_localization() -> void:
 
 
 func _attempt_relocalisation(target_space_id: String) -> void:
-	# can only relocalise to a space with 3 anchor references
 	var ref_count := _anchor_manager.ref_anchor_count(target_space_id)
 	if ref_count < 3:
 		print("LocationManager: skipping reloc to ", target_space_id, " — only ", ref_count, "/3 ref anchors")
@@ -181,23 +147,18 @@ func _attempt_relocalisation(target_space_id: String) -> void:
 	var ml2_uuid := _space_manager.get_ml2_uuid(target_space_id) if _space_manager else target_space_id
 	ext.request_localization(ml2_uuid)
 	_relocalising = true
-	if _tracking_label:
-		# set tracking label to ? during relocalisation attempt
-		_tracking_label.text = "?"
+	if _indicator:
+		_indicator.set_spinning(true)
 
-# called by the ML2 extension when localisation state changes, including after a relocalisation attempt
+
 func _on_localization_changed(state: int, _confidence: int, _error_flags: int) -> void:
-	print("LocationManager: _on_localization_changed state=", state, " confidence=", _confidence, " error_flags=", _error_flags)
 	match state:
 		1: # LOCALIZED — success
 			var was_relocalising := _relocalising
 			_relocalising = false
-			if _tracking_label:
-				_tracking_label.text = ""
-			
-			# try and relocalise if _relocalising was set
-			# this means functions like _request_localization can run without triggering a calibration
 			if was_relocalising:
+				if _indicator:
+					_indicator.set_spinning(false)
 				var ext := _ml2_ext()
 				if ext:
 					var ml2_uuid: String = ext.get_localization_map_uuid()
@@ -207,39 +168,50 @@ func _on_localization_changed(state: int, _confidence: int, _error_flags: int) -
 							print("LocationManager: relocalised to ", supabase_id)
 							current_coarse_space = supabase_id
 							localised_space_changed.emit(supabase_id)
-							# calibrate to the new space, load anchors, etc...
 							_anchor_manager.calibrate_to_space(supabase_id)
 
 		0: # NOT_LOCALIZED
 			if _relocalising:
-				# if you were relocalising, then this attempt failed
 				_relocalising = false
-				if _tracking_label:
-					_tracking_label.text = "!"
+				if _indicator:
+					_indicator.set_spinning(false)
 				print("LocationManager: relocalisation failed — NOT_LOCALIZED")
-			else:
-				if _tracking_label:
-					_tracking_label.text = ""
-					
-		2, 3: # PENDING / SLEEPING — keep ? visible, do nothing
+
+		2, 3: # PENDING / SLEEPING
 			pass
 
 
-# localise into a space and run Kabsch calibration as reference anchors track in.
 func calibrate_to_space(space_id: String) -> void:
 	_request_localization(space_id)
+	await _wait_for_fair_localisation()
 	await _anchor_manager.calibrate_to_space(space_id)
 	print("LocationManager: calibrate_to_space ", space_id)
 	localised_space_changed.emit(space_id)
 
 
-# TO-DO: check how this behaves if no space is localised
+func _wait_for_fair_localisation() -> void:
+	var ext := _ml2_ext()
+	if not ext:
+		return
+	if ext.get_localization_confidence() >= 1:
+		return
+	print("LocationManager: waiting for FAIR localisation…")
+	if _indicator:
+		_indicator.set_spinning(true)
+	while true:
+		var args = await ext.localization_changed
+		if args[0] == 1 and args[1] >= 1:
+			print("LocationManager: reached FAIR — proceeding with calibration")
+			break
+	if _indicator:
+		_indicator.set_spinning(false)
+
+
 func get_current_space_id() -> String:
 	var ext := _ml2_ext()
 	return ext.get_localization_map_uuid() if ext else ""
 
 
-# direct localisation request made to the extension
 func _request_localization(space_id: String) -> void:
 	var ext := _ml2_ext()
 	if ext:

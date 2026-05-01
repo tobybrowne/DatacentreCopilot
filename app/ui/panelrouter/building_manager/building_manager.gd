@@ -1,7 +1,7 @@
 extends BasePanel
 
-@onready var _item_list: VBoxContainer = $VBoxContainer/ScrollContainer/ItemList
-@onready var _status: Label = $VBoxContainer/Status
+@onready var _item_list: VBoxContainer = $MarginContainer/VBoxContainer/ScrollContainer/ItemList
+@onready var _status: Label = $MarginContainer/VBoxContainer/Status
 
 
 func init(_data: Dictionary) -> void:

@@ -8,6 +8,7 @@ extends State
 const _SPACE_LABEL_SCENE := preload("res://ui/standalone/space_label/space_label_3d.tscn")
 
 var _space_label_3d: ViewportPanel3D = null
+var _space_names: Dictionary = {}  # space_id → name
 
 
 func enter(data: Dictionary) -> void:
@@ -17,6 +18,10 @@ func enter(data: Dictionary) -> void:
 	gesture_manager.get_parent().add_child(_space_label_3d)
 	location_manager.coarse_space_changed.connect(_on_coarse_space_changed)
 	location_manager.localised_space_changed.connect(_on_localised_space_changed)
+
+	var spaces: Array[Space] = await SupabaseManager.get_spaces()
+	for s in spaces:
+		_space_names[s.id] = s.name if not s.name.is_empty() else s.id
 
 	var space_id: String = data.get("space_id", "")
 	var space := data.get("space") as Space
@@ -48,13 +53,13 @@ func exit() -> void:
 func _on_coarse_space_changed(space_id: String) -> void:
 	var sl := _space_label_3d.get_panel() as SpaceLabel if _space_label_3d else null
 	if sl:
-		sl.update_coarse(space_id)
+		sl.update_coarse(_space_names.get(space_id, space_id))
 
 
 func _on_localised_space_changed(space_id: String) -> void:
 	var sl := _space_label_3d.get_panel() as SpaceLabel if _space_label_3d else null
 	if sl:
-		sl.update_localised(space_id)
+		sl.update_localised(_space_names.get(space_id, space_id))
 
 
 func on_pinch_held(hand: String, position: Vector3, duration: float) -> void:

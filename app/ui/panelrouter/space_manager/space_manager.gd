@@ -1,9 +1,9 @@
 extends BasePanel
 
-@onready var _item_list: VBoxContainer = $VBoxContainer/ScrollContainer/ItemList
-@onready var _status: Label = $VBoxContainer/Status
-@onready var _pull_btn: Button = $VBoxContainer/ButtonRow/PullButton
-@onready var _push_btn: Button = $VBoxContainer/ButtonRow/PushButton
+@onready var _item_list: VBoxContainer = $MarginContainer/VBoxContainer/ScrollContainer/ItemList
+@onready var _status: Label = $MarginContainer/VBoxContainer/Status
+@onready var _pull_btn: Button = $MarginContainer/VBoxContainer/ButtonRow/PullButton
+@onready var _push_btn: Button = $MarginContainer/VBoxContainer/ButtonRow/PushButton
 
 var _space_manager: SpaceManager
 var _remote_spaces: Array[Space] = []

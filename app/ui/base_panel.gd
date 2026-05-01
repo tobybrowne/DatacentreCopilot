@@ -51,6 +51,10 @@ static func _build_theme() -> Theme:
 	row_style.content_margin_left   = _BTN_PAD_H
 	row_style.content_margin_right  = _BTN_PAD_H
 	t.set_stylebox("panel", "PanelContainer", row_style)
+	t.set_constant("margin_left",   "MarginContainer", 20)
+	t.set_constant("margin_top",    "MarginContainer", 20)
+	t.set_constant("margin_right",  "MarginContainer", 20)
+	t.set_constant("margin_bottom", "MarginContainer", 100)
 	return t
 
 var _back_button: Button = null
