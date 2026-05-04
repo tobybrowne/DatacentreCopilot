@@ -2,10 +2,12 @@
   import { T } from '@threlte/core'
   import { GLTF, OrbitControls, interactivity, type IntersectionEvent } from '@threlte/extras'
   import * as THREE from 'three'
-  import type { Position, RigidTransform } from './types'
+  import BoundingBoxMesh from './BoundingBoxMesh.svelte'
+  import type { BoundingBox, Position, RigidTransform } from './types'
 
   interface Props {
-    spaces: Array<{ url: string; transform: RigidTransform | null }>;
+    spaces: Array<{ url: string; transform: RigidTransform | null; boundingBox?: BoundingBox | null }>;
+    showBoundingBoxes?: boolean;
     startPos?: Position | null;
     endPos?: Position | null;
     pathGeometry?: THREE.TubeGeometry | null;
@@ -17,6 +19,7 @@
 
   let {
     spaces,
+    showBoundingBoxes = false,
     startPos = null,
     endPos = null,
     pathGeometry = null,
@@ -65,6 +68,9 @@
 {#each spaces as space, i (space.url)}
   <T.Group bind:ref={groupRefs[i]}>
     <GLTF url={space.url} onclick={handleClick} />
+    {#if showBoundingBoxes && space.boundingBox}
+      <BoundingBoxMesh boundingBox={space.boundingBox} />
+    {/if}
   </T.Group>
 {/each}
 

@@ -3,7 +3,8 @@
   import { GLTF, OrbitControls, interactivity, type IntersectionEvent } from '@threlte/extras'
   import * as THREE from 'three'
   import TransformedGltf from './TransformedGltf.svelte'
-  import type { Anchor, Position, RigidTransform } from './types'
+  import BoundingBoxMesh from './BoundingBoxMesh.svelte'
+  import type { Anchor, BoundingBox, Position, RigidTransform } from './types'
 
 
 
@@ -14,6 +15,8 @@
     pendingPosition?: Position | null;
     mappingAnchor?: Anchor | null;
     userPosition?: Position | null;
+    boundingBox?: BoundingBox | null;
+    showBoundingBoxes?: boolean;
     stitchPhase?: 'idle' | 'pickSource' | 'pickTarget' | 'preview';
     stitchSourceGlbUrl?: string | null;
     // All spaces already stitched into the building (shown as the "target" model)
@@ -34,6 +37,8 @@
     pendingPosition = null,
     mappingAnchor = null,
     userPosition = null,
+    boundingBox = null,
+    showBoundingBoxes = false,
     stitchPhase = 'idle',
     stitchSourceGlbUrl = null,
     mergedSpaces = [],
@@ -110,6 +115,10 @@
 {#if stitchPhase === 'idle'}
   {#if glbUrl}
     <GLTF url={glbUrl} onclick={(e: IntersectionEvent<MouseEvent>) => { e.stopPropagation(); if (e.point) handleMeshClick(e.point) }} />
+  {/if}
+
+  {#if showBoundingBoxes && boundingBox}
+    <BoundingBoxMesh {boundingBox} />
   {/if}
 
   {#each mergedSpaces as space, i (space.url)}

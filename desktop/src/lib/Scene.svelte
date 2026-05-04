@@ -1,10 +1,10 @@
 <script lang="ts">
   import { Canvas } from '@threlte/core'
   import SceneInner from './SceneInner.svelte'
-  import type { Anchor, Position, RigidTransform } from './types'
+  import type { Anchor, BoundingBox, Position, RigidTransform } from './types'
 
 
-  
+
   interface Props {
     glbUrl?: string | null;
     anchors?: Anchor[];
@@ -12,6 +12,8 @@
     pendingPosition?: Position | null;
     mappingAnchor?: Anchor | null;
     userPosition?: Position | null;
+    boundingBox?: BoundingBox | null;
+    showBoundingBoxes?: boolean;
     // stitch mode
     stitchPhase?: 'idle' | 'pickSource' | 'pickTarget' | 'preview';
     stitchSourceGlbUrl?: string | null;
@@ -32,6 +34,8 @@
     pendingPosition = null,
     mappingAnchor = null,
     userPosition = null,
+    boundingBox = null,
+    showBoundingBoxes = false,
     stitchPhase = 'idle',
     stitchSourceGlbUrl = null,
     mergedSpaces = [],
@@ -54,6 +58,8 @@
       {pendingPosition}
       {mappingAnchor}
       {userPosition}
+      {boundingBox}
+      {showBoundingBoxes}
       {stitchPhase}
       {stitchSourceGlbUrl}
       {mergedSpaces}

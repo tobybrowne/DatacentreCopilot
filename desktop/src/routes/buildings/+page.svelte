@@ -11,7 +11,8 @@
   let completed: (Building & { spaces: Space[] })[] = $state([])
   let drafts: (Building & { spaces: Space[] })[] = $state([])
   let selectedBuilding: (Building & { spaces: Space[] }) | null = $state(null)
-  let mergedSpaces: { url: string; transform: RigidTransform | null }[] = $state([])
+  let mergedSpaces: { url: string; transform: RigidTransform | null; boundingBox: Space['bounding_box'] }[] = $state([])
+  let showBoundingBoxes = $state(false)
   let loadingScene = $state(false)
   let error: string | null = $state(null)
 
@@ -35,6 +36,7 @@
         sorted.map(async s => ({
           url: await getSpaceGlbUrl(s.glb_path!),
           transform: s.offset_transformation as RigidTransform | null,
+          boundingBox: s.bounding_box,
         }))
       )
     } catch (e) {
@@ -96,12 +98,24 @@
           <span class="name">{b.name || 'Unnamed'}</span>
           <span class="sub">{b.spaces?.length ?? 0} spaces</span>
         </div>
+        <div class="actions">
+          <button class="primary small" onclick={(e) => { e.stopPropagation(); goto(`/buildings/create?restitch=${b.id}`) }}>Re-stitch</button>
+          <button class="icon-btn" onclick={(e) => remove(e, b.id)}>×</button>
+        </div>
       {/snippet}
     </SidebarList>
 
     <section>
       <button class="primary" style="width:100%" onclick={() => goto('/buildings/create')}>+ New building</button>
     </section>
+
+    {#if mergedSpaces.length > 0}
+      <section>
+        <button style="width:100%" onclick={() => showBoundingBoxes = !showBoundingBoxes}>
+          {showBoundingBoxes ? 'Hide boxes' : 'Show boxes'}
+        </button>
+      </section>
+    {/if}
 
     {#if error}
       <p class="err">{error}</p>
@@ -113,7 +127,7 @@
       <div class="placeholder">Loading building…</div>
     {:else if mergedSpaces.length > 0}
       <Canvas>
-        <NavigateSceneInner spaces={mergedSpaces} />
+        <NavigateSceneInner spaces={mergedSpaces} {showBoundingBoxes} />
       </Canvas>
     {:else}
       <div class="placeholder">Select a building to view</div>

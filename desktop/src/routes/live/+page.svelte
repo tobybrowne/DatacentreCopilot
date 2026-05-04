@@ -12,7 +12,8 @@
 
   let buildings: (Building & { spaces: Space[] })[] = $state([])
   let selectedBuilding: (Building & { spaces: Space[] }) | null = $state(null)
-  let mergedSpaces: { url: string; transform: RigidTransform | null }[] = $state([])
+  let mergedSpaces: { url: string; transform: RigidTransform | null; boundingBox: Space['bounding_box'] }[] = $state([])
+  let showBoundingBoxes = $state(false)
   let userPosition: Position | null = $state(null)
   let monitoring = $state(false)
   let unsubscribeUser: (() => void) | null = null
@@ -42,6 +43,7 @@
         sorted.map(async s => ({
           url: await getSpaceGlbUrl(s.glb_path!),
           transform: s.offset_transformation as RigidTransform | null,
+          boundingBox: s.bounding_box,
         }))
       )
     } catch (e) {
@@ -90,6 +92,14 @@
     </SidebarList>
 
     {#if selectedBuilding}
+      {#if mergedSpaces.length > 0}
+        <section>
+          <button style="width:100%" onclick={() => showBoundingBoxes = !showBoundingBoxes}>
+            {showBoundingBoxes ? 'Hide boxes' : 'Show boxes'}
+          </button>
+        </section>
+      {/if}
+
       <section>
         <label class="section-label">User Tracking</label>
         <button
@@ -119,7 +129,7 @@
       <div class="placeholder">Loading building…</div>
     {:else if mergedSpaces.length > 0}
       <Canvas>
-        <NavigateSceneInner spaces={mergedSpaces} startPos={userPosition} />
+        <NavigateSceneInner spaces={mergedSpaces} startPos={userPosition} {showBoundingBoxes} />
       </Canvas>
     {:else}
       <div class="placeholder">Select a building to view</div>

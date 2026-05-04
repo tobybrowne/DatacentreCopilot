@@ -9,6 +9,12 @@ export interface RigidTransform {
   quaternion: { x: number; y: number; z: number; w: number };
 }
 
+export interface BoundingBox {
+  vertices_2d: [number, number][];
+  y_min: number;
+  y_max: number;
+}
+
 export interface Building {
   id: string;
   name: string | null;
@@ -22,6 +28,7 @@ export interface Space {
   building_id: string | null;
   building_index: number | null;
   offset_transformation: RigidTransform | null;
+  bounding_box: BoundingBox | null;
 }
 
 export interface Anchor {

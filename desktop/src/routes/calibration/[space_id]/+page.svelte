@@ -5,11 +5,13 @@
   import { fetchAnchors, fetchSpaceById, deleteAnchor, setGlbPosition, getSpaceGlbUrl } from '$lib/supabase'
   import Scene from '$lib/Scene.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
-  import type { Anchor, Position } from '$lib/types'
+  import type { Anchor, BoundingBox, Position } from '$lib/types'
 
   const spaceId = $page.params.space_id!
 
   let glbUrl: string | null = $state(null)
+  let boundingBox: BoundingBox | null = $state(null)
+  let showBoundingBoxes = $state(false)
   let anchors: Anchor[] = $state([])
   let selectedId: string | null = $state(null)
   let mappingAnchor: Anchor | null = $state(null)
@@ -25,6 +27,7 @@
       const space = await fetchSpaceById(spaceId)
       if (!space.glb_path) { error = 'Space has no GLB export yet'; return }
       glbUrl = await getSpaceGlbUrl(space.glb_path)
+      boundingBox = space.bounding_box
       await refresh()
     } catch (e) {
       error = (e as Error).message
@@ -174,6 +177,14 @@
       </ul>
     {/if}
   </section>
+
+  {#if boundingBox}
+    <section>
+      <button style="width:100%" onclick={() => showBoundingBoxes = !showBoundingBoxes}>
+        {showBoundingBoxes ? 'Hide boxes' : 'Show boxes'}
+      </button>
+    </section>
+  {/if}
 </Sidebar>
 
 <Scene
@@ -181,6 +192,8 @@
   {anchors}
   {selectedId}
   {mappingAnchor}
+  {boundingBox}
+  {showBoundingBoxes}
   onplace={handleMeshClick}
   onselect={(id) => selectedId = id}
 />

@@ -266,6 +266,41 @@ export async function saveNavMesh(
   }
 }
 
+export async function resetBuildingForRestitch(
+  buildingId: string,
+  name: string,
+  orderedSpaceIds: string[],
+): Promise<void> {
+  const { error: clearErr } = await supabase
+    .from("spaces")
+    .update({
+      building_id: null,
+      building_index: null,
+      offset_transformation: null,
+    })
+    .eq("building_id", buildingId);
+  if (clearErr) throw clearErr;
+
+  const { error: buildingErr } = await supabase
+    .from("buildings")
+    .update({ draft: true, name })
+    .eq("id", buildingId);
+  if (buildingErr) throw buildingErr;
+
+  await Promise.all(
+    orderedSpaceIds.map((spaceId, index) =>
+      supabase
+        .from("spaces")
+        .update({
+          building_id: buildingId,
+          building_index: index,
+          offset_transformation: null,
+        })
+        .eq("id", spaceId),
+    ),
+  );
+}
+
 export async function deleteBuilding(buildingId: string): Promise<void> {
   const { error } = await supabase
     .from("buildings")
