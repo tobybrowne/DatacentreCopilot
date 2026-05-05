@@ -214,6 +214,9 @@ func _close_browser() -> void:
 
 
 func _launch_video(data: PackedByteArray) -> void:
+	# NOTE: we don't do any downsampling because the backend service that does the .ogv conversion
+	# already drops to 720p. These keeps download times down and reduces CPU load during playback.
+	# (the full res .mp4 recs are still available).
 	var f := FileAccess.open(video_tmp_path, FileAccess.WRITE)
 	if not f:
 		return

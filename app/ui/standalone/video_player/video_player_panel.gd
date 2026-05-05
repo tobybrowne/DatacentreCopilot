@@ -13,7 +13,7 @@ var _seeking: bool = false
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(800, 560)
+	custom_minimum_size = Vector2(640, 448)
 
 	var bg := ColorRect.new()
 	bg.color = Color(0.06, 0.06, 0.08, 1.0)
@@ -121,8 +121,13 @@ func init(data: Dictionary) -> void:
 func _on_play_pause() -> void:
 	if not _video_player.stream:
 		return
-	_video_player.paused = not _video_player.paused
-	_play_pause_btn.text = "▶" if _video_player.paused else "■"
+	if not _video_player.is_playing() and not _video_player.paused:
+		# video finished -- restart from the beginning
+		_video_player.play()
+		_play_pause_btn.text = "■"
+	else:
+		_video_player.paused = not _video_player.paused
+		_play_pause_btn.text = "▶" if _video_player.paused else "■"
 
 
 func _on_finished() -> void:

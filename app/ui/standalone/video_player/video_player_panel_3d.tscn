@@ -6,8 +6,8 @@
 [node name="VideoPlayerPanel3D" type="Node3D"]
 script = ExtResource("1")
 panel_scene = ExtResource("2")
-viewport_size = Vector2i(800, 560)
-quad_size = Vector2(0.72, 0.504)
+viewport_size = Vector2i(640, 448)
+quad_size = Vector2(0.576, 0.4032)
 distance = 1.3
 height_offset = -0.05
 pinnable = true

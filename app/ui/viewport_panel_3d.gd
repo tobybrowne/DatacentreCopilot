@@ -1,8 +1,5 @@
-# Handles UI Panel boilerplate:
-#	- SubViewport setup
-#	- QuadMesh setup to render the SubViewport in 3D space
-#	- Positioning and orienting the panel in front of the user
-#	- Projecting hand tracker positions to the panel and sending input events to the SubViewport
+# renders a 2d ui control inside a subviewport onto a quad mesh in 3d space.
+# handles panel placement/following, poke input, ray/pinch input, and desktop mouse simulation.
 
 class_name ViewportPanel3D
 extends Node3D
@@ -10,19 +7,19 @@ extends Node3D
 @export var use_router: bool = false
 @export var panel_scene: PackedScene
 
-# When true, the panel stays at its world position and only faces the camera.
-# Used for menus pinned to a pinch point.
+# when true, the panel stays at its world position and only faces the camera.
+# used for menus pinned to a pinch point.
 @export var world_anchored: bool = false
 
 @export var follow_speed: float = 2.0
 @export var locked_to_head: bool = false
 @export var distance: float = 1.2
-# Floating mode offsets (metres, world space)
+# floating mode offsets (metres, world space)
 @export var height_offset: float = 0.0
 @export var lateral_offset: float = 0.0
-# Locked-to-head screen position: (0,0) = centre, (1,1) = top-right corner of visible FOV
+# locked-to-head screen position: (0,0) = centre, (1,1) = top-right corner of visible fov
 @export var screen_position: Vector2 = Vector2(0.0, 0.0)
-# ML2 waveguide shows only a portion of what the projection matrix covers
+# ml2 waveguide shows only a portion of what the projection matrix covers
 @export var fov_scale: Vector2 = Vector2(22.8, 24.7)
 @export var viewport_size: Vector2i = Vector2i(800, 800)
 @export var quad_size: Vector2 = Vector2(0.4, 0.4)
@@ -39,17 +36,20 @@ extends Node3D
 @export var environment_clearance: float = 0.2
 @export_range(0.0, 1.0) var desktop_sim_alpha: float = 0.65
 @export var corner_radius_m: float = 0.02
-# Local offset applied to the quad mesh (relative to this Node3D's origin).
-# Lets scenes add world-anchored decorations at the root (e.g. a pinch dot)
+# local offset applied to the quad mesh relative to this node's origin.
+# lets scenes add world-anchored decorations at the root (e.g. a pinch dot)
 # with the visible panel hanging below.
 @export var mesh_offset: Vector3 = Vector3.ZERO
 @export var pinnable: bool = false
-# When false, world_anchored panels face the camera once on spawn then stay put.
+# when false, world_anchored panels face the camera once on spawn then stay put.
 @export var track_camera: bool = true
-# When true, snaps the panel's Y to camera height on the first frame.
+# when true, snaps the panel's y to camera height on the first frame.
 @export var eye_level: bool = false
 
 
+# spatial shader that samples the subviewport texture onto the quad with rounded corners.
+# content_ratio crops the uv so only the content area of the texture is shown,
+# avoiding transparent padding when the panel is shorter than the viewport.
 const _PANEL_SHADER_CODE := """
 shader_type spatial;
 render_mode unshaded, blend_mix, cull_disabled, depth_draw_opaque;
@@ -109,6 +109,7 @@ var _press_debounce := 0.0
 var _initial_quad_h: float
 var _last_panel_h := -1.0
 var _panel_height_px: float
+# raw_uv tracks the unsnapped cursor position, used for scroll delta and press-start recording
 var _ray_prev_uv := {"left": Vector2(-1.0, -1.0), "right": Vector2(-1.0, -1.0)}
 var _ray_press_start_uv := {"left": Vector2.INF, "right": Vector2.INF}
 var _ray_scroll_mode := {"left": false, "right": false}
@@ -117,6 +118,7 @@ var _poke_press_start_uv := Vector2.INF
 var _poke_scroll_mode := false
 
 const _PRESS_DEBOUNCE_TIME := 0.5
+# how far the finger/ray must move vertically before switching from tap to scroll mode
 const _SCROLL_DRAG_THRESHOLD_PX := 40.0
 const _SCROLL_SPEED := 0.01
 const _RAY_SNAP_RADIUS_PX := 80.0   # attraction kicks in within this pixel radius
@@ -126,6 +128,7 @@ const _RAY_HYSTERESIS_M := 0.015    # metres of extra panel margin while pressin
 const _PIN_STRIP_PX := 80
 
 
+# generates a short synthetic tap sound procedurally to avoid needing an audio asset
 static func _create_pop_stream() -> AudioStreamWAV:
 	var sample_rate := 22050
 	var num_samples := sample_rate * 25 / 1000  # 25 ms
@@ -144,6 +147,7 @@ static func _create_pop_stream() -> AudioStreamWAV:
 	return stream
 
 
+# sets up the subviewport, quad mesh with rounded-corner shader, audio player, and initial panel
 func _ready() -> void:
 	_audio_player = AudioStreamPlayer.new()
 	_audio_player.stream = _create_pop_stream()
@@ -180,7 +184,7 @@ func _ready() -> void:
 	mat.set_shader_parameter("corner_radius", corner_radius_m)
 	var tint := background_color
 	if _desktop_sim:
-		# Rough AR feel on desktop: semi-transparent panel (dark pixels remain visible, just muted).
+		# rough ar feel on desktop: semi-transparent so dark pixels stay visible but are muted
 		tint.a *= desktop_sim_alpha
 	mat.set_shader_parameter("tint", tint)
 
@@ -193,18 +197,18 @@ func _ready() -> void:
 	_panel_height_px = float(viewport_size.y)
 
 	if world_anchored:
-		# World-anchored panels are positioned by the caller — show immediately.
+		# world-anchored panels are positioned by the caller, show immediately
 		_placed = true
 		_mesh_instance.visible = true
 	else:
-		# Hide until first placement so the panel isn't visible at its default scene position.
+		# hide until first placement so the panel is not visible at its default scene position
 		_mesh_instance.visible = false
 
 	if pinnable:
 		_setup_pin_button()
 
 
-# Called when a new panel is loaded via the router
+# swaps the displayed panel when the router navigates to a new panel id
 func _swap_panel(panel_id: String, data: Dictionary) -> void:
 	if _panel:
 		_panel.queue_free()
@@ -225,11 +229,12 @@ func _swap_panel(panel_id: String, data: Dictionary) -> void:
 		_pin_strip.move_to_front()
 
 
-# Override in subclass to wire signals or configure the panel after instantiation (non-router mode)
+# override in subclasses to wire up signals or configure the panel after instantiation (non-router mode)
 func _on_panel_ready(_p: Control) -> void:
 	pass
 
 
+# builds the drag handle and pin/unpin button that are overlaid at the bottom of pinnable panels
 func _setup_pin_button() -> void:
 	_pin_bg = ColorRect.new()
 	_pin_bg.color = Color(0.1, 0.1, 0.15, 0.85)
@@ -285,12 +290,14 @@ func _setup_pin_button() -> void:
 	_viewport.add_child(_pin_strip)
 
 
+# toggles pinned state and updates the thumbtack icon
 func _on_pin_pressed() -> void:
 	_pinned = not _pinned
 	_dragging = false
 	_pin_icon.texture = load("res://ui/icon_thumbtack_filled.svg") if _pinned else load("res://ui/icon_thumbtack_outline.svg")
 
 
+# returns the world position of the index fingertip for the given hand, or Vector3.INF if unavailable
 func _get_index_tip(hand: String) -> Vector3:
 	var xr_origin := get_parent() as XROrigin3D
 	if not xr_origin or hand.is_empty():
@@ -299,16 +306,19 @@ func _get_index_tip(hand: String) -> Vector3:
 	if not tracker or not tracker is XRHandTracker:
 		return Vector3.INF
 	var ht := tracker as XRHandTracker
+	# hand joint 10 = index tip, flag 4 = position valid
 	var flags := ht.get_hand_joint_flags(10)
 	if not (flags & 4):
 		return Vector3.INF
 	return xr_origin.global_transform * ht.get_hand_joint_transform(10).origin
 
 
+# returns the current panel control
 func get_panel() -> Control:
 	return _panel
 
 
+# per-frame: moves the panel to follow the user, handles dragging, then dispatches input
 func _process(delta: float) -> void:
 	if not _camera or not visible:
 		return
@@ -324,6 +334,7 @@ func _process(delta: float) -> void:
 				var ray_origin: Vector3 = gm.ray_origins[_drag_hand]
 				var ray_dir: Vector3 = gm.ray_directions[_drag_hand]
 				var cam_forward := -_camera.global_transform.basis.z
+				# adjust drag depth based on how much the ray origin moved toward or away from the camera
 				_drag_depth = maxf(0.3, _drag_depth - (_drag_ray_origin_prev - ray_origin).dot(cam_forward))
 				_drag_ray_origin_prev = ray_origin
 				global_position = ray_origin + ray_dir * _drag_depth + _drag_offset
@@ -342,15 +353,15 @@ func _process(delta: float) -> void:
 			if eye_level and not _eye_leveled:
 				global_position.y = _camera.global_position.y
 				_eye_leveled = true
-			# look_at points -Z toward camera; quads face +Z so flip 180°
+			# look_at points -z toward camera; quads face +z so flip 180 degrees
 			var far_enough := global_position.distance_to(_camera.global_position) > 0.01
 			if far_enough and (track_camera or not _camera_faced):
 				look_at(_camera.global_position, Vector3.UP)
 				rotate_object_local(Vector3.UP, PI)
 				_camera_faced = true
 		elif locked_to_head:
-			# uses the cameras projection matrix (given by ML2 at runtime)
-			# to positions things relative to the users FOV (great for HUD stuff)
+			# uses the camera's projection matrix (given by ml2 at runtime)
+			# to position things relative to the user's fov
 			var cam := _camera.global_transform
 			var x_off: float = screen_position.x * tan(deg_to_rad(fov_scale.x)) * distance
 			var y_off: float = screen_position.y * tan(deg_to_rad(fov_scale.y)) * distance
@@ -385,7 +396,7 @@ func _process(delta: float) -> void:
 			var target_y := atan2(-forward.x, -forward.z)
 
 			if not _placed:
-				# Wait for OpenXR pose to stabilise: non-zero position AND steady for several frames.
+				# wait for openxr pose to stabilise: non-zero position and steady for several frames
 				if cam_pos.length() < 0.3:
 					_stable_frames = 0
 					_last_cam_pos = cam_pos
@@ -413,7 +424,7 @@ func _process(delta: float) -> void:
 				var dist_to_panel := to_panel.length()
 				var occluded := environment_avoidance and _is_occluded(cam_pos, global_position)
 				if dist_to_panel > distance + lazy_follow_distance or dist_to_panel < distance * 0.75 or occluded:
-					# Too far, too close, or occluded — slide to optimal spot in front.
+					# too far, too close, or occluded -- slide to optimal spot in front
 					_slide_target_pos = target_pos
 					_slide_target_y = target_y
 					_sliding = true
@@ -425,17 +436,17 @@ func _process(delta: float) -> void:
 					var target_height: float = cam_pos.y + height_offset
 					var height_angle: float = abs(atan2(global_position.y - target_height, dist_to_panel))
 					if view_angle > deg_to_rad(lazy_follow_angle_degrees):
-						# Look-away — full reposition into view.
+						# look-away -- full reposition into view
 						_slide_target_pos = target_pos
 						_slide_target_y = target_y
 						_sliding = true
 					elif abs(wrapf(face_y - rotation.y, -PI, PI)) > deg_to_rad(lazy_follow_face_angle_degrees):
-						# Face-tracking — rotate in place to point at the user's position.
+						# face-tracking -- rotate in place to point at the user's position
 						_slide_target_pos = global_position
 						_slide_target_y = face_y
 						_sliding = true
 					elif height_angle > deg_to_rad(lazy_follow_height_angle_degrees):
-						# Height tracking — slide Y only to follow the user up/down.
+						# height tracking -- slide y only to follow the user up/down
 						_slide_target_pos = Vector3(global_position.x, target_height, global_position.z)
 						_slide_target_y = rotation.y
 						_sliding = true
@@ -460,6 +471,7 @@ func _process(delta: float) -> void:
 
 const PLANE_CLEARANCE := 0.15
 
+# pushes a target position away from any detected world planes by the clearance distance
 func _avoid_planes(pos: Vector3) -> Vector3:
 	var plane_manager := get_parent().get_node_or_null("PlaneManager")
 	if not plane_manager:
@@ -474,6 +486,7 @@ func _avoid_planes(pos: Vector3) -> Vector3:
 	return pos
 
 
+# returns true if a ray from from_pos to to_pos hits the world mesh collision layer
 func _is_occluded(from_pos: Vector3, to_pos: Vector3) -> bool:
 	var space := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(from_pos, to_pos)
@@ -481,6 +494,7 @@ func _is_occluded(from_pos: Vector3, to_pos: Vector3) -> bool:
 	return not space.intersect_ray(query).is_empty()
 
 
+# pulls the target position back toward the camera if the world mesh is in the way
 func _avoid_world_mesh(from_pos: Vector3, target_pos: Vector3) -> Vector3:
 	var space := get_world_3d().direct_space_state
 	var query := PhysicsRayQueryParameters3D.create(from_pos, target_pos)
@@ -490,12 +504,15 @@ func _avoid_world_mesh(from_pos: Vector3, target_pos: Vector3) -> Vector3:
 		return target_pos
 	var dir := (target_pos - from_pos).normalized()
 	var pulled := (hit["position"] as Vector3) - dir * environment_clearance
-	# Don't pull the panel behind the camera.
+	# don't pull the panel behind the camera
 	if (pulled - from_pos).dot(dir) < 0.0:
 		return from_pos
 	return pulled
 
 
+# resizes the quad mesh and subviewport to match the panel's current content height.
+# the viewport grows to fit content so nothing is clipped, and content_ratio tells the
+# shader what fraction of the viewport texture is real content vs transparent padding.
 func _sync_quad_to_panel() -> void:
 	if not _panel or not _placed:
 		return
@@ -504,18 +521,22 @@ func _sync_quad_to_panel() -> void:
 		return
 	_last_panel_h = ph
 	_panel_height_px = ph
+	# grow the viewport to fit the content so nothing clips at the bottom
 	var new_vp_h := maxi(int(ceil(ph)), viewport_size.y)
 	_viewport.size = Vector2i(viewport_size.x, new_vp_h)
+	# ratio is relative to the base viewport height so the quad scales proportionally
 	var ratio := ph / float(viewport_size.y)
 	var new_h := _initial_quad_h * ratio
 	quad_size.y = new_h
 	(_mesh_instance.mesh as QuadMesh).size = Vector2(quad_size.x, new_h)
+	# shift the mesh up so its top edge stays fixed as the panel grows downward
 	_mesh_instance.position.y = mesh_offset.y + (_initial_quad_h - new_h) * 0.5
 	var mat := _mesh_instance.material_override as ShaderMaterial
 	mat.set_shader_parameter("panel_size", Vector2(quad_size.x, new_h))
 	mat.set_shader_parameter("content_ratio", ph / float(new_vp_h))
 
 
+# forwards desktop scroll wheel events to the subviewport when the cursor is over the panel
 func _unhandled_input(event: InputEvent) -> void:
 	if not _desktop_sim or not _camera or not _placed:
 		return
@@ -539,6 +560,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 
+# processes finger poke input from hand trackers.
+# uses a deferred tap model: contact is recorded on first touch, and a press+release
+# is only fired on lift-off if the finger did not scroll during contact.
 func _check_poke() -> void:
 	var xr_origin := get_parent() as XROrigin3D
 	if not xr_origin:
@@ -552,7 +576,7 @@ func _check_poke() -> void:
 			continue
 
 		var ht := tracker as XRHandTracker
-		# HAND_JOINT_INDEX_TIP = 10, HAND_JOINT_FLAG_POSITION_VALID = 4
+		# hand joint 10 = index tip, flag 4 = position valid
 		var flags := ht.get_hand_joint_flags(10)
 		if not (flags & 4):
 			continue
@@ -615,6 +639,7 @@ func _check_poke() -> void:
 		elif _poke_scroll_mode:
 			_poke_scroll_mode = false
 		else:
+			# fire press and release at the original contact point, not the current position
 			_audio_player.play()
 			var press := InputEventMouseButton.new()
 			press.position = _poke_press_start_uv
@@ -636,6 +661,7 @@ func _check_poke() -> void:
 			_viewport.push_input(touch_up)
 
 
+# desktop mode only: simulates ray input using the camera forward direction and mouse button state
 func _check_mouse_ray() -> void:
 	if not _camera:
 		return
@@ -674,6 +700,9 @@ func _check_mouse_ray() -> void:
 		_viewport.push_input(release)
 
 
+# processes pinch ray input from the gesture manager for both hands.
+# uses a deferred tap model: pinch-down records the press position, and a tap is
+# only fired on pinch-release if the ray did not scroll during the pinch.
 func _check_ray() -> void:
 	var gm := get_parent().get_node_or_null("GestureManager") as GestureManager
 	if not gm:
@@ -704,6 +733,7 @@ func _check_ray() -> void:
 			_release_ray(hand)
 			continue
 
+		# raw_uv is used for scroll delta and press-start tracking; snapped uv is used for tap dispatch
 		var raw_uv := uv
 		uv = _snap_uv_to_buttons(uv) if not _ray_scroll_mode[hand] else uv
 
@@ -755,6 +785,7 @@ func _check_ray() -> void:
 				if _ray_scroll_mode[hand]:
 					_ray_scroll_mode[hand] = false
 				else:
+					# fire tap at the snapped uv so button snapping applies on release
 					_audio_player.play()
 					var press := InputEventMouseButton.new()
 					press.position = uv
@@ -780,6 +811,7 @@ func _check_ray() -> void:
 			_ray_prev_uv[hand] = raw_uv
 
 
+# cleans up press and scroll state when a ray leaves the panel or input ends
 func _release_ray(hand: String) -> void:
 	if _ray_pressing[hand]:
 		_ray_pressing[hand] = false
@@ -793,6 +825,7 @@ func _release_ray(hand: String) -> void:
 				_pin_icon.texture = load("res://ui/icon_thumbtack_filled.svg")
 
 
+# ray-plane intersection against the quad mesh's plane, returns Vector3.INF if no hit
 func _ray_world_hit(ray_origin: Vector3, ray_dir: Vector3) -> Vector3:
 	var panel_normal := _mesh_instance.global_transform.basis.z
 	var panel_center := _mesh_instance.global_position
@@ -805,6 +838,8 @@ func _ray_world_hit(ray_origin: Vector3, ray_dir: Vector3) -> Vector3:
 	return ray_origin + ray_dir * t
 
 
+# converts a world-space hit point on the quad to pixel coordinates in the subviewport.
+# uses _panel_height_px (not viewport height) so coordinates map correctly for dynamic-sized panels.
 func _world_hit_to_panel_uv(hit_world: Vector3, expand: float = 0.0) -> Vector2:
 	var local := _mesh_instance.global_transform.affine_inverse() * hit_world
 	var half_w := quad_size.x * 0.5
@@ -820,6 +855,7 @@ func _world_hit_to_panel_uv(hit_world: Vector3, expand: float = 0.0) -> Vector2:
 	return Vector2(px, py)
 
 
+# magnetically attracts the ray cursor toward nearby button centers to make pinch targeting easier
 func _snap_uv_to_buttons(uv: Vector2) -> Vector2:
 	if not _panel:
 		return uv
@@ -837,6 +873,7 @@ func _snap_uv_to_buttons(uv: Vector2) -> Vector2:
 	return uv.lerp(best, t)
 
 
+# recursively collects the panel-space centers of all visible, enabled buttons in the tree
 func _collect_button_centers(node: Control) -> Array[Vector2]:
 	var result: Array[Vector2] = []
 	if not node.is_visible_in_tree():
@@ -849,6 +886,8 @@ func _collect_button_centers(node: Control) -> Array[Vector2]:
 	return result
 
 
+# maps a fingertip world position to panel pixel coordinates for poke input.
+# returns (-1,-1) if the finger is not touching or near the panel surface.
 func _project_to_panel(tip_world: Vector3) -> Vector2:
 	var local := _mesh_instance.global_transform.affine_inverse() * tip_world
 	var half_w := quad_size.x * 0.5
@@ -857,6 +896,7 @@ func _project_to_panel(tip_world: Vector3) -> Vector2:
 	if abs(local.x) > half_w or abs(local.y) > half_h:
 		return Vector2(-1.0, -1.0)
 
+	# accept if finger is at or slightly behind the surface (contact) up to 15cm in front
 	if local.z < -0.01 or local.z > 0.15:
 		return Vector2(-1.0, -1.0)
 
@@ -869,9 +909,7 @@ func _project_to_panel(tip_world: Vector3) -> Vector2:
 	return Vector2(px, py)
 
 
-# Only accept hits within the current Control's rect, so transparent regions
-# of the SubViewport (common when the Control is smaller than the viewport)
-# don't block rays or poke input.
+# rejects hits on transparent regions of the subviewport so they don't block input
 func _hit_inside_content(px: float, py: float) -> bool:
 	if pinnable and py >= viewport_size.y - _PIN_STRIP_PX:
 		return px >= 0.0 and px <= float(viewport_size.x)

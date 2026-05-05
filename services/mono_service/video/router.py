@@ -44,6 +44,7 @@ def _convert(log_id: str) -> None:
         subprocess.run(
             [
                 FFMPEG, '-y', '-i', str(mp4_path),
+                '-vf', 'scale=-2:720',
                 '-codec:v', 'libtheora', '-qscale:v', '7',
                 '-codec:a', 'libvorbis', '-qscale:a', '5',
                 str(ogv_path),
