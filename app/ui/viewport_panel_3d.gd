@@ -117,7 +117,7 @@ var _poke_press_start_uv := Vector2.INF
 var _poke_scroll_mode := false
 
 const _PRESS_DEBOUNCE_TIME := 0.5
-const _SCROLL_DRAG_THRESHOLD_PX := 20.0
+const _SCROLL_DRAG_THRESHOLD_PX := 40.0
 const _SCROLL_SPEED := 0.01
 const _RAY_SNAP_RADIUS_PX := 80.0   # attraction kicks in within this pixel radius
 const _RAY_SNAP_STRENGTH := 0.65    # 0 = no pull, 1 = hard snap to centre
