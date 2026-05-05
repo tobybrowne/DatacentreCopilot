@@ -58,6 +58,7 @@ uniform sampler2D viewport_tex : source_color, filter_linear;
 uniform vec4 tint : source_color = vec4(1.0);
 uniform vec2 panel_size = vec2(1.0, 1.0);
 uniform float corner_radius = 0.02;
+uniform float content_ratio = 1.0;
 
 void fragment() {
 	vec2 p = (UV - 0.5) * panel_size;
@@ -68,7 +69,7 @@ void fragment() {
 	float dist = outside + inside - corner_radius;
 	float mask = 1.0 - smoothstep(-0.002, 0.002, dist);
 
-	vec4 col = texture(viewport_tex, UV) * tint;
+	vec4 col = texture(viewport_tex, vec2(UV.x, clamp(UV.y * content_ratio, 0.0, 1.0))) * tint;
 	ALBEDO = col.rgb;
 	ALPHA = col.a * mask;
 }
@@ -105,6 +106,9 @@ var _drag_hand := ""
 var _poke_hand := ""
 var _audio_player: AudioStreamPlayer
 var _press_debounce := 0.0
+var _initial_quad_h: float
+var _last_panel_h := -1.0
+var _panel_height_px: float
 var _ray_prev_uv := {"left": Vector2(-1.0, -1.0), "right": Vector2(-1.0, -1.0)}
 var _ray_press_start_uv := {"left": Vector2.INF, "right": Vector2.INF}
 var _ray_scroll_mode := {"left": false, "right": false}
@@ -185,6 +189,8 @@ func _ready() -> void:
 	_mesh_instance.material_override = mat
 	_mesh_instance.position = mesh_offset
 	add_child(_mesh_instance)
+	_initial_quad_h = quad_size.y
+	_panel_height_px = float(viewport_size.y)
 
 	if world_anchored:
 		# World-anchored panels are positioned by the caller — show immediately.
@@ -308,6 +314,8 @@ func _process(delta: float) -> void:
 		return
 	if _press_debounce > 0.0:
 		_press_debounce -= delta
+
+	_sync_quad_to_panel()
 
 	if _dragging:
 		if _drag_using_ray:
@@ -486,6 +494,26 @@ func _avoid_world_mesh(from_pos: Vector3, target_pos: Vector3) -> Vector3:
 	if (pulled - from_pos).dot(dir) < 0.0:
 		return from_pos
 	return pulled
+
+
+func _sync_quad_to_panel() -> void:
+	if not _panel or not _placed:
+		return
+	var ph := _panel.size.y
+	if ph <= 1.0 or is_equal_approx(ph, _last_panel_h):
+		return
+	_last_panel_h = ph
+	_panel_height_px = ph
+	var new_vp_h := maxi(int(ceil(ph)), viewport_size.y)
+	_viewport.size = Vector2i(viewport_size.x, new_vp_h)
+	var ratio := ph / float(viewport_size.y)
+	var new_h := _initial_quad_h * ratio
+	quad_size.y = new_h
+	(_mesh_instance.mesh as QuadMesh).size = Vector2(quad_size.x, new_h)
+	_mesh_instance.position.y = mesh_offset.y + (_initial_quad_h - new_h) * 0.5
+	var mat := _mesh_instance.material_override as ShaderMaterial
+	mat.set_shader_parameter("panel_size", Vector2(quad_size.x, new_h))
+	mat.set_shader_parameter("content_ratio", ph / float(new_vp_h))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -786,7 +814,7 @@ func _world_hit_to_panel_uv(hit_world: Vector3, expand: float = 0.0) -> Vector2:
 	var uv_x := (local.x + half_w) / quad_size.x
 	var uv_y := 1.0 - (local.y + half_h) / quad_size.y
 	var px := clampf(uv_x * _viewport.size.x, 0.0, float(_viewport.size.x - 1))
-	var py := clampf(uv_y * _viewport.size.y, 0.0, float(_viewport.size.y - 1))
+	var py := clampf(uv_y * _panel_height_px, 0.0, _panel_height_px - 1.0)
 	if expand == 0.0 and not _hit_inside_content(px, py):
 		return Vector2(-1.0, -1.0)
 	return Vector2(px, py)
@@ -835,7 +863,7 @@ func _project_to_panel(tip_world: Vector3) -> Vector2:
 	var uv_x := (local.x + half_w) / quad_size.x
 	var uv_y := 1.0 - (local.y + half_h) / quad_size.y
 	var px := uv_x * _viewport.size.x
-	var py := uv_y * _viewport.size.y
+	var py := uv_y * _panel_height_px
 	if not _hit_inside_content(px, py):
 		return Vector2(-1.0, -1.0)
 	return Vector2(px, py)

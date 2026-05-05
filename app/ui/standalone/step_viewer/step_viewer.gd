@@ -1,11 +1,11 @@
 class_name StepViewer
 extends BasePanel
 
-@onready var _counter: Label = $MarginContainer/VBoxContainer/StepCounter
-@onready var _text: Label = $MarginContainer/VBoxContainer/StepText
-@onready var _timer_display: PanelContainer = $MarginContainer/VBoxContainer/TimerDisplay
-@onready var _timer_label: Label = $MarginContainer/VBoxContainer/TimerDisplay/TimerLabel
-@onready var _replay_btn: Button = $MarginContainer/VBoxContainer/ReplayButton
+@onready var _counter: Label = $MainVBox/StepPanel/VBoxContainer/StepCounter
+@onready var _text: Label = $MainVBox/StepPanel/VBoxContainer/StepText
+@onready var _timer_panel: PanelContainer = $MainVBox/TimerPanel
+@onready var _timer_label: Label = $MainVBox/TimerPanel/TimerLabel
+@onready var _replay_btn: Button = $MainVBox/ReplayButton
 @onready var _countdown: Timer = $CountdownTimer
 
 signal step_changed(prev_step: Step, next_step: Step)
@@ -33,6 +33,7 @@ func _ready() -> void:
 	_spinner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_spinner.visible = false
 	_replay_btn.add_child(_spinner)
+	$MainVBox.minimum_size_changed.connect(func(): size = Vector2(size.x, $MainVBox.get_combined_minimum_size().y))
 
 
 func _on_replay_btn_pressed() -> void:
@@ -62,12 +63,6 @@ func show_replay_button(has_log: bool) -> void:
 	_replay_btn.visible = has_log
 	if not has_log:
 		_replay_btn.text = "▶  Play Log"
-	_fit_height()
-
-
-func _fit_height() -> void:
-	await get_tree().process_frame
-	size.y = $MarginContainer.get_combined_minimum_size().y
 
 
 func reset_replay_button() -> void:
@@ -130,7 +125,7 @@ func _process(delta: float) -> void:
 	if _countdown.is_stopped() or _timer_expired:
 		if _timer_expired:
 			_flash_accum += delta
-			_timer_display.modulate = Color.RED if fmod(_flash_accum, 0.6) < 0.3 else Color.WHITE
+			_timer_panel.modulate = Color.RED if fmod(_flash_accum, 0.6) < 0.3 else Color.WHITE
 		return
 
 	_timer_remaining = _countdown.time_left
@@ -142,8 +137,8 @@ func _start_timer(duration: float, target_uuid: String) -> void:
 	_timer_remaining = duration
 	_timer_expired = false
 	_flash_accum = 0.0
-	_timer_display.modulate = Color.WHITE
-	_timer_display.visible = true
+	_timer_panel.modulate = Color.WHITE
+	_timer_panel.visible = true
 	_timer_label.text = _format_time(duration)
 	_countdown.start(duration)
 	_countdown.timeout.connect(_on_timer_expired, CONNECT_ONE_SHOT)
@@ -153,7 +148,7 @@ func _stop_timer() -> void:
 	_countdown.stop()
 	_timer_target_uuid = ""
 	_timer_expired = false
-	_timer_display.visible = false
+	_timer_panel.visible = false
 	_timer_label.text = ""
 
 

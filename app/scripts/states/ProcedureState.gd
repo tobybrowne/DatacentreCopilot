@@ -77,6 +77,8 @@ func enter(data: Dictionary) -> void:
 		var sv := _step_viewer()
 		if sv: sv.reset_replay_button()
 	)
+	if _current_step:
+		_logs.refresh({"step_id": _current_step.id})
 
 	_wrist_panel = WristPanel3D.new()
 	gesture_manager.get_parent().add_child(_wrist_panel)
