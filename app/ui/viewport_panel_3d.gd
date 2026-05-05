@@ -105,8 +105,16 @@ var _drag_hand := ""
 var _poke_hand := ""
 var _audio_player: AudioStreamPlayer
 var _press_debounce := 0.0
+var _ray_prev_uv := {"left": Vector2(-1.0, -1.0), "right": Vector2(-1.0, -1.0)}
+var _ray_press_start_uv := {"left": Vector2.INF, "right": Vector2.INF}
+var _ray_scroll_mode := {"left": false, "right": false}
+var _poke_prev_uv := Vector2(-1.0, -1.0)
+var _poke_press_start_uv := Vector2.INF
+var _poke_scroll_mode := false
 
 const _PRESS_DEBOUNCE_TIME := 0.5
+const _SCROLL_DRAG_THRESHOLD_PX := 20.0
+const _SCROLL_SPEED := 0.01
 const _RAY_SNAP_RADIUS_PX := 80.0   # attraction kicks in within this pixel radius
 const _RAY_SNAP_STRENGTH := 0.65    # 0 = no pull, 1 = hard snap to centre
 const _RAY_HYSTERESIS_M := 0.015    # metres of extra panel margin while pressing
@@ -480,6 +488,29 @@ func _avoid_world_mesh(from_pos: Vector3, target_pos: Vector3) -> Vector3:
 	return pulled
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	if not _desktop_sim or not _camera or not _placed:
+		return
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if mb.button_index not in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]:
+		return
+	var hw := _ray_world_hit(_camera.global_position, -_camera.global_transform.basis.z)
+	if hw == Vector3.INF:
+		return
+	var uv := _world_hit_to_panel_uv(hw)
+	if uv.x < 0.0:
+		return
+	var fwd := InputEventMouseButton.new()
+	fwd.position = uv
+	fwd.button_index = mb.button_index
+	fwd.pressed = mb.pressed
+	fwd.factor = mb.factor
+	_viewport.push_input(fwd)
+	get_viewport().set_input_as_handled()
+
+
 func _check_poke() -> void:
 	var xr_origin := get_parent() as XROrigin3D
 	if not xr_origin:
@@ -533,26 +564,40 @@ func _check_poke() -> void:
 			if not _pressing and _press_debounce <= 0.0:
 				_pressing = true
 				_press_debounce = _PRESS_DEBOUNCE_TIME
-				_audio_player.play()
-				var press := InputEventMouseButton.new()
-				press.position = hit_pos
-				press.button_index = MOUSE_BUTTON_LEFT
-				press.pressed = true
-				_viewport.push_input(press)
-				var touch := InputEventScreenTouch.new()
-				touch.position = hit_pos
-				touch.pressed = true
-				touch.index = 0
-				_viewport.push_input(touch)
+				_poke_press_start_uv = hit_pos
+				_poke_scroll_mode = false
+			elif _pressing:
+				if not _poke_scroll_mode and abs(hit_pos.y - _poke_press_start_uv.y) > _SCROLL_DRAG_THRESHOLD_PX:
+					_poke_scroll_mode = true
+				if _poke_scroll_mode and _poke_prev_uv.x >= 0.0:
+					var pan := InputEventPanGesture.new()
+					pan.position = hit_pos
+					pan.delta = Vector2(0.0, -(hit_pos.y - _poke_prev_uv.y) * _SCROLL_SPEED)
+					_viewport.push_input(pan)
+		_poke_prev_uv = hit_pos
 	elif _pressing:
 		_pressing = false
 		_press_debounce = _PRESS_DEBOUNCE_TIME
+		_poke_prev_uv = Vector2(-1.0, -1.0)
 		if _dragging:
 			_dragging = false
 			_pinned = true
 			if _pin_button:
 				_pin_icon.texture = load("res://ui/icon_thumbtack_filled.svg")
+		elif _poke_scroll_mode:
+			_poke_scroll_mode = false
 		else:
+			_audio_player.play()
+			var press := InputEventMouseButton.new()
+			press.position = _poke_press_start_uv
+			press.button_index = MOUSE_BUTTON_LEFT
+			press.pressed = true
+			_viewport.push_input(press)
+			var touch := InputEventScreenTouch.new()
+			touch.position = _poke_press_start_uv
+			touch.pressed = true
+			touch.index = 0
+			_viewport.push_input(touch)
 			var release := InputEventMouseButton.new()
 			release.button_index = MOUSE_BUTTON_LEFT
 			release.pressed = false
@@ -631,7 +676,8 @@ func _check_ray() -> void:
 			_release_ray(hand)
 			continue
 
-		uv = _snap_uv_to_buttons(uv)
+		var raw_uv := uv
+		uv = _snap_uv_to_buttons(uv) if not _ray_scroll_mode[hand] else uv
 
 		gm.set_hit_point(hand, hw)
 		gm.claim_ui(hand)
@@ -662,52 +708,61 @@ func _check_ray() -> void:
 			motion.position = uv
 			_viewport.push_input(motion)
 
+			if _ray_pressing[hand]:
+				if not _ray_scroll_mode[hand] and abs(raw_uv.y - _ray_press_start_uv[hand].y) > _SCROLL_DRAG_THRESHOLD_PX:
+					_ray_scroll_mode[hand] = true
+				if _ray_scroll_mode[hand] and _ray_prev_uv[hand].x >= 0.0:
+					var pan := InputEventPanGesture.new()
+					pan.position = raw_uv
+					pan.delta = Vector2(0.0, -(raw_uv.y - _ray_prev_uv[hand].y) * _SCROLL_SPEED)
+					_viewport.push_input(pan)
+
 			if gm.is_ray_pinching(hand) and not _ray_pressing[hand] and _press_debounce <= 0.0:
 				_ray_pressing[hand] = true
 				_press_debounce = _PRESS_DEBOUNCE_TIME
-				_audio_player.play()
-				var press := InputEventMouseButton.new()
-				press.position = uv
-				press.button_index = MOUSE_BUTTON_LEFT
-				press.pressed = true
-				_viewport.push_input(press)
-				var touch := InputEventScreenTouch.new()
-				touch.position = uv
-				touch.pressed = true
-				touch.index = 0
-				_viewport.push_input(touch)
+				_ray_press_start_uv[hand] = raw_uv
+				_ray_scroll_mode[hand] = false
 			elif not gm.is_ray_pinching(hand) and _ray_pressing[hand]:
 				_ray_pressing[hand] = false
-				var release := InputEventMouseButton.new()
-				release.position = uv
-				release.button_index = MOUSE_BUTTON_LEFT
-				release.pressed = false
-				_viewport.push_input(release)
-				var touch_up := InputEventScreenTouch.new()
-				touch_up.position = uv
-				touch_up.pressed = false
-				touch_up.index = 0
-				_viewport.push_input(touch_up)
+				if _ray_scroll_mode[hand]:
+					_ray_scroll_mode[hand] = false
+				else:
+					_audio_player.play()
+					var press := InputEventMouseButton.new()
+					press.position = uv
+					press.button_index = MOUSE_BUTTON_LEFT
+					press.pressed = true
+					_viewport.push_input(press)
+					var touch := InputEventScreenTouch.new()
+					touch.position = uv
+					touch.pressed = true
+					touch.index = 0
+					_viewport.push_input(touch)
+					var release := InputEventMouseButton.new()
+					release.position = uv
+					release.button_index = MOUSE_BUTTON_LEFT
+					release.pressed = false
+					_viewport.push_input(release)
+					var touch_up := InputEventScreenTouch.new()
+					touch_up.position = uv
+					touch_up.pressed = false
+					touch_up.index = 0
+					_viewport.push_input(touch_up)
+
+			_ray_prev_uv[hand] = raw_uv
 
 
 func _release_ray(hand: String) -> void:
 	if _ray_pressing[hand]:
 		_ray_pressing[hand] = false
+		_ray_scroll_mode[hand] = false
+		_ray_prev_uv[hand] = Vector2(-1.0, -1.0)
 		_press_debounce = _PRESS_DEBOUNCE_TIME
 		if _dragging and _drag_hand == hand:
 			_dragging = false
 			_pinned = true
 			if _pin_button:
 				_pin_icon.texture = load("res://ui/icon_thumbtack_filled.svg")
-		else:
-			var release := InputEventMouseButton.new()
-			release.button_index = MOUSE_BUTTON_LEFT
-			release.pressed = false
-			_viewport.push_input(release)
-			var touch_up := InputEventScreenTouch.new()
-			touch_up.pressed = false
-			touch_up.index = 0
-			_viewport.push_input(touch_up)
 
 
 func _ray_world_hit(ray_origin: Vector3, ray_dir: Vector3) -> Vector3:
