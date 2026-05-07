@@ -1,12 +1,12 @@
 import os
 import tempfile
 
-import alphashape
 import numpy as np
 import trimesh
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
-from shapely.geometry import MultiPoint, Polygon
+from shapely import concave_hull
+from shapely.geometry import MultiPoint
 
 from common import get_supabase
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix='/spaces')
 class BboxRequest(BaseModel):
     space_id: str
     n_sides: int = 40
-    alpha: float = 0.5
+    ratio: float = 0.3
 
 
 def _sample_perimeter(pts: np.ndarray, n: int) -> np.ndarray:
@@ -34,7 +34,7 @@ def _sample_perimeter(pts: np.ndarray, n: int) -> np.ndarray:
     return np.array(result)
 
 
-def _compute_bounding_box(space_id: str, n_sides: int = 40, alpha: float = 0.5) -> None:
+def _compute_bounding_box(space_id: str, n_sides: int = 40, ratio: float = 0.3) -> None:
     sb = get_supabase()
 
     row = (
@@ -61,26 +61,51 @@ def _compute_bounding_box(space_id: str, n_sides: int = 40, alpha: float = 0.5) 
         else:
             mesh = loaded
 
-        # Drop components whose centroid lies outside the main component's
-        # bounding box (padded by 1 m) — removes distant scan artifacts while
-        # keeping all valid room geometry regardless of component size.
-        components = mesh.split(only_watertight=False)
-        if len(components) > 1:
-            main = max(components, key=lambda c: len(c.vertices))
-            lo = main.bounds[0] - 1.0
-            hi = main.bounds[1] + 1.0
-            kept = [c for c in components if np.all(np.array(c.centroid) >= lo) and np.all(np.array(c.centroid) <= hi)]
-            bbox_mesh = trimesh.util.concatenate(kept) if kept else main
-        else:
-            bbox_mesh = mesh
+        verts = np.array(mesh.vertices)
 
-        verts = np.array(bbox_mesh.vertices)
+        # Drop floating islands using voxel-based XZ connectivity.
+        # Mesh-face adjacency is unreliable for GLB scans (submeshes don't share edges),
+        # so we voxelise the vertex positions and BFS over occupied cells instead.
+        # decreasing this value makes the algorithm more aggressively filter "floating" sections
+        VOXEL = 0.05
+        cx = np.floor(verts[:, 0] / VOXEL).astype(int)
+        cz = np.floor(verts[:, 2] / VOXEL).astype(int)
+
+        cell_to_indices: dict = {}
+        for i, (x, z) in enumerate(zip(cx, cz)):
+            cell_to_indices.setdefault((x, z), []).append(i)
+
+        occupied = set(cell_to_indices.keys())
+        visited: set = set()
+        components: list = []
+
+        for start in occupied:
+            if start in visited:
+                continue
+            component: list = []
+            queue = [start]
+            while queue:
+                cell = queue.pop()
+                if cell in visited:
+                    continue
+                visited.add(cell)
+                component.append(cell)
+                x, z = cell
+                for nb in ((x+1, z), (x-1, z), (x, z+1), (x, z-1)):
+                    if nb in occupied and nb not in visited:
+                        queue.append(nb)
+            components.append(component)
+
+        if len(components) > 1:
+            largest = max(components, key=len)
+            keep = set()
+            for cell in largest:
+                keep.update(cell_to_indices[cell])
+            verts = verts[sorted(keep)]
+
         xz = verts[:, [0, 2]]
 
-        shape = alphashape.alphashape(xz, alpha)
-        # Fall back to convex hull if alpha produces a degenerate/multipart result
-        if not isinstance(shape, Polygon) or shape.is_empty:
-            shape = MultiPoint(xz).convex_hull
+        shape = concave_hull(MultiPoint(xz), ratio=ratio)
 
         hull_pts = np.array(shape.exterior.coords[:-1])  # drop repeated closing vertex
 
@@ -102,5 +127,5 @@ def _compute_bounding_box(space_id: str, n_sides: int = 40, alpha: float = 0.5) 
 @router.post('/compute-bbox')
 async def compute_bbox(req: BboxRequest, background_tasks: BackgroundTasks) -> dict:
     """Compute and store the N-gon prism footprint for a space's GLB. Runs in background."""
-    background_tasks.add_task(_compute_bounding_box, req.space_id, req.n_sides, req.alpha)
-    return {'status': 'computing', 'space_id': req.space_id, 'n_sides': req.n_sides, 'alpha': req.alpha}
+    background_tasks.add_task(_compute_bounding_box, req.space_id, req.n_sides, req.ratio)
+    return {'status': 'computing', 'space_id': req.space_id, 'n_sides': req.n_sides, 'ratio': req.ratio}

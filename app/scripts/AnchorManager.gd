@@ -387,6 +387,8 @@ func _create_virtual_marker(anchor: Anchor, other_space: bool) -> Node3D:
 			m.anchor = anchor
 			return m
 		_:
+			if DevConfig.DEV_MODE:
+				return Node3D.new()  # invisible placeholder
 			var m := ContentAnchorMarker.new()
 			m.anchor = anchor
 			m.other_space = other_space
@@ -400,6 +402,8 @@ func _create_tracked_marker(anchor: Anchor) -> Node3D:
 			m.anchor = anchor
 			return m
 		Anchor.TYPE_REFERENCE:
+			if DevConfig.DEV_MODE:
+				return Node3D.new()
 			var m := ReferenceAnchorMarker.new()
 			m.anchor = anchor
 			return m
@@ -408,6 +412,8 @@ func _create_tracked_marker(anchor: Anchor) -> Node3D:
 			m.anchor = anchor
 			return m
 		_:
+			if DevConfig.DEV_MODE:
+				return Node3D.new()
 			var m := ContentAnchorMarker.new()
 			m.anchor = anchor
 			return m
@@ -450,17 +456,17 @@ func _on_ml_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bo
 		return
 
 	var anchor := _get_anchor_by_ml2(uuid_str)
-	if anchor:
-		anchor_node.add_child(_create_tracked_marker(anchor))
-	else:
-		var fallback := ReferenceAnchorMarker.new()
-		fallback.anchor = Anchor.new()
-		anchor_node.add_child(fallback)
 
 	await get_tree().process_frame
 
 	if _ref_anchors.has(uuid_str):
 		var ref: Anchor = _ref_anchors[uuid_str]
+		if anchor:
+			anchor_node.add_child(_create_tracked_marker(anchor))
+		else:
+			var fallback := ReferenceAnchorMarker.new()
+			fallback.anchor = Anchor.new()
+			anchor_node.add_child(fallback)
 		_kabsch_src.append(ref.glb_position)
 		_kabsch_nodes.append(anchor_node)
 		print("AnchorManager: Kabsch pair #", _kabsch_src.size(), " for ", uuid_str)
@@ -468,7 +474,7 @@ func _on_ml_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bo
 		_try_calibrate()
 	elif _calibrated:
 		if anchor and anchor.glb_position:
-			anchor_node.position = _to_local(anchor.glb_position, anchor.space_id)
+			_place_virtual_marker(anchor, anchor.space_id != _current_space_id)
 
 	anchor_tracked.emit(anchor_node, ml2_uuid, is_new)
 

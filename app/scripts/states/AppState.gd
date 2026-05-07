@@ -27,6 +27,7 @@ var progress_indicator: ProgressIndicator
 var _current: State = null
 var _current_id: States = States.IDLE
 var _states: Dictionary = {}  # States → State
+var _wrist_panel: WristPanel3D = null
 
 
 func setup(
@@ -78,6 +79,12 @@ func setup(
 	gesture_manager.home_gesture_completed.connect(_on_home_completed)
 	gesture_manager.home_gesture_ended.connect(func(_h: String): progress_indicator.clear())
 
+	_wrist_panel = WristPanel3D.new()
+	gesture_manager.get_parent().add_child(_wrist_panel)
+	_wrist_panel.home_requested.connect(go_home)
+	_wrist_panel.visible = false
+	state_changed.connect(_on_state_changed_wrist)
+
 
 func transition_to(state: States, data: Dictionary = {}) -> void:
 	var next: State = _states.get(state)
@@ -117,8 +124,12 @@ func _on_pinch_ended(hand: String) -> void:
 
 # ── Home gesture (global) ────────────────────────────────────────────────────
 
+const _RING_DELAY := 1.0
+
 func _on_home_held(_hand: String, pos: Vector3, duration: float) -> void:
-	progress_indicator.update(pos, minf(duration / gesture_manager.hold_time, 1.0), Color(0.2, 0.8, 1.0))
+	if duration < _RING_DELAY:
+		return
+	progress_indicator.update(pos, minf((duration - _RING_DELAY) / (gesture_manager.hold_time - _RING_DELAY), 1.0), Color(0.2, 0.8, 1.0))
 
 
 func _on_home_completed(_hand: String) -> void:
@@ -129,5 +140,10 @@ func _on_home_completed(_hand: String) -> void:
 func go_home() -> void:
 	PanelRouter.pop_to_root()
 	transition_to(States.IDLE)
+
+
+func _on_state_changed_wrist(_from: States, to: States) -> void:
+	if _wrist_panel:
+		_wrist_panel.visible = to != States.IDLE
 
 

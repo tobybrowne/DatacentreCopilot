@@ -9,7 +9,7 @@
 class_name GestureManager
 extends Node
 
-@export var pinch_threshold: float = 0.02
+@export var pinch_threshold: float = 0.01
 @export var hold_time: float = 3.0
 @export var ray_smooth_speed: float = 18.0
 @export var ray_back_offset: float = 0.12
@@ -193,16 +193,16 @@ func _update_ray_visuals() -> void:
 			continue
 
 		var has_hit: bool = _hit_points[hand] != Vector3.INF
-		var ray_end: Vector3 = _hit_points[hand] if has_hit else _ray_visual_origins[hand] + ray_directions[hand] * 2.0
 		var pinching := is_ray_pinching(hand)
-		var ray_color := Color(0.4, 0.85, 1.0, 1.0) if pinching else Color(1.0, 1.0, 1.0, 0.7)
 
-		_ray_immediate.surface_begin(Mesh.PRIMITIVE_LINES)
-		_ray_immediate.surface_set_color(Color(ray_color.r, ray_color.g, ray_color.b, 0.0))
-		_ray_immediate.surface_add_vertex(_ray_visual_origins[hand])
-		_ray_immediate.surface_set_color(ray_color)
-		_ray_immediate.surface_add_vertex(ray_end)
-		_ray_immediate.surface_end()
+		if has_hit:
+			var ray_color := Color(0.4, 0.85, 1.0, 1.0) if pinching else Color(1.0, 1.0, 1.0, 0.7)
+			_ray_immediate.surface_begin(Mesh.PRIMITIVE_LINES)
+			_ray_immediate.surface_set_color(Color(ray_color.r, ray_color.g, ray_color.b, 0.0))
+			_ray_immediate.surface_add_vertex(_ray_visual_origins[hand])
+			_ray_immediate.surface_set_color(ray_color)
+			_ray_immediate.surface_add_vertex(_hit_points[hand])
+			_ray_immediate.surface_end()
 
 		_reticles[hand].visible = has_hit
 		if has_hit:

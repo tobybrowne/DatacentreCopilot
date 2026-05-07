@@ -73,7 +73,10 @@ var _followup_timer: SceneTreeTimer = null
 
 const _FOLLOWUP_WINDOW := 7.0
 
-const _CHUNK_BYTES := 4800  # 100ms @ 24kHz mono PCM16
+const _CHUNK_BYTES := 4800        # 100ms @ 24kHz mono PCM16
+const _PREROLL_BYTES := 24000 * 2 * 2 # 2s rolling pre-roll at 24kHz PCM16
+
+var _preroll_buffer := PackedByteArray()
 
 
 func _ready() -> void:
@@ -133,11 +136,7 @@ func _process(delta: float) -> void:
 				_on_ws_connected()
 			_receive_messages()
 			_drain_playback_queue()
-			if _listening:
-				_send_timer += delta
-				if _send_timer >= send_interval_ms / 1000.0:
-					_send_timer = 0.0
-					_capture_and_send()
+			_drain_mic(delta)
 
 		WebSocketPeer.STATE_CLOSED:
 			if _is_connected:
@@ -149,6 +148,7 @@ func _on_ws_connected() -> void:
 	print("CopilotManager: connected")
 	connected.emit()
 	_send_session_update()
+	_mic_player.play()  # Always claimed — pre-roll buffer runs continuously
 
 
 func _send_session_update() -> void:
@@ -170,18 +170,27 @@ func _send_session_update() -> void:
 	_send({"type": "session_update", "session": session})
 
 
-func _capture_and_send() -> void:
+func _drain_mic(delta: float) -> void:
 	var available := _capture.get_frames_available()
 	if available <= 0:
 		return
+	var pcm := _resample_to_pcm16(_capture.get_buffer(available))
 
-	var frames := _capture.get_buffer(available)
-	_mic_buffer.append_array(_resample_to_pcm16(frames))
+	if not _listening:
+		# Keep a rolling 1s window so it's ready when wake word fires
+		_preroll_buffer.append_array(pcm)
+		if _preroll_buffer.size() > _PREROLL_BYTES:
+			_preroll_buffer = _preroll_buffer.slice(_preroll_buffer.size() - _PREROLL_BYTES)
+		return
 
-	while _mic_buffer.size() >= _CHUNK_BYTES:
-		var chunk := _mic_buffer.slice(0, _CHUNK_BYTES)
-		_mic_buffer = _mic_buffer.slice(_CHUNK_BYTES)
-		_send({"type": "audio", "data": Marshalls.raw_to_base64(chunk)})
+	_send_timer += delta
+	_mic_buffer.append_array(pcm)
+	if _send_timer >= send_interval_ms / 1000.0:
+		_send_timer = 0.0
+		while _mic_buffer.size() >= _CHUNK_BYTES:
+			var chunk := _mic_buffer.slice(0, _CHUNK_BYTES)
+			_mic_buffer = _mic_buffer.slice(_CHUNK_BYTES)
+			_send({"type": "audio", "data": Marshalls.raw_to_base64(chunk)})
 
 
 func _resample_to_pcm16(frames: PackedVector2Array) -> PackedByteArray:
@@ -316,7 +325,7 @@ func setup_hud(camera: Camera3D) -> void:
 func _stop_listening() -> void:
 	_listening = false
 	_followup_timer = null
-	_mic_player.stop()
+	_mic_buffer.clear()
 	if _listen_dot: _listen_dot.visible = false
 	print("CopilotManager: follow-up window closed")
 
@@ -327,9 +336,8 @@ func _on_wake_word() -> void:
 		return
 	_followup_timer = null
 	_listening = true
-	_mic_buffer.clear()
-	_capture.clear_buffer()
-	_mic_player.play()
+	_mic_buffer = _preroll_buffer  # include audio captured right after "copilot"
+	_preroll_buffer = PackedByteArray()
 	if _listen_dot: _listen_dot.visible = true
 	print("CopilotManager: wake word — listening")
 

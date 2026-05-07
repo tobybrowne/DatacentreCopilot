@@ -3,7 +3,7 @@ extends BasePanel
 
 # _PIN_STRIP_PX in ViewportPanel3D is 80 — controls must sit above that zone.
 const PIN_STRIP_PX := 80.0
-const CONTROLS_HEIGHT := 56.0
+const CONTROLS_HEIGHT := 112.0
 
 var _video_player: VideoStreamPlayer
 var _play_pause_btn: Button
@@ -13,7 +13,7 @@ var _seeking: bool = false
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(640, 448)
+	custom_minimum_size = Vector2(1280, 896)
 
 	var bg := ColorRect.new()
 	bg.color = Color(0.06, 0.06, 0.08, 1.0)
@@ -23,16 +23,16 @@ func _ready() -> void:
 	# Close button pinned to top-right corner
 	var close_btn := Button.new()
 	close_btn.text = "✕"
-	close_btn.custom_minimum_size = Vector2(56, 56)
-	close_btn.add_theme_font_size_override("font_size", BasePanel.FONT_BODY)
+	close_btn.custom_minimum_size = Vector2(112, 112)
+	close_btn.add_theme_font_size_override("font_size", BasePanel.FONT_BODY * 2)
 	close_btn.anchor_left = 1.0
 	close_btn.anchor_top = 0.0
 	close_btn.anchor_right = 1.0
 	close_btn.anchor_bottom = 0.0
-	close_btn.offset_left = -64
-	close_btn.offset_top = 8
-	close_btn.offset_right = -8
-	close_btn.offset_bottom = 64
+	close_btn.offset_left = -128
+	close_btn.offset_top = 16
+	close_btn.offset_right = -16
+	close_btn.offset_bottom = 128
 	close_btn.z_index = 1
 	_apply_square_btn_style(close_btn)
 	close_btn.pressed.connect(func(): close_requested.emit())
@@ -68,22 +68,22 @@ func _ready() -> void:
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 16)
-	margin.add_theme_constant_override("margin_right", 16)
-	margin.add_theme_constant_override("margin_top", 6)
-	margin.add_theme_constant_override("margin_bottom", 6)
+	margin.add_theme_constant_override("margin_left", 32)
+	margin.add_theme_constant_override("margin_right", 32)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
 	bar.add_child(margin)
 
 	# Single row: [▶] [====seek====] [0:00 / 0:00]
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
+	row.add_theme_constant_override("separation", 24)
 	margin.add_child(row)
 
 	_play_pause_btn = Button.new()
 	_play_pause_btn.text = "▶"
-	_play_pause_btn.custom_minimum_size = Vector2(44, 44)
+	_play_pause_btn.custom_minimum_size = Vector2(88, 88)
 	_play_pause_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_play_pause_btn.add_theme_font_size_override("font_size", BasePanel.FONT_BODY)
+	_play_pause_btn.add_theme_font_size_override("font_size", BasePanel.FONT_BODY * 2)
 	_apply_square_btn_style(_play_pause_btn)
 	_play_pause_btn.pressed.connect(_on_play_pause)
 	row.add_child(_play_pause_btn)
@@ -99,7 +99,7 @@ func _ready() -> void:
 	row.add_child(_seek_bar)
 
 	_time_label = Label.new()
-	_time_label.add_theme_font_size_override("font_size", BasePanel.FONT_SMALL)
+	_time_label.add_theme_font_size_override("font_size", BasePanel.FONT_SMALL * 2)
 	_time_label.add_theme_color_override("font_color", BasePanel.COLOR_TEXT)
 	_time_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_time_label.text = "--:-- / --:--"
@@ -168,7 +168,7 @@ func _apply_square_btn_style(btn: Button) -> void:
 	for state in colors:
 		var s := StyleBoxFlat.new()
 		s.bg_color = colors[state]
-		s.set_corner_radius_all(6)
+		s.set_corner_radius_all(12)
 		s.set_content_margin_all(0)
 		btn.add_theme_stylebox_override(state, s)
 

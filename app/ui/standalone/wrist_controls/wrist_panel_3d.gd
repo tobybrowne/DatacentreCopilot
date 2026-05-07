@@ -1,8 +1,7 @@
 class_name WristPanel3D
 extends ViewportPanel3D
 
-signal prev_requested
-signal next_requested
+signal home_requested
 
 @export var tracked_hand: String = "left"
 
@@ -32,8 +31,7 @@ func _ready() -> void:
 
 
 func _on_panel_ready(p: Control) -> void:
-	p.prev_requested.connect(func(): prev_requested.emit())
-	p.next_requested.connect(func(): next_requested.emit())
+	p.home_requested.connect(func(): home_requested.emit())
 
 
 func _process(delta: float) -> void:

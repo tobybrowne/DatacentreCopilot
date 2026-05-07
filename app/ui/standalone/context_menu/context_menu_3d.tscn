@@ -29,8 +29,8 @@ panel_scene = ExtResource("2_panel")
 world_anchored = true
 touchable = true
 ray_enabled = true
-viewport_size = Vector2i(260, 64)
-quad_size = Vector2(0.26, 0.064)
+viewport_size = Vector2i(320, 80)
+quad_size = Vector2(0.16, 0.04)
 corner_radius_m = 0.01
 mesh_offset = Vector3(0, -0.082, 0)
 

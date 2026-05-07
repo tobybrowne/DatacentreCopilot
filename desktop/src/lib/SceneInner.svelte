@@ -4,6 +4,7 @@
   import * as THREE from 'three'
   import TransformedGltf from './TransformedGltf.svelte'
   import BoundingBoxMesh from './BoundingBoxMesh.svelte'
+  import DensityHeatmap from './DensityHeatmap.svelte'
   import type { Anchor, BoundingBox, Position, RigidTransform } from './types'
 
 
@@ -26,6 +27,7 @@
     stitchTransform?: RigidTransform | null;
     pointClouds?: Array<{ points: Position[]; color: number }>;
     mergedSpacesClickable?: boolean;
+    showDensity?: boolean;
     onplace?: (detail: { position: Position; spaceIndex: number | null }) => void;
     onselect?: (id: string) => void;
   }
@@ -47,6 +49,7 @@
     stitchTransform = null,
     pointClouds = [],
     mergedSpacesClickable = false,
+    showDensity = false,
     onplace,
     onselect
   }: Props = $props();
@@ -115,6 +118,10 @@
 {#if stitchPhase === 'idle'}
   {#if glbUrl}
     <GLTF url={glbUrl} onclick={(e: IntersectionEvent<MouseEvent>) => { e.stopPropagation(); if (e.point) handleMeshClick(e.point) }} />
+  {/if}
+
+  {#if showDensity && glbUrl}
+    <DensityHeatmap {glbUrl} />
   {/if}
 
   {#if showBoundingBoxes && boundingBox}

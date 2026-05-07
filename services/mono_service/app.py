@@ -1,3 +1,4 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -13,6 +14,7 @@ from spaces.router import router as spaces_router
 from stitch.router import router as stitch_router
 from video.router import router as video_router
 from copilot.router import router as realtime_router
+import live_asset_data
 
 
 @asynccontextmanager
@@ -21,7 +23,10 @@ async def lifespan(app: FastAPI):
     output_dir = os.environ.get('OUTPUT_DIR')
     if output_dir:
         infer.load(output_dir, os.environ.get('METHOD', 'kmeans'))
+
+    task = asyncio.create_task(live_asset_data.run())
     yield
+    task.cancel()
 
 
 app = FastAPI(title='Mono Service', lifespan=lifespan)

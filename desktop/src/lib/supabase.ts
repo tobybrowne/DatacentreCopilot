@@ -103,6 +103,11 @@ export async function deleteAnchor(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function unmapAnchor(id: string): Promise<void> {
+  const { error } = await supabase.from("anchors").update({ glb_position: null }).eq("id", id);
+  if (error) throw error;
+}
+
 export async function upsertCentroidAnchor(
   spaceId: string,
   glbPosition: Position,

@@ -5,8 +5,11 @@ class_name RouteManager
 
 @export var nav_api_url: String = "https://room-finder.tobybrowne.co.uk"
 
-const GOTO_COLOR := Color(0.2, 0.85, 1.0)
-const ROUTE_Y_OFFSET := 0.08  # float above floor
+const GOTO_COLOR      := Color(0.2, 0.85, 1.0)
+const ROUTE_Y_OFFSET  := 0.05  # float above floor
+const CHEVRON_SPACING := 0.45  # metres between chevrons
+const CHEVRON_W       := 0.14  # half-width of chevron
+const CHEVRON_D       := 0.20  # total depth (tip to back)
 
 # The single route shown for the active GOTO step.
 var _goto_route_node: Node3D = null
@@ -61,7 +64,7 @@ func _display_goto_route(waypoints: Array[Vector3], am: AnchorManager) -> void:
 		return
 	_goto_route_node = Node3D.new()
 	get_parent().add_child(_goto_route_node)
-	_build_route_line(_goto_route_node, waypoints, am, GOTO_COLOR)
+	_build_chevrons(_goto_route_node, waypoints, am, GOTO_COLOR)
 
 
 # HTTP request to the mono service, function returns Array[Vector3] in building world-space, or [].
@@ -110,41 +113,11 @@ func request_path(anchor_a_id: String, anchor_b_id: String) -> Array[Vector3]:
 	return waypoints
 
 
-func _build_route_line(parent: Node3D, waypoints: Array[Vector3], am: AnchorManager, color: Color) -> void:
+func _build_chevrons(parent: Node3D, waypoints: Array[Vector3], am: AnchorManager, color: Color) -> void:
 	var local_pts: Array[Vector3] = []
 	for wp in waypoints:
 		local_pts.append(am.world_to_local(wp) + Vector3(0, ROUTE_Y_OFFSET, 0))
 
-	var mesh := ImmediateMesh.new()
-	var mat  := StandardMaterial3D.new()
-	mat.albedo_color               = color
-	mat.emission_enabled           = true
-	mat.emission                   = color
-	mat.emission_energy_multiplier = 2.0
-	mat.shading_mode               = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.no_depth_test              = true
-
-	var mi := MeshInstance3D.new()
-	mi.mesh              = mesh
-	mi.material_override = mat
-	parent.add_child(mi)
-
-	mesh.surface_begin(Mesh.PRIMITIVE_LINES)
-	for i in range(local_pts.size() - 1):
-		mesh.surface_add_vertex(local_pts[i])
-		mesh.surface_add_vertex(local_pts[i + 1])
-	mesh.surface_end()
-
-	_add_endpoint(parent, local_pts[0],                    Color(0.0, 1.0, 0.5))
-	_add_endpoint(parent, local_pts[local_pts.size() - 1], Color(1.0, 0.2, 0.2))
-
-
-func _add_endpoint(parent: Node3D, pos: Vector3, color: Color) -> void:
-	var mi     := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.04
-	sphere.height = 0.08
-	mi.mesh = sphere
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color               = color
 	mat.emission_enabled           = true
@@ -152,6 +125,63 @@ func _add_endpoint(parent: Node3D, pos: Vector3, color: Color) -> void:
 	mat.emission_energy_multiplier = 2.0
 	mat.shading_mode               = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.no_depth_test              = true
+	mat.cull_mode                  = BaseMaterial3D.CULL_DISABLED
+
+	var mesh := ImmediateMesh.new()
+	var mi   := MeshInstance3D.new()
+	mi.mesh              = mesh
+	mi.material_override = mat
+	parent.add_child(mi)
+
+	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in range(local_pts.size() - 1):
+		_chevrons_along_segment(mesh, local_pts[i], local_pts[i + 1])
+	mesh.surface_end()
+
+	_add_destination(parent, local_pts[local_pts.size() - 1], color)
+
+
+func _chevrons_along_segment(mesh: ImmediateMesh, from: Vector3, to: Vector3) -> void:
+	var seg := to - from
+	var len := seg.length()
+	if len < 0.001:
+		return
+	var fwd   := seg / len
+	var right := Vector3(fwd.z, 0.0, -fwd.x)
+
+	var t := CHEVRON_SPACING * 0.5
+	while t < len:
+		var c := from + fwd * t
+		# Outer hull
+		var o_tip := c + fwd   * (CHEVRON_D * 0.55)
+		var o_bl  := c - fwd   * (CHEVRON_D * 0.45) - right * CHEVRON_W
+		var o_br  := c - fwd   * (CHEVRON_D * 0.45) + right * CHEVRON_W
+		# Inner hull (inset to form a hollow band)
+		var i_tip := c + fwd   * (CHEVRON_D * 0.20)
+		var i_bl  := c - fwd   * (CHEVRON_D * 0.10) - right * CHEVRON_W * 0.50
+		var i_br  := c - fwd   * (CHEVRON_D * 0.10) + right * CHEVRON_W * 0.50
+		# Left wing
+		mesh.surface_add_vertex(o_tip); mesh.surface_add_vertex(o_bl);  mesh.surface_add_vertex(i_bl)
+		mesh.surface_add_vertex(o_tip); mesh.surface_add_vertex(i_bl);  mesh.surface_add_vertex(i_tip)
+		# Right wing
+		mesh.surface_add_vertex(o_tip); mesh.surface_add_vertex(i_br);  mesh.surface_add_vertex(o_br)
+		mesh.surface_add_vertex(o_tip); mesh.surface_add_vertex(i_tip); mesh.surface_add_vertex(i_br)
+		t += CHEVRON_SPACING
+
+
+func _add_destination(parent: Node3D, pos: Vector3, color: Color) -> void:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color               = color
+	mat.emission_enabled           = true
+	mat.emission                   = color
+	mat.emission_energy_multiplier = 2.0
+	mat.shading_mode               = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.no_depth_test              = true
+	var mi     := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.06
+	sphere.height = 0.12
+	mi.mesh              = sphere
 	mi.material_override = mat
 	mi.position          = pos
 	parent.add_child(mi)

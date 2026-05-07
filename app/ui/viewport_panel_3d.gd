@@ -124,6 +124,7 @@ const _SCROLL_SPEED := 0.01
 const _RAY_SNAP_RADIUS_PX := 80.0   # attraction kicks in within this pixel radius
 const _RAY_SNAP_STRENGTH := 0.65    # 0 = no pull, 1 = hard snap to centre
 const _RAY_HYSTERESIS_M := 0.015    # metres of extra panel margin while pressing
+const _RAY_BEAM_MARGIN_M := 0.06   # metres of extra margin for beam visibility (slightly outside panel)
 
 const _PIN_STRIP_PX := 80
 
@@ -730,6 +731,9 @@ func _check_ray() -> void:
 		var expand := _RAY_HYSTERESIS_M if _ray_pressing[hand] else 0.0
 		var uv := _world_hit_to_panel_uv(hw, expand)
 		if uv.x < 0.0:
+			# Outside panel — show beam if within the wider beam margin, but don't claim input
+			if _world_hit_to_panel_uv(hw, _RAY_BEAM_MARGIN_M).x >= 0.0:
+				gm.set_hit_point(hand, hw)
 			_release_ray(hand)
 			continue
 

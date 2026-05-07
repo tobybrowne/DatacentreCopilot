@@ -9,5 +9,6 @@ panel_scene = ExtResource("2")
 viewport_size = Vector2i(800, 700)
 quad_size = Vector2(0.4, 0.35)
 distance = 1.3
-height_offset = -0.05
+height_offset = -0.3
+lazy_follow = true
 pinnable = true

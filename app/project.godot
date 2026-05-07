@@ -33,6 +33,7 @@ LogRecordManager="*res://scripts/LogRecordManager.gd"
 CVCameraManager="*res://scripts/CVCameraManager.gd"
 CopilotManager="*res://scripts/CopilotManager.gd"
 ContextManager="*res://scripts/ContextManager.gd"
+LiveDataManager="*res://scripts/LiveDataManager.gd"
 
 [display]
 

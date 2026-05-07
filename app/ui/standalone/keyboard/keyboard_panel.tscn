@@ -21,11 +21,11 @@ anchor_left = 0.0
 anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 0.0
-offset_bottom = 130.0
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 4
+offset_bottom = 260.0
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 8
 
 [node name="VBox" type="VBoxContainer" parent="Header"]
 anchor_left = 0.0
@@ -35,27 +35,27 @@ anchor_bottom = 1.0
 
 [node name="PromptLabel" type="Label" parent="Header/VBox"]
 text = "Enter text"
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 36
 theme_override_colors/font_color = Color(0.9, 0.9, 1.0, 0.7)
 
 [node name="TextDisplay" type="Label" parent="Header/VBox"]
 text = ""
-theme_override_font_sizes/font_size = 28
+theme_override_font_sizes/font_size = 56
 theme_override_colors/font_color = Color(0.9, 0.9, 1.0, 1.0)
 size_flags_vertical = 3
 clip_text = true
 
 [node name="ButtonRow" type="HBoxContainer" parent="Header/VBox"]
 alignment = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 16
 
 [node name="CancelButton" type="Button" parent="Header/VBox/ButtonRow"]
 text = "Cancel"
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 36
 
 [node name="ConfirmButton" type="Button" parent="Header/VBox/ButtonRow"]
 text = "Confirm"
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 36
 
 [node name="CopilotKeyboard" parent="." instance=ExtResource("2_keyboard")]
-offset = Vector2(0, 130)
+transform = Transform2D(2, 0, 0, 2, 0, 260)

@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation'
   import { page } from '$app/stores'
   import { onMount } from 'svelte'
-  import { fetchAnchors, fetchSpaceById, deleteAnchor, setGlbPosition, getSpaceGlbUrl } from '$lib/supabase'
+  import { fetchAnchors, fetchSpaceById, deleteAnchor, unmapAnchor, setGlbPosition, getSpaceGlbUrl } from '$lib/supabase'
   import Scene from '$lib/Scene.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
   import type { Anchor, BoundingBox, Position } from '$lib/types'
@@ -12,6 +12,7 @@
   let glbUrl: string | null = $state(null)
   let boundingBox: BoundingBox | null = $state(null)
   let showBoundingBoxes = $state(false)
+  let showDensity = $state(false)
   let anchors: Anchor[] = $state([])
   let selectedId: string | null = $state(null)
   let mappingAnchor: Anchor | null = $state(null)
@@ -63,6 +64,17 @@
   async function handleDelete(id: string): Promise<void> {
     try {
       await deleteAnchor(id)
+      if (selectedId === id) selectedId = null
+      if (mappingAnchor?.id === id) mappingAnchor = null
+      await refresh()
+    } catch (e) {
+      error = (e as Error).message
+    }
+  }
+
+  async function handleUnmap(id: string): Promise<void> {
+    try {
+      await unmapAnchor(id)
       if (selectedId === id) selectedId = null
       if (mappingAnchor?.id === id) mappingAnchor = null
       await refresh()
@@ -131,9 +143,9 @@
               </span>
             {/if}
             <button
-              class="delete-btn danger"
-              onclick={(e) => { e.stopPropagation(); handleDelete(anchor.id) }}
-            >✕</button>
+              class="delete-btn"
+              onclick={(e) => { e.stopPropagation(); handleUnmap(anchor.id) }}
+            >Unmap</button>
           </li>
         {/each}
       </ul>
@@ -185,6 +197,17 @@
       </button>
     </section>
   {/if}
+
+  {#if glbUrl}
+    <section>
+      <button style="width:100%" onclick={() => showDensity = !showDensity}>
+        {showDensity ? 'Hide density map' : 'Show density map'}
+      </button>
+      {#if showDensity}
+        <p class="hint-text" style="margin-top:6px">Blue = sparse (doorway glimpse) · Red = dense (room interior)</p>
+      {/if}
+    </section>
+  {/if}
 </Sidebar>
 
 <Scene
@@ -194,6 +217,7 @@
   {mappingAnchor}
   {boundingBox}
   {showBoundingBoxes}
+  {showDensity}
   onplace={handleMeshClick}
   onselect={(id) => selectedId = id}
 />
@@ -289,6 +313,8 @@
     border-radius: 4px;
     opacity: 0;
     transition: opacity 0.15s;
+    border-color: var(--text-muted);
+    color: var(--text-muted);
   }
   li:hover .delete-btn { opacity: 1; }
 

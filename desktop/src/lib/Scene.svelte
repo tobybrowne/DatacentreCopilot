@@ -23,6 +23,7 @@
     stitchTransform?: RigidTransform | null;
     pointClouds?: Array<{ points: Position[]; color: number }>;
     mergedSpacesClickable?: boolean;
+    showDensity?: boolean;
     onplace?: (detail: { position: Position; spaceIndex: number | null }) => void;
     onselect?: (id: string) => void;
   }
@@ -44,6 +45,7 @@
     stitchTransform = null,
     pointClouds = [],
     mergedSpacesClickable = false,
+    showDensity = false,
     onplace,
     onselect
   }: Props = $props();
@@ -68,6 +70,7 @@
       {stitchTransform}
       {pointClouds}
       {mergedSpacesClickable}
+      {showDensity}
       {onplace}
       {onselect}
     />

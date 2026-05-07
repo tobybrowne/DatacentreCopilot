@@ -24,17 +24,17 @@ const _INFO_SCENE := preload("res://ui/standalone/asset_info/asset_info_panel_3d
 
 signal interacted
 
-var _mat:       StandardMaterial3D
-var _light:     OmniLight3D
 var _asset: Asset = null
+var _manuals: Array[Dictionary] = []
 var _logs:      LogPlayerController = null
 
 var _fab_3d:  ViewportPanel3D = null
 var _info_3d: ViewportPanel3D = null
 var _beam:    MeshInstance3D  = null
 
-var _info_open      := false
+var _info_open       := false
 var _gaze_hide_timer := 0.0
+var _cached_live_data = null
 
 var _dwell_time := 0.0
 var _hold_timer := 0.0
@@ -49,17 +49,34 @@ func _ready() -> void:
 	if anchor.id.is_empty():
 		return
 	var task = await Supabase.database.query(
-		SupabaseQuery.new().from("assets").select().eq("anchor_id", anchor.id).range(0, 0)
+		SupabaseQuery.new().from("assets").select(PackedStringArray(["*", "asset_models(name,manufacturer,manual_id)"])).eq("anchor_id", anchor.id).range(0, 0)
 	).completed
 	if task.error != null or task.data == null or task.data.is_empty():
 		return
 
 	_asset = Asset.from_dict(task.data[0])
+	print("AssetAnchorMarker: raw data=", task.data[0])
+
+	var model = task.data[0].get("asset_models", null)
+	print("AssetAnchorMarker: model=", model)
+	if model is Dictionary:
+		var manual_id: String = model.get("manual_id", "")
+		print("AssetAnchorMarker: manual_id=", manual_id)
+		if not manual_id.is_empty():
+			var manual_task = await Supabase.database.query(
+				SupabaseQuery.new().from("manuals").select(PackedStringArray(["title,url"])).eq("id", manual_id).range(0, 0)
+			).completed
+			print("AssetAnchorMarker: manual query error=", manual_task.error, " data=", manual_task.data)
+			if manual_task.error == null and manual_task.data != null and not manual_task.data.is_empty():
+				var m: Dictionary = manual_task.data[0]
+				var url: String = m.get("url", "")
+				if not url.is_empty():
+					_manuals = [{"title": m.get("title", "Manual"), "url": url}]
+					print("AssetAnchorMarker: loaded manual: ", _manuals)
 
 	add_to_group("asset_markers")
 	interacted.connect(func(): ContextManager.set_interacted(_asset))
 
-	_build_orb()
 	_build_fab()
 
 	if _asset and not _asset.id.is_empty():
@@ -74,9 +91,13 @@ func _ready() -> void:
 			_get_xr_origin().add_child(_logs)
 			tree_exiting.connect(func(): if _logs: _logs.queue_free())
 
+		LiveDataManager.register(_asset.id, self)
+		tree_exiting.connect(func(): LiveDataManager.deregister(_asset.id))
+		LiveDataManager.fetch_latest([_asset.id])
+
 
 func _process(delta: float) -> void:
-	if _mat == null:
+	if _asset == null:
 		return
 
 	# Dwell interaction
@@ -86,7 +107,7 @@ func _process(delta: float) -> void:
 		if not _fired and _dwell_time >= DWELL_THRESHOLD:
 			_fired = true
 			_hold_timer = INTERACT_HOLD
-			if _asset and not _asset.id.is_empty():
+			if not _asset.id.is_empty():
 				LogRecordManager.record_asset_interaction(_asset.id)
 			interacted.emit()
 	else:
@@ -95,20 +116,16 @@ func _process(delta: float) -> void:
 
 	if _hold_timer > 0.0:
 		_hold_timer = maxf(0.0, _hold_timer - delta)
-	_set_color(COLOR_INTERACT if _hold_timer > 0.0 else COLOR)
 
-	# Gaze → fab visibility (only when info panel not open)
+	# Gaze tracking for ContextManager (fab is always visible)
 	if _fab_3d and not _info_open:
 		_fab_3d.global_position = global_position
 		if _is_gazed_at():
 			_gaze_hide_timer = GAZE_HIDE_DELAY
-			if not _fab_3d.visible:
-				_fab_3d.visible = true
-				ContextManager.set_looking_at(_asset)
+			ContextManager.set_looking_at(_asset)
 		else:
 			_gaze_hide_timer -= delta
-			if _gaze_hide_timer <= 0.0 and _fab_3d.visible:
-				_fab_3d.visible = false
+			if _gaze_hide_timer <= 0.0 and ContextManager.ctx_looking_at == _asset:
 				ContextManager.set_looking_at(null)
 
 	# Beam
@@ -116,26 +133,6 @@ func _process(delta: float) -> void:
 		_update_beam()
 
 
-func _build_orb() -> void:
-	var mi := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.015
-	sphere.height = 0.030
-	mi.mesh = sphere
-	_mat = StandardMaterial3D.new()
-	_mat.albedo_color = COLOR
-	_mat.emission_enabled = true
-	_mat.emission = COLOR
-	_mat.emission_energy_multiplier = 2.5
-	_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mi.material_override = _mat
-	add_child(mi)
-
-	_light = OmniLight3D.new()
-	_light.light_color = COLOR
-	_light.light_energy = 0.3
-	_light.omni_range = 0.3
-	add_child(_light)
 
 
 func _build_fab() -> void:
@@ -144,7 +141,7 @@ func _build_fab() -> void:
 		return
 	_fab_3d = _FAB_SCENE.instantiate()
 	_fab_3d.position = xr_origin.to_local(global_position)
-	_fab_3d.visible = false
+	_fab_3d.visible = true
 	xr_origin.add_child(_fab_3d)
 	var fab := _fab_3d.get_panel() as AssetFab
 	if fab:
@@ -186,7 +183,15 @@ func _open_info() -> void:
 
 	var panel := _info_3d.get_panel() as AssetInfoPanel
 	if panel:
-		panel.init({"asset_name": _asset.name if _asset else "", "asset_type": _asset.asset_type if _asset else "", "has_logs": _logs != null})
+		panel.init({
+			"asset_name":   _asset.name if _asset else "",
+			"asset_type":   _asset.asset_type if _asset else "",
+			"manufacturer": _asset.manufacturer if _asset else "",
+			"model_name":   _asset.model_name if _asset else "",
+			"manuals":      _manuals,
+			"has_logs":     _logs != null,
+			"live_data":    _cached_live_data,
+		})
 		panel.close_requested.connect(_close_info)
 		if _logs:
 			panel.logs_requested.connect(_logs.open_browser)
@@ -206,6 +211,27 @@ func _close_info() -> void:
 	if _beam:
 		_beam.queue_free()
 		_beam = null
+	if _fab_3d:
+		_fab_3d.visible = true
+
+
+func on_live_data(record: Dictionary) -> void:
+	var alarm: bool = record.get("alarm", false)
+	var fab := _fab_3d.get_panel() as AssetFab if _fab_3d else null
+	if fab:
+		fab.set_alarm(alarm)
+
+	var raw = record.get("data", {})
+	var data: Dictionary = raw if raw is Dictionary else {}
+	if AssetTypes.is_power_type(_asset.asset_type):
+		_cached_live_data = PowerAssetLiveData.from_dict(data)
+	elif AssetTypes.is_cooling_type(_asset.asset_type):
+		_cached_live_data = CoolingAssetLiveData.from_dict(data)
+
+	if _info_open and _info_3d:
+		var panel := _info_3d.get_panel() as AssetInfoPanel
+		if panel and _cached_live_data:
+			panel.update_live_data(_cached_live_data)
 
 
 func _create_beam() -> MeshInstance3D:
@@ -279,11 +305,6 @@ func _is_hand_nearby() -> bool:
 			return true
 	return false
 
-
-func _set_color(c: Color) -> void:
-	_mat.albedo_color = c
-	_mat.emission = c
-	_light.light_color = c
 
 
 func _get_xr_origin() -> Node3D:

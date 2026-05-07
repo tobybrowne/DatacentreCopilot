@@ -280,7 +280,7 @@
         disabled={saveState === 'saving'}
         onclick={handleSaveNavMesh}
       >
-        {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved ✓' : 'Save navmesh'}
+        {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : 'Save navmesh'}
       </button>
       {#if saveState === 'error'}
         <p class="hint danger">{saveError}</p>

@@ -14,5 +14,5 @@ echo "Syncing dependencies..."
 uv sync
 
 echo "Starting mono-service on ${HOST}:${PORT}"
-exec uv run python -m uvicorn app:app --host "$HOST" --port "$PORT"
+exec uv run python -m uvicorn app:app --host "$HOST" --port "$PORT" --reload
 

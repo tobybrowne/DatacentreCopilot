@@ -49,7 +49,7 @@ async def run_proxy(godot_ws: WebSocket) -> None:
     try:
         async with websockets.connect(
             _URL,
-            extra_headers={
+            additional_headers={
                 "Authorization": f"Bearer {_API_KEY}",
                 "OpenAI-Beta": "realtime=v1",
             },

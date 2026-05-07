@@ -43,8 +43,9 @@ func on_pinch_ended(_hand: String) -> void:
 # Right-pinch-hold opens a radial context menu, pinch-end selects the hovered
 # item. Helpers are opt-in — states call them from their own pinch handlers.
 
-const _CONTEXT_HOLD_TIME := 1.5
+const _CONTEXT_HOLD_TIME := 2.0
 const _CONTEXT_COLOR     := Color(0.2, 0.8, 1.0)
+const _RING_DELAY        := 1.0
 const _CONTEXT_MENU_SCENE := preload("res://ui/standalone/context_menu/context_menu_3d.tscn")
 
 var _context_menu: ViewportPanel3D = null
@@ -53,8 +54,8 @@ var _context_world_pos := Vector3.ZERO
 
 
 func _context_update_hold(position: Vector3, duration: float) -> void:
-	if _context_menu == null:
-		progress_indicator.update(position, minf(duration / _CONTEXT_HOLD_TIME, 1.0), _CONTEXT_COLOR)
+	if _context_menu == null and duration >= _RING_DELAY:
+		progress_indicator.update(position, minf((duration - _RING_DELAY) / (_CONTEXT_HOLD_TIME - _RING_DELAY), 1.0), _CONTEXT_COLOR)
 	if not _context_pending and duration >= _CONTEXT_HOLD_TIME:
 		_context_pending = true
 		progress_indicator.clear()

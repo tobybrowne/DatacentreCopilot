@@ -9,7 +9,6 @@ const _STEP_VIEWER_SCENE := preload("res://ui/standalone/step_viewer/step_viewer
 
 var _step_viewer_3d: ViewportPanel3D = null
 var _logs: LogPlayerController = null
-var _wrist_panel: WristPanel3D = null
 var _current_step: Step = null
 var _current_log_id: String = ""
 var _procedure: Procedure = null
@@ -23,13 +22,13 @@ func enter(data: Dictionary) -> void:
 		{
 			"type": "function",
 			"name": "next_step",
-			"description": "Navigate to the next step in the current procedure",
+			"description": "Navigate to the next step in the current procedure. After calling this, read the new step text aloud to the user.",
 			"parameters": {"type": "object", "properties": {}},
 		},
 		{
 			"type": "function",
 			"name": "previous_step",
-			"description": "Navigate to the previous step in the current procedure",
+			"description": "Navigate to the previous step in the current procedure. After calling this, read the new step text aloud to the user.",
 			"parameters": {"type": "object", "properties": {}},
 		},
 		{
@@ -80,10 +79,6 @@ func enter(data: Dictionary) -> void:
 	if _current_step:
 		_logs.refresh({"step_id": _current_step.id})
 
-	_wrist_panel = WristPanel3D.new()
-	gesture_manager.get_parent().add_child(_wrist_panel)
-	_wrist_panel.prev_requested.connect(_voice_prev)
-	_wrist_panel.next_requested.connect(_voice_next)
 
 
 func exit() -> void:
@@ -102,10 +97,6 @@ func exit() -> void:
 	if _logs:
 		_logs.queue_free()
 		_logs = null
-
-	if _wrist_panel:
-		_wrist_panel.queue_free()
-		_wrist_panel = null
 
 	_context_close()
 	_context_pending = false
@@ -155,13 +146,19 @@ func _on_copilot_function(fn_name: String, call_id: String, _args: Dictionary) -
 	match fn_name:
 		"next_step":
 			_voice_next()
-			CopilotManager.send_function_output(call_id, "ok")
+			CopilotManager.send_function_output(call_id, _step_output())
 		"previous_step":
 			_voice_prev()
-			CopilotManager.send_function_output(call_id, "ok")
+			CopilotManager.send_function_output(call_id, _step_output())
 		"go_home":
 			CopilotManager.send_function_output(call_id, "ok")
 			app.get_node("AppState").go_home()
+
+
+func _step_output() -> String:
+	if _current_step and not _current_step.text.is_empty():
+		return JSON.stringify({"step": _current_step.text})
+	return JSON.stringify({"step": ""})
 
 
 func _step_viewer() -> StepViewer:
