@@ -59,6 +59,7 @@ func _ready() -> void:
 	PanelRouter.panel_changed.connect(func(panel_id, _data): ContextManager.set_panel(panel_id))
 	CopilotManager.connect_voice_manager(voice_manager)
 	CopilotManager.setup_hud($XROrigin3D/XRCamera3D)
+	PassthroughManager.setup($XROrigin3D/XRCamera3D)
 
 	if OS.get_name() == "Android":
 		OS.request_permissions()

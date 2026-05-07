@@ -15,6 +15,12 @@ signal disconnected
 var tools: Array = [
 	{
 		"type": "function",
+		"name": "toggle_ar",
+		"description": "Show or hide all AR visuals so the user sees only the real world. Call again to restore.",
+		"parameters": {"type": "object", "properties": {}},
+	},
+	{
+		"type": "function",
 		"name": "set_volume",
 		"description": "Adjust the headset master volume up or down by one step, or set it to a specific level.",
 		"parameters": {
@@ -236,6 +242,8 @@ func _handle_message(msg: Dictionary) -> void:
 				_execute_query_table(msg["call_id"], msg["args"])
 			elif msg["name"] == "set_volume":
 				_execute_set_volume(msg["call_id"], msg["args"])
+			elif msg["name"] == "toggle_ar":
+				_execute_toggle_ar(msg["call_id"])
 			else:
 				function_called.emit(msg["name"], msg["call_id"], msg["args"])
 		"transcript":
@@ -350,6 +358,12 @@ func inject_context(text: String) -> void:
 func send_function_output(call_id: String, output: String) -> void:
 	if _is_connected:
 		_send({"type": "function_output", "call_id": call_id, "output": output})
+
+
+func _execute_toggle_ar(call_id: String) -> void:
+	PassthroughManager.toggle()
+	var state := "hidden" if not PassthroughManager.is_ar_visible() else "visible"
+	send_function_output(call_id, JSON.stringify({"ar": state}))
 
 
 func _execute_set_volume(call_id: String, args: Dictionary) -> void:
