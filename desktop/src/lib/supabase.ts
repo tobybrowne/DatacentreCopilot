@@ -4,7 +4,10 @@ import type {
   Asset,
   AssetWithAnchor,
   Building,
+  LogWithContext,
   Position,
+  Procedure,
+  ProcedureRun,
   RigidTransform,
   Space,
 } from "./types";
@@ -415,6 +418,154 @@ export async function setAssetAnchor(
     .update({ anchor_id: anchorId })
     .eq("id", assetId);
   if (error) throw error;
+}
+
+export async function fetchLogsForBuilding(
+  buildingId: string
+): Promise<LogWithContext[]> {
+  const { data: procs, error: e1 } = await supabase
+    .from("procedures")
+    .select("id, title, building_id, steps, log_type")
+    .eq("building_id", buildingId);
+  if (e1) throw e1;
+  if (!procs?.length) return [];
+
+  const procMap = new Map(procs.map((p) => [p.id, p as unknown as Procedure]));
+  const procIds = procs.map((p) => p.id);
+
+  const { data: runs, error: e2 } = await supabase
+    .from("procedure_runs")
+    .select("id, procedure_id, user_id, started_at, completed_at")
+    .in("procedure_id", procIds);
+  if (e2) throw e2;
+  if (!runs?.length) return [];
+
+  const runMap = new Map(runs.map((r) => [r.id, r as unknown as ProcedureRun]));
+  const runIds = runs.map((r) => r.id);
+
+  // Batch logs queries to avoid PostgREST URL length limits with large IN clauses
+  const BATCH = 50;
+  const rawLogs: Record<string, unknown>[] = [];
+  for (let i = 0; i < runIds.length; i += BATCH) {
+    const { data: batch, error } = await supabase
+      .from("logs")
+      .select("*")
+      .in("procedure_run_id", runIds.slice(i, i + BATCH));
+    if (error) throw error;
+    if (batch) rawLogs.push(...(batch as Record<string, unknown>[]));
+  }
+
+  rawLogs.sort((a, b) =>
+    (b.created_at as string).localeCompare(a.created_at as string)
+  );
+
+  const uniqueUserIds = [...new Set(rawLogs.map((l) => l.user_id as string))];
+  const { data: userRows } = await supabase
+    .from("users")
+    .select("id, contact_email")
+    .in("id", uniqueUserIds);
+  const emailMap = new Map(
+    (userRows ?? []).map((u: { id: string; contact_email: string }) => [u.id, u.contact_email])
+  );
+
+  // Fetch log_assets for all logs
+  const logIds = rawLogs.map((l) => l.id as string);
+  const rawLogAssets: { log_id: string; asset_id: string }[] = [];
+  for (let i = 0; i < logIds.length; i += BATCH) {
+    const { data: batch, error } = await supabase
+      .from("log_assets")
+      .select("log_id, asset_id")
+      .in("log_id", logIds.slice(i, i + BATCH));
+    if (error) throw error;
+    if (batch) rawLogAssets.push(...(batch as { log_id: string; asset_id: string }[]));
+  }
+
+  const uniqueAssetIds = [...new Set(rawLogAssets.map((la) => la.asset_id))];
+  const assetNameMap = new Map<string, string | null>();
+  for (let i = 0; i < uniqueAssetIds.length; i += BATCH) {
+    const { data: assetBatch } = await supabase
+      .from("assets")
+      .select("id, name")
+      .in("id", uniqueAssetIds.slice(i, i + BATCH));
+    (assetBatch ?? []).forEach((a: { id: string; name: string | null }) => assetNameMap.set(a.id, a.name));
+  }
+
+  const logAssetsMap = new Map<string, { id: string; name: string | null }[]>();
+  for (const la of rawLogAssets) {
+    if (!logAssetsMap.has(la.log_id)) logAssetsMap.set(la.log_id, []);
+    logAssetsMap.get(la.log_id)!.push({ id: la.asset_id, name: assetNameMap.get(la.asset_id) ?? null });
+  }
+
+  return rawLogs.map((log) => {
+    const run = log.procedure_run_id
+      ? runMap.get(log.procedure_run_id as string)
+      : undefined;
+    const proc = run ? procMap.get(run.procedure_id) : undefined;
+    return {
+      ...log,
+      userEmail: emailMap.get(log.user_id as string) ?? null,
+      assets: logAssetsMap.get(log.id as string) ?? [],
+      procedureRun: run && proc ? { ...run, procedure: proc } : null,
+    } as LogWithContext;
+  });
+}
+
+export async function fetchLogById(id: string): Promise<LogWithContext | null> {
+  const { data: log, error: e1 } = await supabase
+    .from("logs")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (e1) throw e1;
+  if (!log) return null;
+
+  const [logAssetsResult, userResult] = await Promise.all([
+    supabase.from("log_assets").select("asset_id, assets(id, name)").eq("log_id", log.id),
+    supabase.from("users").select("contact_email").eq("id", log.user_id).single(),
+  ]);
+  const assets = (logAssetsResult.data ?? []).map(
+    (la: { asset_id: string; assets: { id: string; name: string | null }[] | { id: string; name: string | null } | null }) => ({
+      id: la.asset_id,
+      name: Array.isArray(la.assets) ? (la.assets[0]?.name ?? null) : (la.assets?.name ?? null),
+    })
+  );
+
+  if (!log.procedure_run_id) {
+    return { ...log, procedureRun: null, userEmail: userResult.data?.contact_email ?? null, assets } as LogWithContext;
+  }
+
+  const { data: run, error: e2 } = await supabase
+    .from("procedure_runs")
+    .select("id, procedure_id, user_id, started_at, completed_at")
+    .eq("id", log.procedure_run_id)
+    .single();
+  if (e2 || !run) {
+    return { ...log, procedureRun: null, userEmail: userResult.data?.contact_email ?? null, assets } as LogWithContext;
+  }
+
+  const { data: proc, error: e3 } = await supabase
+    .from("procedures")
+    .select("id, title, building_id, steps, log_type")
+    .eq("id", run.procedure_id)
+    .single();
+  if (e3 || !proc) {
+    return { ...log, procedureRun: null, userEmail: userResult.data?.contact_email ?? null, assets } as LogWithContext;
+  }
+
+  return {
+    ...log,
+    userEmail: userResult.data?.contact_email ?? null,
+    assets,
+    procedureRun: { ...(run as unknown as ProcedureRun), procedure: proc as unknown as Procedure },
+  } as LogWithContext;
+}
+
+export async function getLogBucketUrl(path: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from("log_bucket")
+    .createSignedUrl(path, 3600);
+  if (error) throw error;
+  return data.signedUrl;
 }
 
 export function subscribeUserPosition(

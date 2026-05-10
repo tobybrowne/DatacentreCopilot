@@ -61,3 +61,48 @@ export interface Asset {
 export interface AssetWithAnchor extends Asset {
   anchor: Anchor | null;
 }
+
+export interface ProcedureStep {
+  id: string;
+  text: string;
+  timer?: { duration: number; target_uuid: string };
+}
+
+export interface Procedure {
+  id: string;
+  title: string;
+  building_id: string | null;
+  steps: ProcedureStep[];
+  log_type: 'FULL' | 'CAMERA_ONLY' | 'GEOMETRY_ONLY' | 'NONE';
+}
+
+export interface ProcedureRun {
+  id: string;
+  procedure_id: string;
+  user_id: string;
+  started_at: string;
+  completed_at: string | null;
+}
+
+export interface LogEntry {
+  id: string;
+  procedure_run_id: string | null;
+  step_id: string | null;
+  geometry_recording_path: string | null;
+  camera_recording_path: string | null;
+  camera_recording_path_ogv: string | null;
+  user_id: string;
+  site_id: string;
+  created_at: string;
+}
+
+export interface LogWithContext extends LogEntry {
+  procedureRun: (ProcedureRun & { procedure: Procedure }) | null;
+  userEmail: string | null;
+  assets: { id: string; name: string | null }[];
+}
+
+export interface GestureRecording {
+  v: number;
+  frames: number[][];
+}

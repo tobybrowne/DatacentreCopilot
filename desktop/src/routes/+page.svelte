@@ -29,10 +29,10 @@
         <span class="card-title">Asset Manager</span>
         <span class="card-desc">Manage assets and map them to locations in your buildings</span>
       </button>
-      <button class="card" onclick={() => goto('/live')}>
+      <button class="card" onclick={() => goto('/log')}>
         <span class="card-icon">◎</span>
-        <span class="card-title">Live View</span>
-        <span class="card-desc">Monitor real-time user position within a space</span>
+        <span class="card-title">Log Viewer</span>
+        <span class="card-desc">Browse gesture and video logs from field sessions</span>
       </button>
     </div>
   </div>
