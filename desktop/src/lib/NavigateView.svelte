@@ -9,7 +9,7 @@
   import NavigateSceneInner from './NavigateSceneInner.svelte'
   import Sidebar from './Sidebar.svelte'
   import type { BoundingBox, Position, RigidTransform, RoomSegment } from './types'
-  import { saveNavMesh, supabase } from './supabase'
+  import { saveNavMesh, saveLocBoundingBox, supabase } from './supabase'
   import { buildNavMeshFromSpaces, loadNavMeshFromBuffer, computePath, pruneToLargestComponent, type NavMeshParams } from './navmesh'
   import { toast } from './toast'
   import { session } from './auth'
@@ -21,7 +21,7 @@
     buildingId?: string | null;
     navmeshId?: string | null;
     buildingName: string;
-    spaces: Array<{ url: string; transform: RigidTransform | null }>;
+    spaces: Array<{ id: string; url: string; transform: RigidTransform | null }>;
     existingNavMesh?: { url: string; buildSettings: Record<string, unknown> } | null;
     onback?: () => void;
   }
@@ -53,7 +53,8 @@
   let showRooms = $state(true)
   let showScan = $state(true)
   let showBoundingBoxes = $state(false)
-  let collapsedBoxes: BoundingBox[] = $state([])
+  let collapsedBoxesBySpace: (BoundingBox | null)[] = $state([])
+  let collapsedBoxes = $derived(collapsedBoxesBySpace.filter((b): b is BoundingBox => b !== null))
   let showCollapsedBoxes = $state(false)
   let tightBoxesBySpace: (BoundingBox | null)[] = $state([])
   let showTightBoxes = $state(false)
@@ -171,7 +172,7 @@
     showTightBoxes = true
   }
 
-  function computeCollapsedBoxes(): void {
+  async function computeCollapsedBoxes(): Promise<void> {
     const spacePolys = spaces.map(space => {
       const bb = (space as any).boundingBox as BoundingBox | null
       if (!bb) return null
@@ -203,10 +204,17 @@
       ]
     }
 
-    collapsedBoxes = spacePolys.flatMap((bigPoly, i) => {
-      if (!bigPoly || buckets[i].length === 0) return []
+    const area = (verts: [number, number][]) => Math.abs(
+      verts.reduce((s, [x, z], k) => {
+        const [nx, nz] = verts[(k + 1) % verts.length]
+        return s + x * nz - nx * z
+      }, 0) / 2
+    )
+
+    collapsedBoxesBySpace = spacePolys.map((bigPoly, i) => {
+      if (!bigPoly || buckets[i].length === 0) return null
       const bbOrig = (spaces[i] as any).boundingBox as BoundingBox | null
-      if (!bbOrig) return []
+      if (!bbOrig) return null
 
       const tbI = tightBoxesBySpace[i]
       const clips: MultiPolygon[] = []
@@ -237,7 +245,6 @@
             if (unclaimed.length > 0) {
               const ci = tbI && tbI.vertices_2d.length >= 3 ? centroidOf(tbI.vertices_2d) : centroidOf(bigPoly)
               const cj = tbJ && tbJ.vertices_2d.length >= 3 ? centroidOf(tbJ.vertices_2d) : centroidOf(bigPolyJ)
-              // Only subtract the j-side of the unclaimed zone — i keeps its half
               const jHalf = bisectorHalf(ci, cj, 'j')
               const jPortion = polygonClipping.intersection(unclaimed, [[closeRing(jHalf)]])
               if (jPortion.length > 0) clips.push(jPortion)
@@ -246,34 +253,36 @@
         } catch {}
       }
 
-      if (clips.length === 0)
-        return [{ vertices_2d: bigPoly, y_min: bbOrig.y_min, y_max: bbOrig.y_max }]
-
-      let result: MultiPolygon
-      try {
-        result = polygonClipping.difference([[closeRing(bigPoly)]], ...clips)
-      } catch {
-        return []
+      let fragments: BoundingBox[]
+      if (clips.length === 0) {
+        fragments = [{ vertices_2d: bigPoly, y_min: bbOrig.y_min, y_max: bbOrig.y_max }]
+      } else {
+        let result: MultiPolygon
+        try {
+          result = polygonClipping.difference([[closeRing(bigPoly)]], ...clips)
+        } catch {
+          return null
+        }
+        fragments = result.flatMap(poly => {
+          const verts = poly[0].slice(0, -1) as [number, number][]
+          if (verts.length < 3) return []
+          return [{ vertices_2d: verts, y_min: bbOrig.y_min, y_max: bbOrig.y_max }]
+        })
       }
 
-      const fragments = result.flatMap(poly => {
-        const verts = poly[0].slice(0, -1) as [number, number][]
-        if (verts.length < 3) return []
-        return [{ vertices_2d: verts, y_min: bbOrig.y_min, y_max: bbOrig.y_max }]
-      })
-      if (fragments.length === 0) return []
-      // Keep only the largest fragment — smaller ones are clipping artifacts
-      const area = (verts: [number, number][]) => Math.abs(
-        verts.reduce((s, [x, z], k) => {
-          const [nx, nz] = verts[(k + 1) % verts.length]
-          return s + x * nz - nx * z
-        }, 0) / 2
-      )
-      return [fragments.reduce((a, b) => area(a.vertices_2d) >= area(b.vertices_2d) ? a : b)]
+      if (fragments.length === 0) return null
+      return fragments.reduce((a, b) => area(a.vertices_2d) >= area(b.vertices_2d) ? a : b)
     })
+
     showCollapsedBoxes = true
+
+    // Persist to Supabase
+    await Promise.all(spaces.map((space, i) =>
+      saveLocBoundingBox(space.id, collapsedBoxesBySpace[i])
+    ))
   }
   let saveState: 'idle' | 'saving' | 'saved' | 'error' = $state('idle')
+  let navMeshDirty = $state(false)
   let rooms: RoomSegment[] = $state([])
   let roomsState: 'idle' | 'computing' = $state('idle')
   let resolution: number = $state(0.2)
@@ -331,6 +340,7 @@
       )
       await saveNavMesh(buildingId, data, glbData as ArrayBuffer, { ...params } as unknown as Record<string, unknown>)
       saveState = 'saved'
+      navMeshDirty = false
     } catch (e) {
       toast((e as Error).message)
       saveState = 'error'
@@ -349,6 +359,7 @@
       navMesh = result.navMesh
       navQuery = result.navQuery
       navMeshDebugMesh = result.debugMesh
+      navMeshDirty = true
       phase = 'pickStart'
     } catch (e) {
       error = (e as Error).message
@@ -580,7 +591,7 @@
     </section>
   {/if}
 
-  {#if buildingId && navMesh}
+  {#if buildingId && navMesh && navMeshDirty}
     <section>
       <button
         class="primary"
@@ -588,7 +599,7 @@
         disabled={saveState === 'saving'}
         onclick={handleSaveNavMesh}
       >
-        {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : 'Save navmesh'}
+        {saveState === 'saving' ? 'Saving…' : 'Save navmesh'}
       </button>
     </section>
   {/if}

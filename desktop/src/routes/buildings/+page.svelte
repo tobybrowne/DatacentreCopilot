@@ -28,15 +28,6 @@
     }
   }
 
-  async function remove(e: MouseEvent, id: string): Promise<void> {
-    e.stopPropagation()
-    try {
-      await deleteBuilding(id)
-      completed = completed.filter(b => b.id !== id)
-    } catch (e) {
-      toast((e as Error).message)
-    }
-  }
 </script>
 
 <Sidebar title="Building Manager" onback={() => goto('/')}>
@@ -66,9 +57,6 @@
       <div class="info">
         <span class="name">{b.name || 'Unnamed'}</span>
         <span class="sub">{b.spaces?.length ?? 0} spaces</span>
-      </div>
-      <div class="actions">
-        <button class="icon-btn" onclick={(e) => remove(e, b.id)}>×</button>
       </div>
     {/snippet}
   </SidebarList>

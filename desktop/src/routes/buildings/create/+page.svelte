@@ -4,8 +4,7 @@
   import { onMount } from 'svelte'
   import { get } from 'svelte/store'
   import { Canvas } from '@threlte/core'
-  import { fetchSpaces, fetchBuildingById, getSpaceGlbUrl, createDraftBuilding, resetBuildingForRestitch, updateBuildingSpaceTransform, finalizeDraftBuilding, upsertCentroidAnchor } from '$lib/supabase'
-  import { computeCentroids } from '$lib/centroid'
+  import { fetchSpaces, fetchBuildingById, getSpaceGlbUrl, createDraftBuilding, resetBuildingForRestitch, updateBuildingSpaceTransform, finalizeDraftBuilding } from '$lib/supabase'
   import { session } from '$lib/auth'
   import BuildingStitchScene from '$lib/BuildingStitchScene.svelte'
   import NavigateSceneInner from '$lib/NavigateSceneInner.svelte'
@@ -259,28 +258,7 @@
     alignResult = null
   }
 
-  let recomputingCentroids = $state(false)
   const SPACE_COLORS = [0xff6644, 0x44aaff, 0x44ff88, 0xffcc00, 0xff44cc, 0x00ffff]
-
-  async function recomputeCentroids(): Promise<void> {
-    if (recomputingCentroids || builtSpaces.length === 0) return
-    recomputingCentroids = true
-    try {
-      const entries = await Promise.all(
-        builtSpaces
-          .filter(e => e.space.glb_path)
-          .map(async e => ({ space: e.space, glbUrl: await getSpaceGlbUrl(e.space.glb_path!) }))
-      )
-      const { centroids } = await computeCentroids(entries, 0.5, 1)
-      await Promise.all([...centroids.entries()].map(([spaceId, pos]) =>
-        upsertCentroidAnchor(spaceId, pos)
-      ))
-    } catch (e) {
-      error = (e as Error).message
-    } finally {
-      recomputingCentroids = false
-    }
-  }
 
   let downloading = $state(false)
 
@@ -301,7 +279,6 @@
     saving = true
     try {
       await finalizeDraftBuilding(activeBuildingId)
-      await recomputeCentroids()
       goto('/buildings')
     } catch (e) {
       error = (e as Error).message

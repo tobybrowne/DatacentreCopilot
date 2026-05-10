@@ -12,10 +12,12 @@
 
 <aside>
   <div class="header">
-    <button class="back-btn" onclick={() => onback?.()}>← Back</button>
+    <button class="back-btn" onclick={() => onback?.()}>‹</button>
     <span class="title">{title}</span>
   </div>
-  {@render children?.()}
+  <div class="content">
+    {@render children?.()}
+  </div>
 </aside>
 
 <style>
@@ -27,7 +29,7 @@
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    overflow: hidden;
   }
 
   .header {
@@ -36,13 +38,20 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 8px;
+    gap: 20px;
     flex-shrink: 0;
   }
 
   .back-btn {
-    padding: 3px 8px;
-    font-size: 11px;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding-bottom: 3px;
     border-radius: 4px;
     color: var(--text-muted);
     border-color: var(--border);
@@ -59,5 +68,14 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    padding-left: 30px;
+  }
+
+  .content {
+    padding: 0 30px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow-y: auto;
   }
 </style>

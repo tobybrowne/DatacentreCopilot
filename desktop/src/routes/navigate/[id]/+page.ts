@@ -15,6 +15,7 @@ export const load: PageLoad = async ({ params }) => {
       .filter((s) => s.glb_path)
       .sort((a, b) => (a.building_index ?? 0) - (b.building_index ?? 0))
       .map(async (s) => ({
+        id: s.id,
         url: await getSpaceGlbUrl(s.glb_path!),
         transform: s.offset_transformation as RigidTransform | null,
         boundingBox: s.bounding_box ?? null,

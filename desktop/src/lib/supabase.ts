@@ -111,24 +111,6 @@ export async function unmapAnchor(id: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function upsertCentroidAnchor(
-  spaceId: string,
-  glbPosition: Position
-): Promise<void> {
-  // Delete any existing centroid anchor for this space, then insert fresh.
-  await supabase
-    .from("anchors")
-    .delete()
-    .eq("space_id", spaceId)
-    .eq("name", "__centroid__");
-  const { error } = await supabase.from("anchors").insert({
-    name: "__centroid__",
-    glb_position: glbPosition,
-    space_id: spaceId,
-    anchor_type: "content",
-  });
-  if (error) throw error;
-}
 
 export async function fetchUserPosition(
   userId: string
@@ -368,6 +350,17 @@ export async function resetBuildingForRestitch(
         .eq("id", spaceId)
     )
   );
+}
+
+export async function saveLocBoundingBox(
+  spaceId: string,
+  bb: import('./types').BoundingBox | null
+): Promise<void> {
+  const { error } = await supabase
+    .from('spaces')
+    .update({ loc_bounding_box: bb })
+    .eq('id', spaceId);
+  if (error) throw error;
 }
 
 export async function deleteBuilding(buildingId: string): Promise<void> {

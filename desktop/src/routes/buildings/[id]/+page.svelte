@@ -6,49 +6,20 @@
   import Sidebar from '$lib/Sidebar.svelte'
   import { Canvas } from '@threlte/core'
   import NavigateSceneInner from '$lib/NavigateSceneInner.svelte'
-  import SpaceDividers from '$lib/SpaceDividers.svelte'
-  import { computeDivides, computeWalls, type DivideResult } from '$lib/computeDivides'
   import { toast } from '$lib/toast'
   import type { Building, RigidTransform, Space } from '$lib/types'
 
   const buildingId = $page.params.id!
 
   let building: (Building & { spaces: Space[] }) | null = $state(null)
-  let mergedSpaces: { url: string; transform: RigidTransform | null; boundingBox: Space['bounding_box'] }[] = $state([])
-  let showBoundingBoxes = $state(false)
+  let mergedSpaces: { url: string; transform: RigidTransform | null; boundingBox: Space['bounding_box']; locBoundingBox: Space['loc_bounding_box'] }[] = $state([])
+  let showScanBounds = $state(false)
+  let showLocBounds = $state(false)
   let loading = $state(true)
-  let divideResult: DivideResult | null = $state(null)
-  let computingDivides = $state(false)
-  let wallResult: DivideResult | null = $state(null)
-  let computingWalls = $state(false)
-  let voxelSize = $state(0.15)
-  let sliceHeight = $state(1.0)
 
-  async function handleComputeWalls(): Promise<void> {
-    if (mergedSpaces.length === 0) return
-    computingWalls = true
-    wallResult = null
-    try {
-      wallResult = await computeWalls(mergedSpaces.map(s => ({ glbUrl: s.url, transform: s.transform })), sliceHeight)
-    } catch (e) {
-      toast((e as Error).message)
-    } finally {
-      computingWalls = false
-    }
-  }
-
-  async function handleComputeDivides(): Promise<void> {
-    if (mergedSpaces.length < 2) return
-    computingDivides = true
-    divideResult = null
-    try {
-      divideResult = await computeDivides(mergedSpaces.map(s => ({ glbUrl: s.url, transform: s.transform })), voxelSize)
-    } catch (e) {
-      toast((e as Error).message)
-    } finally {
-      computingDivides = false
-    }
-  }
+  let locBoundingBoxes = $derived(
+    mergedSpaces.flatMap(s => s.locBoundingBox ? [s.locBoundingBox] : [])
+  )
 
   onMount(async () => {
     try {
@@ -61,6 +32,7 @@
           url: await getSpaceGlbUrl(s.glb_path!),
           transform: s.offset_transformation as RigidTransform | null,
           boundingBox: s.bounding_box,
+          locBoundingBox: s.loc_bounding_box,
         }))
       )
     } catch (e) {
@@ -72,6 +44,7 @@
 
   async function handleDelete(): Promise<void> {
     if (!building) return
+    if (!confirm(`Delete "${building.name}"? This cannot be undone.`)) return
     try {
       await deleteBuilding(building.id)
       goto('/buildings')
@@ -103,38 +76,12 @@
 
       {#if mergedSpaces.length > 0}
         <section>
-          <button style="width:100%" onclick={() => showBoundingBoxes = !showBoundingBoxes}>
-            {showBoundingBoxes ? 'Hide boxes' : 'Show boxes'}
+          <button style="width:100%;margin-bottom:4px" onclick={() => showScanBounds = !showScanBounds}>
+            {showScanBounds ? 'Hide Scan Bounds' : 'Show Scan Bounds'}
           </button>
-        </section>
-
-        <section>
-          <label class="voxel-row">
-            Voxel size (m)
-            <input type="number" step="0.01" min="0.02" max="1" bind:value={voxelSize} />
-          </label>
-        </section>
-
-        <section>
-          <button style="width:100%" disabled={computingDivides} onclick={handleComputeDivides}>
-            {computingDivides ? 'Computing…' : divideResult ? 'Recompute divides' : 'Compute divides'}
+          <button style="width:100%" onclick={() => showLocBounds = !showLocBounds}>
+            {showLocBounds ? 'Hide Location Bounds' : 'Show Location Bounds'}
           </button>
-          {#if divideResult}
-            <button style="width:100%;margin-top:4px" onclick={() => divideResult = null}>Hide divides</button>
-          {/if}
-        </section>
-
-        <section>
-          <label class="voxel-row">
-            Slice height (m)
-            <input type="number" step="0.1" min="0.2" max="3" bind:value={sliceHeight} />
-          </label>
-          <button style="width:100%" disabled={computingWalls} onclick={handleComputeWalls}>
-            {computingWalls ? 'Detecting…' : wallResult ? 'Redetect walls' : 'Detect walls'}
-          </button>
-          {#if wallResult}
-            <button style="width:100%;margin-top:4px" onclick={() => wallResult = null}>Hide walls</button>
-          {/if}
         </section>
       {/if}
 
@@ -149,13 +96,11 @@
       <div class="placeholder">Loading building…</div>
     {:else if mergedSpaces.length > 0}
       <Canvas>
-        <NavigateSceneInner spaces={mergedSpaces} {showBoundingBoxes} />
-        {#if divideResult}
-          <SpaceDividers result={divideResult} />
-        {/if}
-        {#if wallResult}
-          <SpaceDividers result={wallResult} />
-        {/if}
+        <NavigateSceneInner
+          spaces={mergedSpaces}
+          showBoundingBoxes={showScanBounds}
+          collapsedBoxes={showLocBounds ? locBoundingBoxes : []}
+        />
       </Canvas>
     {:else}
       <div class="placeholder">No stitched spaces yet.</div>
@@ -211,24 +156,6 @@
   .space-list li:last-child { border-bottom: none; }
 
   .space-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-  .voxel-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-  .voxel-row input {
-    width: 80px;
-    padding: 4px 6px;
-    font-size: 12px;
-    background: var(--bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-  }
 
   .scene-wrap {
     flex: 1;

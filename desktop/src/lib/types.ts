@@ -35,6 +35,7 @@ export interface Space {
   building_index: number | null;
   offset_transformation: RigidTransform | null;
   bounding_box: BoundingBox | null;
+  loc_bounding_box: BoundingBox | null;
 }
 
 export interface Anchor {
