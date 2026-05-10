@@ -4,18 +4,18 @@
   import { fetchCompletedBuildings, fetchSpaces } from '$lib/supabase'
   import Sidebar from '$lib/Sidebar.svelte'
   import SidebarList from '$lib/SidebarList.svelte'
+  import { toast } from '$lib/toast'
   import type { Building, Space } from '$lib/types'
 
   let buildings: (Building & { spaces: Space[] })[] = $state([])
   let spaces: Space[] = $state([])
-  let error: string | null = $state(null)
 
   onMount(async () => {
     try {
       ;[buildings, spaces] = await Promise.all([fetchCompletedBuildings(), fetchSpaces()])
       spaces = spaces.filter(s => s.glb_path)
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     }
   })
 </script>
@@ -45,9 +45,6 @@
     {/snippet}
   </SidebarList>
 
-  {#if error}
-    <p class="err">{error}</p>
-  {/if}
 </Sidebar>
 
 <div class="empty-scene">
@@ -57,8 +54,6 @@
 <style>
   .name { flex: 1; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .meta { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
-
-  .err { padding: 8px 16px; font-size: 12px; color: var(--danger); }
 
   .empty-scene {
     flex: 1;

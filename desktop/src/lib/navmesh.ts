@@ -84,6 +84,77 @@ async function loadMeshes(
   return meshes;
 }
 
+export function pruneToLargestComponent(mesh: THREE.Mesh): THREE.Mesh {
+  const pos = mesh.geometry.attributes.position;
+  const idx = mesh.geometry.index;
+  const triCount = idx ? idx.count / 3 : pos.count / 3;
+  const vertCount = pos.count;
+
+  const getV = (t: number, v: number) => idx ? idx.getX(t * 3 + v) : t * 3 + v;
+
+  // Build a position-key → canonical vertex index map so that vertices at
+  // identical positions (common in non-indexed NavMeshHelper geometry) are
+  // treated as shared for connectivity purposes.
+  const PREC = 1e4
+  const posKey = (vi: number) =>
+    `${Math.round(pos.getX(vi) * PREC)},${Math.round(pos.getY(vi) * PREC)},${Math.round(pos.getZ(vi) * PREC)}`
+  const canonical = new Int32Array(vertCount)
+  const keyToCanon = new Map<string, number>()
+  for (let i = 0; i < vertCount; i++) {
+    const k = posKey(i)
+    if (!keyToCanon.has(k)) keyToCanon.set(k, i)
+    canonical[i] = keyToCanon.get(k)!
+  }
+
+  const parent = new Int32Array(vertCount);
+  for (let i = 0; i < vertCount; i++) parent[i] = i;
+  const find = (x: number): number => {
+    while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+  };
+  const union = (a: number, b: number) => {
+    const ra = find(canonical[a]), rb = find(canonical[b]);
+    if (ra !== rb) parent[rb] = ra;
+  };
+
+  for (let t = 0; t < triCount; t++) {
+    union(getV(t, 0), getV(t, 1));
+    union(getV(t, 1), getV(t, 2));
+  }
+
+  const compSize = new Map<number, number>();
+  for (let i = 0; i < vertCount; i++) {
+    const r = find(canonical[i]);
+    compSize.set(r, (compSize.get(r) ?? 0) + 1);
+  }
+  let largestRoot = 0, largestSize = 0;
+  for (const [root, size] of compSize) {
+    if (size > largestSize) { largestRoot = root; largestSize = size; }
+  }
+
+  const vertRemap = new Int32Array(vertCount).fill(-1);
+  const newPos: number[] = [];
+  const newIdx: number[] = [];
+
+  for (let t = 0; t < triCount; t++) {
+    const ia = getV(t, 0), ib = getV(t, 1), ic = getV(t, 2);
+    if (find(canonical[ia]) !== largestRoot) continue;
+    for (const vi of [ia, ib, ic]) {
+      if (vertRemap[vi] === -1) {
+        vertRemap[vi] = newPos.length / 3;
+        newPos.push(pos.getX(vi), pos.getY(vi), pos.getZ(vi));
+      }
+      newIdx.push(vertRemap[vi]);
+    }
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(newPos, 3));
+  geom.setIndex(newIdx);
+  geom.computeVertexNormals();
+  return new THREE.Mesh(geom, mesh.material);
+}
+
 function makeResult(navMesh: NavMesh): NavMeshResult {
   const navQuery = new NavMeshQuery(navMesh);
   navQuery.defaultQueryHalfExtents = { x: 2, y: 4, z: 2 };

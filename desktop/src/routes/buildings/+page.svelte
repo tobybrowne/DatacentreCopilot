@@ -4,17 +4,17 @@
   import { fetchCompletedBuildings, fetchDraftBuildings, deleteBuilding } from '$lib/supabase'
   import Sidebar from '$lib/Sidebar.svelte'
   import SidebarList from '$lib/SidebarList.svelte'
+  import { toast } from '$lib/toast'
   import type { Building, Space } from '$lib/types'
 
   let completed: (Building & { spaces: Space[] })[] = $state([])
   let drafts: (Building & { spaces: Space[] })[] = $state([])
-  let error: string | null = $state(null)
 
   onMount(async () => {
     try {
       ;[completed, drafts] = await Promise.all([fetchCompletedBuildings(), fetchDraftBuildings()])
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     }
   })
 
@@ -23,8 +23,8 @@
     try {
       await deleteBuilding(id)
       drafts = drafts.filter(d => d.id !== id)
-    } catch (err) {
-      error = (err as Error).message
+    } catch (e) {
+      toast((e as Error).message)
     }
   }
 
@@ -33,8 +33,8 @@
     try {
       await deleteBuilding(id)
       completed = completed.filter(b => b.id !== id)
-    } catch (err) {
-      error = (err as Error).message
+    } catch (e) {
+      toast((e as Error).message)
     }
   }
 </script>
@@ -76,10 +76,6 @@
   <section>
     <button class="primary" style="width:100%" onclick={() => goto('/buildings/create')}>+ New building</button>
   </section>
-
-  {#if error}
-    <p class="err">{error}</p>
-  {/if}
 </Sidebar>
 
 <style>
@@ -100,6 +96,4 @@
     flex-shrink: 0;
   }
   .icon-btn:hover { color: var(--danger); }
-
-  .err { padding: 8px 16px; font-size: 12px; color: var(--danger); }
 </style>

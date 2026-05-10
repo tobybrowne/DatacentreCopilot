@@ -129,17 +129,3 @@ aside section {
   align-items: center;
   gap: 6px;
 }
-
-.error-toast {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background: #ff444488;
-  border: 1px solid var(--danger);
-  border-radius: 8px;
-  padding: 10px 16px;
-  font-size: 13px;
-  cursor: pointer;
-  z-index: 200;
-  max-width: 360px;
-}

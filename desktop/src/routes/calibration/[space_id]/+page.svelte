@@ -5,6 +5,7 @@
   import { fetchAnchors, fetchSpaceById, deleteAnchor, unmapAnchor, setGlbPosition, getSpaceGlbUrl } from '$lib/supabase'
   import Scene from '$lib/Scene.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
+  import { toast } from '$lib/toast'
   import type { Anchor, BoundingBox, Position } from '$lib/types'
 
   const spaceId = $page.params.space_id!
@@ -17,7 +18,6 @@
   let selectedId: string | null = $state(null)
   let mappingAnchor: Anchor | null = $state(null)
   let saving = $state(false)
-  let error: string | null = $state(null)
 
   let unmappedRefs = $derived(anchors.filter(a => a.anchor_type === 'reference' && !a.glb_position))
   let mappedRefs   = $derived(anchors.filter(a => a.anchor_type === 'reference' && !!a.glb_position))
@@ -26,12 +26,12 @@
   onMount(async () => {
     try {
       const space = await fetchSpaceById(spaceId)
-      if (!space.glb_path) { error = 'Space has no GLB export yet'; return }
+      if (!space.glb_path) { toast('Space has no GLB export yet', 'info'); return }
       glbUrl = await getSpaceGlbUrl(space.glb_path)
       boundingBox = space.bounding_box
       await refresh()
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     }
   })
 
@@ -39,7 +39,7 @@
     try {
       anchors = await fetchAnchors(spaceId)
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     }
   }
 
@@ -55,7 +55,7 @@
       await refresh()
       mappingAnchor = null
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     } finally {
       saving = false
     }
@@ -68,7 +68,7 @@
       if (mappingAnchor?.id === id) mappingAnchor = null
       await refresh()
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     }
   }
 
@@ -79,7 +79,7 @@
       if (mappingAnchor?.id === id) mappingAnchor = null
       await refresh()
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     }
   }
 
@@ -234,11 +234,6 @@
   <div class="unmapped-notice">
     {unmappedRefs.length} reference anchor{unmappedRefs.length > 1 ? 's' : ''} not yet mapped to the mesh.
   </div>
-{/if}
-
-{#if error}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="error-toast" onclick={() => error = null}>{error}</div>
 {/if}
 
 <style>

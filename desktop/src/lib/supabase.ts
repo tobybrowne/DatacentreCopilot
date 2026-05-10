@@ -11,7 +11,7 @@ import type {
 
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL as string,
-  import.meta.env.VITE_SUPABASE_KEY as string,
+  import.meta.env.VITE_SUPABASE_KEY as string
 );
 
 export async function fetchSpaces(): Promise<Space[]> {
@@ -50,7 +50,7 @@ export async function getSpaceGlbUrl(glbPath: string): Promise<string> {
 }
 
 export async function fetchAnchors(
-  spaceId: string | null = null,
+  spaceId: string | null = null
 ): Promise<Anchor[]> {
   let query = supabase
     .from("anchors")
@@ -89,7 +89,7 @@ export async function insertAnchor({
 
 export async function setGlbPosition(
   id: string,
-  glbPosition: Position,
+  glbPosition: Position
 ): Promise<void> {
   const { error } = await supabase
     .from("anchors")
@@ -104,13 +104,16 @@ export async function deleteAnchor(id: string): Promise<void> {
 }
 
 export async function unmapAnchor(id: string): Promise<void> {
-  const { error } = await supabase.from("anchors").update({ glb_position: null }).eq("id", id);
+  const { error } = await supabase
+    .from("anchors")
+    .update({ glb_position: null })
+    .eq("id", id);
   if (error) throw error;
 }
 
 export async function upsertCentroidAnchor(
   spaceId: string,
-  glbPosition: Position,
+  glbPosition: Position
 ): Promise<void> {
   // Delete any existing centroid anchor for this space, then insert fresh.
   await supabase
@@ -128,7 +131,7 @@ export async function upsertCentroidAnchor(
 }
 
 export async function fetchUserPosition(
-  userId: string,
+  userId: string
 ): Promise<Position | null> {
   const { data, error } = await supabase
     .from("users")
@@ -140,7 +143,7 @@ export async function fetchUserPosition(
 }
 
 export async function fetchBuildingById(
-  id: string,
+  id: string
 ): Promise<Building & { spaces: Space[] }> {
   const { data, error } = await supabase
     .from("buildings")
@@ -175,14 +178,30 @@ export async function fetchDraftBuildings(): Promise<
   return data as (Building & { spaces: Space[] })[];
 }
 
+async function getUserSiteId(): Promise<string> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+  const { data, error } = await supabase
+    .from("users")
+    .select("site_id")
+    .eq("id", user.id)
+    .single();
+  if (error) throw error;
+  if (!data.site_id) throw new Error("No site assigned to your account");
+  return data.site_id;
+}
+
 // Creates a draft building and assigns spaces to it in order.
 export async function createDraftBuilding(
   name: string,
-  orderedSpaceIds: string[],
+  orderedSpaceIds: string[]
 ): Promise<string> {
+  const site_id = await getUserSiteId();
   const { data: building, error: buildingErr } = await supabase
     .from("buildings")
-    .insert({ name, draft: true })
+    .insert({ name, draft: true, site_id })
     .select("id")
     .single();
   if (buildingErr) throw buildingErr;
@@ -196,8 +215,8 @@ export async function createDraftBuilding(
           building_index: index,
           offset_transformation: null,
         })
-        .eq("id", spaceId),
-    ),
+        .eq("id", spaceId)
+    )
   );
 
   return building.id;
@@ -206,7 +225,7 @@ export async function createDraftBuilding(
 export async function updateBuildingSpaceTransform(
   _buildingId: string,
   spaceId: string,
-  transform: RigidTransform,
+  transform: RigidTransform
 ): Promise<void> {
   const { error } = await supabase
     .from("spaces")
@@ -226,17 +245,29 @@ export async function finalizeDraftBuilding(buildingId: string): Promise<void> {
 export async function saveNavMesh(
   buildingId: string,
   data: Uint8Array,
-  buildSettings: Record<string, unknown>,
+  glbData: ArrayBuffer,
+  buildSettings: Record<string, unknown>
 ): Promise<void> {
-  const path = `navmeshes/${buildingId}.bin`;
+  const binPath = `navmeshes/${buildingId}.bin`;
+  const glbPath = `navmeshes/${buildingId}.glb`;
 
-  const { error: uploadError } = await supabase.storage
-    .from("spaces_bucket")
-    .upload(path, data, {
-      upsert: true,
-      contentType: "application/octet-stream",
-    });
-  if (uploadError) throw uploadError;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: userData } = await supabase
+    .from("users")
+    .select("site_id")
+    .eq("id", user?.id ?? "")
+    .single();
+  console.log("saveNavMesh:", {
+    binPath,
+    glbPath,
+    bucket: "spaces_bucket",
+    binSizeBytes: data.byteLength,
+    glbSizeBytes: glbData.byteLength,
+    userId: user?.id ?? null,
+    userSiteId: userData?.site_id ?? null,
+  });
 
   const { data: building, error: buildingError } = await supabase
     .from("buildings")
@@ -249,32 +280,65 @@ export async function saveNavMesh(
     const { error } = await supabase
       .from("navmeshes")
       .update({
-        navmesh_path: path,
+        navmesh_path: binPath,
+        glb_path: glbPath,
         build_settings: buildSettings,
         updated_at: new Date().toISOString(),
       })
       .eq("id", building.navmesh_id);
     if (error) throw error;
   } else {
-    const { data: navmesh, error: insertError } = await supabase
+    const navmeshId = crypto.randomUUID();
+    const { error: insertError } = await supabase
       .from("navmeshes")
-      .insert({ navmesh_path: path, build_settings: buildSettings })
-      .select("id")
-      .single();
+      .insert({
+        id: navmeshId,
+        navmesh_path: binPath,
+        glb_path: glbPath,
+        build_settings: buildSettings,
+      });
     if (insertError) throw insertError;
 
     const { error: updateError } = await supabase
       .from("buildings")
-      .update({ navmesh_id: navmesh.id })
+      .update({ navmesh_id: navmeshId })
       .eq("id", buildingId);
     if (updateError) throw updateError;
+  }
+
+  const { error: binUploadError } = await supabase.storage
+    .from("spaces_bucket")
+    .upload(binPath, data, {
+      upsert: true,
+      contentType: "application/octet-stream",
+    });
+  if (binUploadError) {
+    console.error(
+      "saveNavMesh bin upload error:",
+      JSON.stringify(binUploadError, null, 2)
+    );
+    throw binUploadError;
+  }
+
+  const { error: glbUploadError } = await supabase.storage
+    .from("spaces_bucket")
+    .upload(glbPath, glbData, {
+      upsert: true,
+      contentType: "model/gltf-binary",
+    });
+  if (glbUploadError) {
+    console.error(
+      "saveNavMesh glb upload error:",
+      JSON.stringify(glbUploadError, null, 2)
+    );
+    throw glbUploadError;
   }
 }
 
 export async function resetBuildingForRestitch(
   buildingId: string,
   name: string,
-  orderedSpaceIds: string[],
+  orderedSpaceIds: string[]
 ): Promise<void> {
   const { error: clearErr } = await supabase
     .from("spaces")
@@ -301,8 +365,8 @@ export async function resetBuildingForRestitch(
           building_index: index,
           offset_transformation: null,
         })
-        .eq("id", spaceId),
-    ),
+        .eq("id", spaceId)
+    )
   );
 }
 
@@ -315,7 +379,7 @@ export async function deleteBuilding(buildingId: string): Promise<void> {
 }
 
 export async function fetchAssetsWithAnchors(
-  buildingId: string,
+  buildingId: string
 ): Promise<AssetWithAnchor[]> {
   const { data, error } = await supabase
     .from("assets")
@@ -351,7 +415,7 @@ export async function deleteAsset(id: string): Promise<void> {
 
 export async function setAssetAnchor(
   assetId: string,
-  anchorId: string,
+  anchorId: string
 ): Promise<void> {
   const { error } = await supabase
     .from("assets")
@@ -362,7 +426,7 @@ export async function setAssetAnchor(
 
 export function subscribeUserPosition(
   userId: string,
-  onChange: (pos: Position | null) => void,
+  onChange: (pos: Position | null) => void
 ): () => void {
   const channel = supabase
     .channel(`user-pos-${userId}`)
@@ -376,8 +440,8 @@ export function subscribeUserPosition(
       },
       (payload) =>
         onChange(
-          (payload.new as { glb_position?: Position }).glb_position ?? null,
-        ),
+          (payload.new as { glb_position?: Position }).glb_position ?? null
+        )
     )
     .subscribe();
   return () => supabase.removeChannel(channel);

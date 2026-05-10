@@ -3,16 +3,16 @@
   import { onMount } from 'svelte'
   import { fetchSpaces } from '$lib/supabase'
   import Sidebar from '$lib/Sidebar.svelte'
+  import { toast } from '$lib/toast'
   import type { Space } from '$lib/types'
 
   let spaces: Space[] = $state([])
-  let error: string | null = $state(null)
 
   onMount(async () => {
     try {
       spaces = await fetchSpaces()
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     }
   })
 </script>
@@ -23,9 +23,7 @@
       Spaces
       <span class="badge">{spaces.length}</span>
     </label>
-    {#if error}
-      <p class="hint" style="color: var(--danger)">{error}</p>
-    {:else if spaces.length === 0}
+    {#if spaces.length === 0}
       <p class="hint">No spaces found.</p>
     {:else}
       <ul class="spaces-list">

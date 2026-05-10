@@ -77,7 +77,7 @@ function intersect(
   return [ax + t * (bx - ax), ay + t * (by - ay)];
 }
 
-function clipPolygon(
+export function clipPolygon(
   subject: [number, number][],
   clip: [number, number][],
 ): [number, number][] {

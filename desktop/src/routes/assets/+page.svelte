@@ -16,6 +16,7 @@
   import Sidebar from '$lib/Sidebar.svelte'
   import type { AssetWithAnchor, Building, Position, RigidTransform, Space } from '$lib/types'
   import { ASSET_TYPES, ASSET_TYPE_LABELS } from '$lib/assetTypes'
+  import { toast } from '$lib/toast'
 
   type Phase = 'buildings' | 'assets'
 
@@ -33,7 +34,6 @@
   let newName = $state('')
   let newType = $state('other')
   let saving = $state(false)
-  let error: string | null = $state(null)
   let loadingBuilding = $state(false)
 
   let mergedSpacesClickable = $derived(!!placingAsset)
@@ -46,7 +46,7 @@
     try {
       buildings = await fetchCompletedBuildings()
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     }
   })
 
@@ -67,7 +67,7 @@
       await loadAssets()
       phase = 'assets'
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     } finally {
       loadingBuilding = false
     }
@@ -88,7 +88,7 @@
       newName = ''
       newType = 'other'
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     } finally {
       saving = false
     }
@@ -103,7 +103,7 @@
       if (placingAsset?.id === asset.id) placingAsset = null
       await loadAssets()
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     }
   }
 
@@ -128,7 +128,7 @@
       await loadAssets()
       placingAsset = null
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     } finally {
       saving = false
     }
@@ -273,11 +273,6 @@
       </div>
     </div>
   </div>
-{/if}
-
-{#if error}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="error-toast" onclick={() => error = null}>{error}</div>
 {/if}
 
 <style>

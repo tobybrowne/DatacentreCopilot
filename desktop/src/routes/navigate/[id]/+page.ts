@@ -17,6 +17,7 @@ export const load: PageLoad = async ({ params }) => {
       .map(async (s) => ({
         url: await getSpaceGlbUrl(s.glb_path!),
         transform: s.offset_transformation as RigidTransform | null,
+        boundingBox: s.bounding_box ?? null,
       })),
   );
 
@@ -43,5 +44,6 @@ export const load: PageLoad = async ({ params }) => {
     buildingName: building.name ?? "Building",
     spaces: spaceEntries,
     existingNavMesh,
+    navmeshId: (building as any).navmesh_id ?? null,
   };
 };

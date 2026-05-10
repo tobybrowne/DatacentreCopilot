@@ -7,7 +7,8 @@
   import { Canvas } from '@threlte/core'
   import NavigateSceneInner from '$lib/NavigateSceneInner.svelte'
   import SpaceDividers from '$lib/SpaceDividers.svelte'
-  import { computeDivides, type DivideResult } from '$lib/computeDivides'
+  import { computeDivides, computeWalls, type DivideResult } from '$lib/computeDivides'
+  import { toast } from '$lib/toast'
   import type { Building, RigidTransform, Space } from '$lib/types'
 
   const buildingId = $page.params.id!
@@ -16,18 +17,34 @@
   let mergedSpaces: { url: string; transform: RigidTransform | null; boundingBox: Space['bounding_box'] }[] = $state([])
   let showBoundingBoxes = $state(false)
   let loading = $state(true)
-  let error: string | null = $state(null)
   let divideResult: DivideResult | null = $state(null)
   let computingDivides = $state(false)
+  let wallResult: DivideResult | null = $state(null)
+  let computingWalls = $state(false)
+  let voxelSize = $state(0.15)
+  let sliceHeight = $state(1.0)
+
+  async function handleComputeWalls(): Promise<void> {
+    if (mergedSpaces.length === 0) return
+    computingWalls = true
+    wallResult = null
+    try {
+      wallResult = await computeWalls(mergedSpaces.map(s => ({ glbUrl: s.url, transform: s.transform })), sliceHeight)
+    } catch (e) {
+      toast((e as Error).message)
+    } finally {
+      computingWalls = false
+    }
+  }
 
   async function handleComputeDivides(): Promise<void> {
     if (mergedSpaces.length < 2) return
     computingDivides = true
     divideResult = null
     try {
-      divideResult = await computeDivides(mergedSpaces.map(s => ({ glbUrl: s.url, transform: s.transform })))
+      divideResult = await computeDivides(mergedSpaces.map(s => ({ glbUrl: s.url, transform: s.transform })), voxelSize)
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     } finally {
       computingDivides = false
     }
@@ -47,7 +64,7 @@
         }))
       )
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     } finally {
       loading = false
     }
@@ -59,7 +76,7 @@
       await deleteBuilding(building.id)
       goto('/buildings')
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     }
   }
 </script>
@@ -92,6 +109,13 @@
         </section>
 
         <section>
+          <label class="voxel-row">
+            Voxel size (m)
+            <input type="number" step="0.01" min="0.02" max="1" bind:value={voxelSize} />
+          </label>
+        </section>
+
+        <section>
           <button style="width:100%" disabled={computingDivides} onclick={handleComputeDivides}>
             {computingDivides ? 'Computing…' : divideResult ? 'Recompute divides' : 'Compute divides'}
           </button>
@@ -99,15 +123,24 @@
             <button style="width:100%;margin-top:4px" onclick={() => divideResult = null}>Hide divides</button>
           {/if}
         </section>
+
+        <section>
+          <label class="voxel-row">
+            Slice height (m)
+            <input type="number" step="0.1" min="0.2" max="3" bind:value={sliceHeight} />
+          </label>
+          <button style="width:100%" disabled={computingWalls} onclick={handleComputeWalls}>
+            {computingWalls ? 'Detecting…' : wallResult ? 'Redetect walls' : 'Detect walls'}
+          </button>
+          {#if wallResult}
+            <button style="width:100%;margin-top:4px" onclick={() => wallResult = null}>Hide walls</button>
+          {/if}
+        </section>
       {/if}
 
       <section>
         <button class="danger" style="width:100%" onclick={handleDelete}>Delete building</button>
       </section>
-    {/if}
-
-    {#if error}
-      <p class="err">{error}</p>
     {/if}
   </Sidebar>
 
@@ -119,6 +152,9 @@
         <NavigateSceneInner spaces={mergedSpaces} {showBoundingBoxes} />
         {#if divideResult}
           <SpaceDividers result={divideResult} />
+        {/if}
+        {#if wallResult}
+          <SpaceDividers result={wallResult} />
         {/if}
       </Canvas>
     {:else}
@@ -176,7 +212,23 @@
 
   .space-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .err { padding: 8px 16px; font-size: 12px; color: var(--danger); }
+  .voxel-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .voxel-row input {
+    width: 80px;
+    padding: 4px 6px;
+    font-size: 12px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
 
   .scene-wrap {
     flex: 1;

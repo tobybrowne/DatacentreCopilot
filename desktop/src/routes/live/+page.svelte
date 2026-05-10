@@ -6,6 +6,7 @@
   import NavigateSceneInner from '$lib/NavigateSceneInner.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
   import SidebarList from '$lib/SidebarList.svelte'
+  import { toast } from '$lib/toast'
   import type { Building, Position, RigidTransform, Space } from '$lib/types'
 
   const DEMO_USER_ID = '00000000-0000-0000-0000-000000000000'
@@ -18,7 +19,6 @@
   let monitoring = $state(false)
   let unsubscribeUser: (() => void) | null = null
   let loading = $state(false)
-  let error: string | null = $state(null)
 
   loadBuildings()
 
@@ -26,7 +26,7 @@
     try {
       buildings = await fetchCompletedBuildings()
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     }
   }
 
@@ -47,7 +47,7 @@
         }))
       )
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     } finally {
       loading = false
     }
@@ -58,7 +58,7 @@
     try {
       userPosition = await fetchUserPosition(DEMO_USER_ID)
     } catch (e) {
-      error = (e as Error).message
+      toast((e as Error).message)
     }
     unsubscribeUser = subscribeUserPosition(DEMO_USER_ID, (pos) => { userPosition = pos })
   }
@@ -136,11 +136,6 @@
     {/if}
   </div>
 </div>
-
-{#if error}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="error-toast" onclick={() => error = null}>{error}</div>
-{/if}
 
 <style>
   .live-view {

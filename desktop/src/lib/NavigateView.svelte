@@ -3,14 +3,23 @@
   import { Canvas } from '@threlte/core'
   import { exportNavMesh, NavMeshQuery, type NavMesh } from 'recast-navigation'
   import * as THREE from 'three'
+  import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
+  import polygonClipping from 'polygon-clipping'
+  import type { MultiPolygon } from 'polygon-clipping'
   import NavigateSceneInner from './NavigateSceneInner.svelte'
   import Sidebar from './Sidebar.svelte'
-  import type { Position, RigidTransform } from './types'
-  import { saveNavMesh } from './supabase'
-  import { buildNavMeshFromSpaces, loadNavMeshFromBuffer, computePath, type NavMeshParams } from './navmesh'
+  import type { BoundingBox, Position, RigidTransform, RoomSegment } from './types'
+  import { saveNavMesh, supabase } from './supabase'
+  import { buildNavMeshFromSpaces, loadNavMeshFromBuffer, computePath, pruneToLargestComponent, type NavMeshParams } from './navmesh'
+  import { toast } from './toast'
+  import { session } from './auth'
+  import { get } from 'svelte/store'
+
+  const MONO_URL = import.meta.env.VITE_MONO_URL as string
 
   interface Props {
     buildingId?: string | null;
+    navmeshId?: string | null;
     buildingName: string;
     spaces: Array<{ url: string; transform: RigidTransform | null }>;
     existingNavMesh?: { url: string; buildSettings: Record<string, unknown> } | null;
@@ -19,6 +28,7 @@
 
   let {
     buildingId = null,
+    navmeshId = null,
     buildingName,
     spaces,
     existingNavMesh = null,
@@ -38,9 +48,256 @@
   let pathGeometry: THREE.TubeGeometry | null = $state(null)
   let pathLength = $state(0)
   let showNavMesh = $state(true)
+  let showPruned = $state(false)
   let showParams = $state(true)
+  let showRooms = $state(true)
+  let showScan = $state(true)
+  let showBoundingBoxes = $state(false)
+  let collapsedBoxes: BoundingBox[] = $state([])
+  let showCollapsedBoxes = $state(false)
+  let tightBoxesBySpace: (BoundingBox | null)[] = $state([])
+  let showTightBoxes = $state(false)
+  let tightBoxes = $derived(tightBoxesBySpace.filter((b): b is BoundingBox => b !== null))
+
+  function worldBB(bb: BoundingBox, transform: RigidTransform | null): [number, number][] {
+    if (!transform) return bb.vertices_2d
+    const { position: p, quaternion: q } = transform
+    const yaw = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z))
+    const cos = Math.cos(yaw), sin = Math.sin(yaw)
+    return bb.vertices_2d.map(([x, z]) => [
+      cos * x + sin * z + p.x,
+      -sin * x + cos * z + p.z,
+    ])
+  }
+
+  function pointInPolygon(px: number, pz: number, poly: [number, number][]): boolean {
+    let inside = false
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, zi] = poly[i], [xj, zj] = poly[j]
+      if (((zi > pz) !== (zj > pz)) && (px < (xj - xi) * (pz - zi) / (zj - zi) + xi))
+        inside = !inside
+    }
+    return inside
+  }
+
+  function convexHull(pts: [number, number][]): [number, number][] {
+    const sorted = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    const cross = (O: [number, number], A: [number, number], B: [number, number]) =>
+      (A[0] - O[0]) * (B[1] - O[1]) - (A[1] - O[1]) * (B[0] - O[0])
+    const lower: [number, number][] = []
+    for (const p of sorted) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop()
+      lower.push(p)
+    }
+    const upper: [number, number][] = []
+    for (const p of [...sorted].reverse()) {
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop()
+      upper.push(p)
+    }
+    lower.pop(); upper.pop()
+    return [...lower, ...upper]
+  }
+
+  function assignRoomsToBuckets(): RoomSegment[][] {
+    const spacePolys = spaces.map(space => {
+      const bb = (space as any).boundingBox as BoundingBox | null
+      if (!bb) return null
+      return worldBB(bb, space.transform)
+    })
+    const buckets: RoomSegment[][] = spaces.map(() => [])
+    for (const room of rooms) {
+      let bestIdx = -1, bestCount = 0
+      spacePolys.forEach((poly, i) => {
+        if (!poly) return
+        const count = room.polygon_2d.filter(([x, z]) => pointInPolygon(x, z, poly)).length
+        if (count > bestCount) { bestCount = count; bestIdx = i }
+      })
+      if (bestIdx !== -1) buckets[bestIdx].push(room)
+    }
+    return buckets
+  }
+
+  function computeTightBoxes(): void {
+    const buckets = assignRoomsToBuckets()
+    const hulls: (BoundingBox | null)[] = spaces.map((space, i) => {
+      if (buckets[i].length === 0) return null
+      const bbOrig = (space as any).boundingBox as BoundingBox | null
+      if (!bbOrig) return null
+      const allVerts = buckets[i].flatMap(r => r.polygon_2d) as [number, number][]
+      const hull = convexHull(allVerts)
+      if (hull.length < 3) return null
+      return { vertices_2d: hull, y_min: bbOrig.y_min, y_max: bbOrig.y_max }
+    })
+
+    const closeRing = (v: [number, number][]): [number, number][] => [...v, v[0]]
+    const polyArea = (v: [number, number][]) => Math.abs(
+      v.reduce((s, [x, z], k) => { const [nx, nz] = v[(k + 1) % v.length]; return s + x * nz - nx * z }, 0) / 2
+    )
+
+    const order = hulls
+      .map((h, i) => [i, h ? polyArea(h.vertices_2d) : 0] as [number, number])
+      .filter(([, a]) => a > 0)
+      .sort(([, a], [, b]) => b - a)
+      .map(([i]) => i)
+
+    let claimed: MultiPolygon = []
+    const result: (BoundingBox | null)[] = hulls.slice()
+
+    for (const idx of order) {
+      const h = hulls[idx]
+      if (!h) continue
+      const asMPoly: MultiPolygon = [[closeRing(h.vertices_2d)]]
+      if (claimed.length === 0) {
+        claimed = asMPoly
+        continue
+      }
+      try {
+        const clipped = polygonClipping.difference(asMPoly, claimed)
+        if (clipped.length > 0) {
+          const bestRing = clipped
+            .map(p => p[0].slice(0, -1) as [number, number][])
+            .reduce((a, b) => polyArea(a) >= polyArea(b) ? a : b)
+          result[idx] = { vertices_2d: bestRing, y_min: h.y_min, y_max: h.y_max }
+        } else {
+          result[idx] = null
+        }
+      } catch {
+        // keep original on clip failure
+      }
+      claimed = polygonClipping.union(claimed, asMPoly)
+    }
+
+    tightBoxesBySpace = result
+    showTightBoxes = true
+  }
+
+  function computeCollapsedBoxes(): void {
+    const spacePolys = spaces.map(space => {
+      const bb = (space as any).boundingBox as BoundingBox | null
+      if (!bb) return null
+      return worldBB(bb, space.transform)
+    })
+
+    const buckets = assignRoomsToBuckets()
+    const closeRing = (verts: [number, number][]): [number, number][] => [...verts, verts[0]]
+
+    const centroidOf = (verts: [number, number][]): [number, number] => {
+      const n = verts.length
+      return [verts.reduce((s, [x]) => s + x, 0) / n, verts.reduce((s, [, z]) => s + z, 0) / n]
+    }
+
+    // Large polygon covering one side of the perpendicular bisector between ci and cj
+    const EXTENT = 1e5
+    const bisectorHalf = (ci: [number, number], cj: [number, number], side: 'i' | 'j'): [number, number][] => {
+      const dx = cj[0] - ci[0], dz = cj[1] - ci[1]
+      const len = Math.sqrt(dx * dx + dz * dz) || 1
+      const nx = dx / len, nz = dz / len
+      const px = -nz, pz = nx
+      const mx = (ci[0] + cj[0]) / 2, mz = (ci[1] + cj[1]) / 2
+      const s = side === 'i' ? -1 : 1
+      return [
+        [mx + px * EXTENT,                    mz + pz * EXTENT                   ],
+        [mx - px * EXTENT,                    mz - pz * EXTENT                   ],
+        [mx - px * EXTENT + s * nx * EXTENT,  mz - pz * EXTENT + s * nz * EXTENT ],
+        [mx + px * EXTENT + s * nx * EXTENT,  mz + pz * EXTENT + s * nz * EXTENT ],
+      ]
+    }
+
+    collapsedBoxes = spacePolys.flatMap((bigPoly, i) => {
+      if (!bigPoly || buckets[i].length === 0) return []
+      const bbOrig = (spaces[i] as any).boundingBox as BoundingBox | null
+      if (!bbOrig) return []
+
+      const tbI = tightBoxesBySpace[i]
+      const clips: MultiPolygon[] = []
+
+      for (let j = 0; j < spaces.length; j++) {
+        if (j === i) continue
+        const bigPolyJ = spacePolys[j]
+        if (!bigPolyJ) continue
+
+        const tbJ = tightBoxesBySpace[j]
+
+        // Subtract tight box j (j's firmly claimed area)
+        if (tbJ && tbJ.vertices_2d.length >= 3 &&
+            tbJ.vertices_2d.some(([x, z]) => pointInPolygon(x, z, bigPoly)))
+          clips.push([[closeRing(tbJ.vertices_2d)]])
+
+        // For the unclaimed overlap zone, split at the bisector between centroids
+        // so each space keeps the half closer to it rather than leaving a void
+        try {
+          const overlapZone = polygonClipping.intersection([[closeRing(bigPoly)]], [[closeRing(bigPolyJ)]])
+          if (overlapZone.length > 0) {
+            let unclaimed = overlapZone
+            if (tbI && tbI.vertices_2d.length >= 3)
+              unclaimed = polygonClipping.difference(unclaimed, [[closeRing(tbI.vertices_2d)]])
+            if (tbJ && tbJ.vertices_2d.length >= 3)
+              unclaimed = polygonClipping.difference(unclaimed, [[closeRing(tbJ.vertices_2d)]])
+
+            if (unclaimed.length > 0) {
+              const ci = tbI && tbI.vertices_2d.length >= 3 ? centroidOf(tbI.vertices_2d) : centroidOf(bigPoly)
+              const cj = tbJ && tbJ.vertices_2d.length >= 3 ? centroidOf(tbJ.vertices_2d) : centroidOf(bigPolyJ)
+              // Only subtract the j-side of the unclaimed zone — i keeps its half
+              const jHalf = bisectorHalf(ci, cj, 'j')
+              const jPortion = polygonClipping.intersection(unclaimed, [[closeRing(jHalf)]])
+              if (jPortion.length > 0) clips.push(jPortion)
+            }
+          }
+        } catch {}
+      }
+
+      if (clips.length === 0)
+        return [{ vertices_2d: bigPoly, y_min: bbOrig.y_min, y_max: bbOrig.y_max }]
+
+      let result: MultiPolygon
+      try {
+        result = polygonClipping.difference([[closeRing(bigPoly)]], ...clips)
+      } catch {
+        return []
+      }
+
+      const fragments = result.flatMap(poly => {
+        const verts = poly[0].slice(0, -1) as [number, number][]
+        if (verts.length < 3) return []
+        return [{ vertices_2d: verts, y_min: bbOrig.y_min, y_max: bbOrig.y_max }]
+      })
+      if (fragments.length === 0) return []
+      // Keep only the largest fragment — smaller ones are clipping artifacts
+      const area = (verts: [number, number][]) => Math.abs(
+        verts.reduce((s, [x, z], k) => {
+          const [nx, nz] = verts[(k + 1) % verts.length]
+          return s + x * nz - nx * z
+        }, 0) / 2
+      )
+      return [fragments.reduce((a, b) => area(a.vertices_2d) >= area(b.vertices_2d) ? a : b)]
+    })
+    showCollapsedBoxes = true
+  }
   let saveState: 'idle' | 'saving' | 'saved' | 'error' = $state('idle')
-  let saveError: string | null = $state(null)
+  let rooms: RoomSegment[] = $state([])
+  let roomsState: 'idle' | 'computing' = $state('idle')
+  let resolution: number = $state(0.2)
+
+  async function fetchRooms(): Promise<void> {
+    if (!navmeshId) return
+    roomsState = 'computing'
+    try {
+      const token = get(session)?.access_token ?? ''
+      const res = await fetch(`${MONO_URL}/navmesh-rooms/segment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ navmesh_id: navmeshId, resolution }),
+      })
+      if (!res.ok) throw new Error(`Room segmentation failed: ${res.status}`)
+      rooms = await res.json()
+      console.log(rooms.length, 'rooms fetched')
+      computeTightBoxes()
+    } catch (e) {
+      toast((e as Error).message)
+    } finally {
+      roomsState = 'idle'
+    }
+  }
 
   let params: NavMeshParams = $state({
     boundsYMax: 3,
@@ -59,18 +316,23 @@
     detailSampleMaxError: 1,
   })
 
+  let prunedNavMeshMesh = $derived(navMeshDebugMesh ? pruneToLargestComponent(navMeshDebugMesh) : null)
+  let activeNavMeshMesh = $derived(showPruned ? prunedNavMeshMesh : navMeshDebugMesh)
   let pickingEnabled = $derived(phase === 'pickStart' || phase === 'pickEnd')
 
   async function handleSaveNavMesh(): Promise<void> {
-    if (!navMesh || !buildingId) return
+    if (!navMesh || !prunedNavMeshMesh || !buildingId) return
     saveState = 'saving'
-    saveError = null
     try {
       const data = exportNavMesh(navMesh)
-      await saveNavMesh(buildingId, data, { ...params } as unknown as Record<string, unknown>)
+      const exporter = new GLTFExporter()
+      const glbData = await new Promise<ArrayBuffer>((resolve, reject) =>
+        exporter.parse(prunedNavMeshMesh!, resolve as (r: ArrayBuffer | object) => void, reject, { binary: true })
+      )
+      await saveNavMesh(buildingId, data, glbData as ArrayBuffer, { ...params } as unknown as Record<string, unknown>)
       saveState = 'saved'
     } catch (e) {
-      saveError = (e as Error).message
+      toast((e as Error).message)
       saveState = 'error'
     }
   }
@@ -175,9 +437,55 @@
     </section>
     <section>
       <label class="toggle-row">
+        <input type="checkbox" bind:checked={showScan} />
+        <span>Show scan</span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" bind:checked={showBoundingBoxes} />
+        <span>Show bounding boxes</span>
+      </label>
+      <label class="toggle-row">
         <input type="checkbox" bind:checked={showNavMesh} />
         <span>Show walkable area</span>
       </label>
+      <label class="toggle-row">
+        <input type="checkbox" bind:checked={showPruned} />
+        <span>Show pruned only</span>
+      </label>
+      {#if rooms.length > 0}
+        <label class="toggle-row">
+          <input type="checkbox" bind:checked={showRooms} />
+          <span>Show rooms ({rooms.length})</span>
+        </label>
+      {/if}
+      {#if navmeshId}
+        <div class="param-row" style="margin-top:4px">
+          <label style="font-size:11px;color:var(--text-muted)">Resolution</label>
+          <input type="number" min="0.01" step="0.05" bind:value={resolution} />
+        </div>
+        <button
+          style="width:100%;margin-top:4px"
+          disabled={roomsState === 'computing'}
+          onclick={fetchRooms}
+        >
+          {roomsState === 'computing' ? 'Computing…' : rooms.length > 0 ? 'Recompute rooms' : 'Compute rooms'}
+        </button>
+      {/if}
+      {#if tightBoxes.length > 0}
+        <label class="toggle-row" style="margin-top:4px">
+          <input type="checkbox" bind:checked={showTightBoxes} />
+          <span>Show tight boxes ({tightBoxes.length})</span>
+        </label>
+        <button style="width:100%;margin-top:4px" onclick={computeCollapsedBoxes}>
+          {collapsedBoxes.length > 0 ? 'Recompute collapsed boxes' : 'Compute collapsed boxes'}
+        </button>
+      {/if}
+      {#if collapsedBoxes.length > 0}
+        <label class="toggle-row" style="margin-top:4px">
+          <input type="checkbox" bind:checked={showCollapsedBoxes} />
+          <span>Show collapsed boxes ({collapsedBoxes.length})</span>
+        </label>
+      {/if}
     </section>
 
   {:else if phase === 'pickEnd'}
@@ -282,9 +590,6 @@
       >
         {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : 'Save navmesh'}
       </button>
-      {#if saveState === 'error'}
-        <p class="hint danger">{saveError}</p>
-      {/if}
     </section>
   {/if}
 </Sidebar>
@@ -293,11 +598,16 @@
   <Canvas>
     <NavigateSceneInner
       {spaces}
+      {showScan}
+      {showBoundingBoxes}
       {startPos}
       {endPos}
       {pathGeometry}
       {pickingEnabled}
-      navMeshMesh={showNavMesh ? navMeshDebugMesh : null}
+      navMeshMesh={showNavMesh ? activeNavMeshMesh : null}
+      rooms={showRooms ? rooms : []}
+      tightBoxes={showTightBoxes ? tightBoxes : []}
+      collapsedBoxes={showCollapsedBoxes ? collapsedBoxes : []}
       onplace={handlePlace}
     />
   </Canvas>

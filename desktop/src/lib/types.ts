@@ -15,6 +15,12 @@ export interface BoundingBox {
   y_max: number;
 }
 
+export interface RoomSegment {
+  polygon_2d: [number, number][];
+  y_min: number;
+  y_max: number;
+}
+
 export interface Building {
   id: string;
   name: string | null;
