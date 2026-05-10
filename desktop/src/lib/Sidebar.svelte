@@ -14,6 +14,7 @@
   <div class="header">
     <button class="back-btn" onclick={() => onback?.()}>‹</button>
     <span class="title">{title}</span>
+    <div class="header-spacer"></div>
   </div>
   <div class="content">
     {@render children?.()}
@@ -36,9 +37,8 @@
     padding: 14px 16px;
     border-bottom: 1px solid var(--border);
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 20px;
+    flex-direction: row;
+    align-items: center;
     flex-shrink: 0;
   }
 
@@ -61,6 +61,8 @@
   .back-btn:hover { color: var(--text); }
 
   .title {
+    flex: 1;
+    text-align: center;
     font-size: 14px;
     font-weight: 600;
     color: var(--accent);
@@ -68,7 +70,11 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    padding-left: 30px;
+  }
+
+  .header-spacer {
+    width: 32px;
+    flex-shrink: 0;
   }
 
   .content {

@@ -32,7 +32,7 @@
       <p class="error">{error}</p>
     {/if}
 
-    <button type="submit" class="primary" disabled={loading}>
+    <button type="submit" class="primary" style="margin-top: 8px" disabled={loading}>
       {loading ? 'Signing in…' : 'Sign in'}
     </button>
   </form>
@@ -89,6 +89,12 @@
 
   input:focus {
     border-color: var(--accent);
+  }
+
+  button.primary {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   .error {

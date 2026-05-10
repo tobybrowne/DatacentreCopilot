@@ -192,8 +192,23 @@ export async function buildNavMeshFromSpaces(
     inputBox.max,
   );
 
-  const { boundsYMax, ...recastParams } = params;
+  const { boundsYMax, cs, ch } = params;
   const yMax = inputBox.min.y + boundsYMax;
+  const recastParams = {
+    cs,
+    ch,
+    walkableSlopeAngle: params.walkableSlopeAngle,
+    walkableHeight: Math.max(1, Math.ceil(params.walkableHeight / ch)),
+    walkableClimb:  Math.max(0, Math.ceil(params.walkableClimb  / ch)),
+    walkableRadius: Math.max(0, Math.ceil(params.walkableRadius  / cs)),
+    maxEdgeLen:     Math.max(0, Math.round(params.maxEdgeLen     / cs)),
+    maxSimplificationError: params.maxSimplificationError,
+    minRegionArea:   Math.max(0, Math.round(params.minRegionArea   / (cs * cs))),
+    mergeRegionArea: Math.max(0, Math.round(params.mergeRegionArea / (cs * cs))),
+    maxVertsPerPoly:     params.maxVertsPerPoly,
+    detailSampleDist:    params.detailSampleDist,
+    detailSampleMaxError: params.detailSampleMaxError,
+  };
   const clipped = meshes.map((m) => {
     const pos = m.geometry.attributes.position;
     const idx = m.geometry.index;

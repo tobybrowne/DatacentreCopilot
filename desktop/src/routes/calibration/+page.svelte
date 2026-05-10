@@ -61,14 +61,13 @@
 
   .hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0; }
 
-  .spaces-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+  .spaces-list { list-style: none; }
 
   li {
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 7px 4px;
-    border-radius: 4px;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
     transition: background 0.1s;

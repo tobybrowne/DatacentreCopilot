@@ -313,13 +313,13 @@
     cs: 0.1,
     ch: 0.1,
     walkableSlopeAngle: 35,
-    walkableHeight: 20,
-    walkableClimb: 3,
+    walkableHeight: 2.0,
+    walkableClimb: 0.3,
     walkableRadius: 0.1,
-    maxEdgeLen: 40,
+    maxEdgeLen: 4.0,
     maxSimplificationError: 1.3,
-    minRegionArea: 8,
-    mergeRegionArea: 20,
+    minRegionArea: 0.08,
+    mergeRegionArea: 0.2,
     maxVertsPerPoly: 6,
     detailSampleDist: 6,
     detailSampleMaxError: 1,
@@ -548,32 +548,32 @@
         <input type="number" step="1" min="0" max="90" bind:value={params.walkableSlopeAngle} />
       </div>
       <div class="param-row">
-        <label>Walkable height<span class="param-hint">voxels</span></label>
-        <input type="number" step="1" min="1" bind:value={params.walkableHeight} />
+        <label>Walkable height<span class="param-hint">m</span></label>
+        <input type="number" step="0.1" min="0.1" bind:value={params.walkableHeight} />
       </div>
       <div class="param-row">
-        <label>Walkable climb<span class="param-hint">voxels</span></label>
-        <input type="number" step="1" min="0" bind:value={params.walkableClimb} />
+        <label>Walkable climb<span class="param-hint">m</span></label>
+        <input type="number" step="0.05" min="0" bind:value={params.walkableClimb} />
       </div>
       <div class="param-row">
-        <label>Walkable radius<span class="param-hint">voxels</span></label>
-        <input type="number" step="1" min="0" bind:value={params.walkableRadius} />
+        <label>Walkable radius<span class="param-hint">m</span></label>
+        <input type="number" step="0.05" min="0" bind:value={params.walkableRadius} />
       </div>
       <div class="param-row">
-        <label>Max edge len<span class="param-hint">voxels</span></label>
-        <input type="number" step="1" min="0" bind:value={params.maxEdgeLen} />
+        <label>Max edge len<span class="param-hint">m</span></label>
+        <input type="number" step="0.5" min="0" bind:value={params.maxEdgeLen} />
       </div>
       <div class="param-row">
-        <label>Max simplification err<span class="param-hint">voxels</span></label>
+        <label>Max simplification err<span class="param-hint">m</span></label>
         <input type="number" step="0.1" min="0" bind:value={params.maxSimplificationError} />
       </div>
       <div class="param-row">
-        <label>Min region area<span class="param-hint">voxels²</span></label>
-        <input type="number" step="1" min="0" bind:value={params.minRegionArea} />
+        <label>Min region area<span class="param-hint">m²</span></label>
+        <input type="number" step="0.01" min="0" bind:value={params.minRegionArea} />
       </div>
       <div class="param-row">
-        <label>Merge region area<span class="param-hint">voxels²</span></label>
-        <input type="number" step="1" min="0" bind:value={params.mergeRegionArea} />
+        <label>Merge region area<span class="param-hint">m²</span></label>
+        <input type="number" step="0.01" min="0" bind:value={params.mergeRegionArea} />
       </div>
       <div class="param-row">
         <label>Max verts/poly<span class="param-hint">3–6</span></label>

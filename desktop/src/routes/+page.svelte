@@ -4,7 +4,7 @@
 </script>
 
 <div class="home">
-  <button class="sign-out" onclick={signOut}>Sign out</button>
+  <button class="sign-out" onclick={signOut}>Sign Out</button>
   <div class="center">
     <img src="/entangl-cyan.svg" alt="Entangl" class="logo" />
     <p class="subtitle">What would you like to do?</p>
