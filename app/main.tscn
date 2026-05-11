@@ -11,6 +11,7 @@
 [ext_resource type="Script" uid="uid://c1cbgjauku6l" path="res://scripts/VoiceManager.gd" id="13_voicemgr"]
 [ext_resource type="Script" uid="uid://cdyysdivvauid" path="res://scripts/LocationManager.gd" id="17_locationmgr"]
 [ext_resource type="Script" uid="uid://duycjtgs8dpfr" path="res://scripts/RouteManager.gd" id="18_routemgr"]
+[ext_resource type="Script" uid="uid://cfbcxpqu3764e" path="res://scripts/WorldMeshManager.gd" id="19_worldmeshmgr"]
 [ext_resource type="PackedScene" path="res://ui/standalone/keyboard/keyboard_3d.tscn" id="20_kb3d"]
 [ext_resource type="Script" uid="uid://cvv35ga36auf" path="res://scripts/desktop_xr_sim.gd" id="21_desktopsim"]
 
@@ -75,6 +76,10 @@ script = ExtResource("17_locationmgr")
 
 [node name="RouteManager" type="Node" parent="XROrigin3D" unique_id=134133]
 script = ExtResource("18_routemgr")
+
+[node name="WorldMeshManager" type="Node3D" parent="XROrigin3D" unique_id=2100000001]
+script = ExtResource("19_worldmeshmgr")
+depth_occlude = true
 
 [node name="ArmIK" type="Node3D" parent="XROrigin3D" unique_id=999999901]
 visible = false

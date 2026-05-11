@@ -6,6 +6,7 @@ var site_id: String
 var blob_path: String
 var glb_path: String
 var offset_transformation: Transform3D
+var loc_bounding_box: Dictionary  # {vertices_2d: [[x,z],...], y_min: float, y_max: float} in building coords
 var created_at: String
 var updated_at: String
 
@@ -25,6 +26,8 @@ static func from_dict(data: Dictionary) -> Space:
 		space.offset_transformation = Transform3D(Basis(quat), origin)
 	else:
 		space.offset_transformation = Transform3D.IDENTITY
+	var lbb = data.get("loc_bounding_box", null)
+	space.loc_bounding_box = lbb if lbb is Dictionary else {}
 	space.created_at = data.get("created_at", "")
 	space.updated_at = data.get("updated_at", "")
 	return space

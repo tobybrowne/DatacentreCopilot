@@ -14,12 +14,14 @@ var _target: Anchor = null
 
 func enter(data: Dictionary) -> void:
 	ui_panel.visible = false
+	anchor_manager.set_anchor_editing(true)
 	var space := data.get("space") as Space
 	if space:
 		_load_space(space)
 
 
 func exit() -> void:
+	anchor_manager.set_anchor_editing(false)
 	anchor_manager.clear_markers()
 	progress_indicator.clear()
 	_mode = ""

@@ -5,9 +5,9 @@ class_name RouteManager
 
 @export var nav_api_url: String = "https://room-finder.tobybrowne.co.uk"
 
-const GOTO_COLOR      := Color(0.2, 0.85, 1.0)
+const GOTO_COLOR      := Color(0.2, 0.85, 0.4, 0.9)
 const ROUTE_Y_OFFSET  := 0.05  # float above floor
-const CHEVRON_SPACING := 0.45  # metres between chevrons
+const CHEVRON_SPACING := 0.65  # metres between chevrons
 const CHEVRON_W       := 0.14  # half-width of chevron
 const CHEVRON_D       := 0.20  # total depth (tip to back)
 
@@ -120,11 +120,8 @@ func _build_chevrons(parent: Node3D, waypoints: Array[Vector3], am: AnchorManage
 
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color               = color
-	mat.emission_enabled           = true
-	mat.emission                   = color
-	mat.emission_energy_multiplier = 2.0
+	mat.transparency               = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.shading_mode               = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.no_depth_test              = true
 	mat.cull_mode                  = BaseMaterial3D.CULL_DISABLED
 
 	var mesh := ImmediateMesh.new()
@@ -137,8 +134,6 @@ func _build_chevrons(parent: Node3D, waypoints: Array[Vector3], am: AnchorManage
 	for i in range(local_pts.size() - 1):
 		_chevrons_along_segment(mesh, local_pts[i], local_pts[i + 1])
 	mesh.surface_end()
-
-	_add_destination(parent, local_pts[local_pts.size() - 1], color)
 
 
 func _chevrons_along_segment(mesh: ImmediateMesh, from: Vector3, to: Vector3) -> void:
@@ -169,19 +164,3 @@ func _chevrons_along_segment(mesh: ImmediateMesh, from: Vector3, to: Vector3) ->
 		t += CHEVRON_SPACING
 
 
-func _add_destination(parent: Node3D, pos: Vector3, color: Color) -> void:
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color               = color
-	mat.emission_enabled           = true
-	mat.emission                   = color
-	mat.emission_energy_multiplier = 2.0
-	mat.shading_mode               = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.no_depth_test              = true
-	var mi     := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.06
-	sphere.height = 0.12
-	mi.mesh              = sphere
-	mi.material_override = mat
-	mi.position          = pos
-	parent.add_child(mi)

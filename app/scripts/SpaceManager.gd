@@ -105,7 +105,7 @@ func export_space(space: Space):
 	f.store_buffer(blob)
 	f.close()
 
-	var blob_upload = await Supabase.storage.from("spaces_bucket").upload(blob_path, blob_tmp, true).completed
+	var blob_upload = await Supabase.storage.from("spaces_bucket").upload(blob_path, blob_tmp, false).completed
 	DirAccess.remove_absolute(blob_tmp)
 	if blob_upload.error != null:
 		print("export_space: blob upload failed — HTTP ", blob_upload.error.code, " ", blob_upload.error.message)
@@ -122,7 +122,7 @@ func export_space(space: Space):
 		gf.store_buffer(glb_bytes)
 		gf.close()
 		glb_path = "spaces/%s.glb" % space.id
-		var glb_upload = await Supabase.storage.from("spaces_bucket").upload(glb_path, glb_tmp, true).completed
+		var glb_upload = await Supabase.storage.from("spaces_bucket").upload(glb_path, glb_tmp, false).completed
 		DirAccess.remove_absolute(glb_tmp)
 		if glb_upload.error != null:
 			print("export_current_space: GLB upload failed (continuing without GLB) — ", glb_upload.error.message)

@@ -21,6 +21,7 @@ var _calibrated := false
 
 # Building stitching: space_id → Transform3D (offset from that space's GLB to the reference space's GLB)
 var _space_offsets: Dictionary = {}
+var _building_spaces: Array[Space] = []
 var _current_space_id := ""
 
 # Virtual markers (non-ML2, positioned by GLB coords): [{marker: Node3D, anchor: Anchor}]
@@ -36,6 +37,8 @@ const STORAGE_RETRY_INTERVAL := 2.0
 
 var _recalib_timer := 0.0
 const RECALIB_INTERVAL := 2.0
+
+var _anchor_editing := false
 
 signal calibrated
 signal space_localized(uuid: String)
@@ -103,6 +106,9 @@ func get_all_anchors() -> Dictionary:
 
 func get_space_offsets() -> Dictionary:
 	return _space_offsets
+
+func get_building_spaces() -> Array[Space]:
+	return _building_spaces
 
 func get_current_space_id() -> String:
 	return _current_space_id
@@ -182,6 +188,10 @@ func get_anchor_near(pos: Vector3, radius: float) -> Anchor:
 	return null
 
 
+func set_anchor_editing(editing: bool) -> void:
+	_anchor_editing = editing
+
+
 func clear_markers() -> void:
 	for entry in _virtual_markers:
 		if is_instance_valid(entry.marker):
@@ -235,6 +245,7 @@ func _load_building_offsets(space_id: String) -> void:
 		print("AnchorManager: no building found for space ", space_id)
 		return
 	print("AnchorManager: building has ", sibling_spaces.size(), " spaces")
+	_building_spaces = sibling_spaces
 	for s in sibling_spaces:
 		_space_offsets[s.id] = s.offset_transformation
 
@@ -402,7 +413,7 @@ func _create_tracked_marker(anchor: Anchor) -> Node3D:
 			m.anchor = anchor
 			return m
 		Anchor.TYPE_REFERENCE:
-			if DevConfig.DEV_MODE:
+			if DevConfig.DEV_MODE and not _anchor_editing:
 				return Node3D.new()
 			var m := ReferenceAnchorMarker.new()
 			m.anchor = anchor

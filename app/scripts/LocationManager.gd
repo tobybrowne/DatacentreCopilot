@@ -29,6 +29,14 @@ var _relocalising := false
 
 var _indicator: TrackingIndicator
 
+@export var show_bounding_boxes: bool = true:
+	set(v):
+		show_bounding_boxes = v
+		for vis in _bbox_visuals:
+			vis.visible = v
+
+var _bbox_visuals: Array[BoundingBoxVisual] = []
+
 # IdleState reads _calibrated directly on location_manager
 var _calibrated: bool:
 	get: return _anchor_manager._calibrated if _anchor_manager else false
@@ -40,12 +48,36 @@ func _ready() -> void:
 	if not _anchor_manager:
 		push_warning("LocationManager: AnchorManager not found")
 		return
-	_anchor_manager.calibrated.connect(func(): calibrated.emit())
+	_anchor_manager.calibrated.connect(_on_calibrated)
 	_create_tracking_indicator()
 
 	var ext := _ml2_ext()
 	if ext:
 		ext.localization_changed.connect(_on_localization_changed)
+
+
+func _on_calibrated() -> void:
+	calibrated.emit()
+	_rebuild_bbox_visuals()
+
+
+func _rebuild_bbox_visuals() -> void:
+	for vis in _bbox_visuals:
+		vis.queue_free()
+	_bbox_visuals.clear()
+
+	var spaces := _anchor_manager.get_building_spaces()
+	for i in spaces.size():
+		var space: Space = spaces[i]
+		if space.loc_bounding_box.is_empty():
+			continue
+		var vis := BoundingBoxVisual.new()
+		vis.bbox = space.loc_bounding_box
+		vis.color = BoundingBoxVisual.COLORS[i % BoundingBoxVisual.COLORS.size()]
+		vis.anchor_manager = _anchor_manager
+		vis.visible = show_bounding_boxes
+		get_parent().add_child(vis)
+		_bbox_visuals.append(vis)
 
 
 func _ml2_ext() -> Object:
@@ -87,20 +119,52 @@ func _process(delta: float) -> void:
 				SupabaseManager.update_user_glb_position(space_glb_pos)
 
 
-# uses the centroid anchors to find the user's closest space, updates current_coarse_space accordingly
+# Returns true if building_pos falls inside the loc_bounding_box polygon.
+# vertices_2d are [x, z] pairs; the polygon is in the XZ plane.
+func _point_in_bbox(pos: Vector3, bbox: Dictionary) -> bool:
+	if pos.y < bbox.get("y_min", -INF) or pos.y > bbox.get("y_max", INF):
+		return false
+	var verts: Array = bbox.get("vertices_2d", [])
+	if verts.size() < 3:
+		return false
+	var inside := false
+	var n := verts.size()
+	var j := n - 1
+	for i in n:
+		var xi: float = verts[i][0]; var zi: float = verts[i][1]
+		var xj: float = verts[j][0]; var zj: float = verts[j][1]
+		if ((zi > pos.z) != (zj > pos.z)) and (pos.x < (xj - xi) * (pos.z - zi) / (zj - zi) + xi):
+			inside = not inside
+		j = i
+	return inside
+
+
+# Uses loc_bounding_box for containment, falls back to centroid distance.
 func _update_room_label(building_pos: Vector3) -> void:
-	var closest_id := ""
-	var closest_dist := INF
+	var spaces := _anchor_manager.get_building_spaces()
 	var offsets := _anchor_manager.get_space_offsets()
 
-	for anchor in _anchor_manager.get_all_anchors().values():
-		if anchor.name != "__centroid__" or anchor.glb_position == null:
-			continue
-		var offset: Transform3D = offsets.get(anchor.space_id, Transform3D.IDENTITY)
-		var dist: float = building_pos.distance_to(offset * anchor.glb_position)
-		if dist < closest_dist:
-			closest_dist = dist
-			closest_id = anchor.space_id
+	var contained: Array[String] = []
+	for space in spaces:
+		if not space.loc_bounding_box.is_empty() and _point_in_bbox(building_pos, space.loc_bounding_box):
+			contained.append(space.id)
+
+	var closest_id := ""
+	if contained.size() == 1:
+		closest_id = contained[0]
+	else:
+		# Fallback: nearest centroid anchor — restricted to contained set when overlapping, else all spaces.
+		var closest_dist := INF
+		for anchor in _anchor_manager.get_all_anchors().values():
+			if anchor.name != "__centroid__" or anchor.glb_position == null:
+				continue
+			if contained.size() > 1 and not anchor.space_id in contained:
+				continue
+			var offset: Transform3D = offsets.get(anchor.space_id, Transform3D.IDENTITY)
+			var dist: float = building_pos.distance_to(offset * anchor.glb_position)
+			if dist < closest_dist:
+				closest_dist = dist
+				closest_id = anchor.space_id
 
 	if closest_id.is_empty():
 		return

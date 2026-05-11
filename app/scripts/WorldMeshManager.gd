@@ -7,7 +7,15 @@ extends Node3D
 @export var bounding_extents := Vector3(10, 10, 10)
 # level-of-detail, passed directly to the ML2, to state the resolution of the meshes required
 @export var lod: int = 1  # 0 = minimum, 1 = medium, 2 = maximum
+# true = depth-only occluder (production); false = visible blue mesh (debug)
+@export var depth_occlude := true
+# How many mesh block updates to skip between collision shape rebuilds.
+# Render mesh updates every time; collision only needs to be fresh for panel placement.
+# 0 = rebuild every update (most accurate, most expensive)
+@export var collision_update_stride: int = 10
 @export var mesh_material: Material
+
+var _collision_update_counter: int = 0
 
 # Godot has "collision layers", only objects on the same layer can collide with each other
 # for some reason these are set using a bitmask :/
@@ -34,7 +42,7 @@ func _initialize() -> void:
 	_ext.meshing_error.connect(func(err): push_warning("WorldMeshManager: %s" % err))
 
 	if not mesh_material:
-		mesh_material = _make_default_material()
+		mesh_material = _make_depth_material() if depth_occlude else _make_debug_material()
 
 	if not _ext.is_available():
 		return
@@ -81,9 +89,13 @@ func _on_block_updated(block_id: String, status: int, vertices: PackedVector3Arr
 	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mesh_inst.mesh = arr_mesh
 
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(arr_mesh.get_faces())
-	coll.shape = shape
+	# Collision BVH rebuild is expensive — throttle it via stride counter.
+	_collision_update_counter += 1
+	if collision_update_stride == 0 or _collision_update_counter >= collision_update_stride:
+		_collision_update_counter = 0
+		var shape := ConcavePolygonShape3D.new()
+		shape.set_faces(arr_mesh.get_faces())
+		coll.shape = shape
 
 
 func _on_block_deleted(block_id: String) -> void:
@@ -93,10 +105,16 @@ func _on_block_deleted(block_id: String) -> void:
 		_blocks.erase(block_id)
 
 
-func _make_default_material() -> StandardMaterial3D:
+func _make_depth_material() -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://assets/shaders/depth_occluder.gdshader")
+	mat.render_priority = -100  # render before all AR content so depth is written first
+	return mat
+
+
+func _make_debug_material() -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(0.2, 0.6, 1.0, 0.5)
+	mat.albedo_color = Color(0.2, 0.6, 1.0, 1.0)
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX
 	return mat
