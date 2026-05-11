@@ -35,8 +35,8 @@ var _storage_retry_timer := 0.0
 const RETRY_DELAY := 3.0
 const STORAGE_RETRY_INTERVAL := 2.0
 
-var _recalib_timer := 0.0
-const RECALIB_INTERVAL := 2.0
+const RECALIB_MOVE_THRESHOLD := 0.005  # 5 mm
+var _kabsch_snapshot: Array[Vector3] = []  # last positions used for calibration
 
 var _anchor_editing := false
 
@@ -72,12 +72,13 @@ func _process(delta: float) -> void:
 			for uuid in _storage_pending.duplicate():
 				_ml_mgr.call("load_anchor", StringName(uuid))
 
-	# rerun calibration every few seconsd, as the anchor node positions are constantly being refined by the ML2
-	if _calibrated and _kabsch_nodes.size() >= 3:
-		_recalib_timer -= delta
-		if _recalib_timer <= 0.0:
-			_recalib_timer = RECALIB_INTERVAL
-			_refresh_calibration()
+	if _calibrated and _kabsch_nodes.size() >= 3 and _kabsch_snapshot.size() == _kabsch_nodes.size():
+		for i in _kabsch_nodes.size():
+			if not is_instance_valid(_kabsch_nodes[i]):
+				break
+			if _kabsch_nodes[i].position.distance_to(_kabsch_snapshot[i]) >= RECALIB_MOVE_THRESHOLD:
+				_refresh_calibration()
+				break
 
 
 # ── Calibration API ───────────────────────────────────────────────────────────
@@ -304,6 +305,7 @@ func _try_calibrate() -> void:
 	var first_calibration := not _calibrated
 	_calibration = Kabsch.compute(_kabsch_src, kabsch_dst)
 	_calibrated = true
+	_kabsch_snapshot = kabsch_dst
 
 	print("AnchorManager: calibrated from ", _kabsch_src.size(), " reference points")
 	for i in _kabsch_src.size():
@@ -346,19 +348,14 @@ func _refresh_calibration() -> void:
 
 	var new_calibration := Kabsch.compute(_kabsch_src, kabsch_dst)
 
-	var old_err := 0.0
-	var new_err := 0.0
+	var err := 0.0
 	for i in _kabsch_src.size():
-		old_err += (_calibration * _kabsch_src[i]).distance_to(kabsch_dst[i])
-		new_err += (new_calibration * _kabsch_src[i]).distance_to(kabsch_dst[i])
-	old_err /= _kabsch_src.size()
-	new_err /= _kabsch_src.size()
+		err += (new_calibration * _kabsch_src[i]).distance_to(kabsch_dst[i])
+	err /= _kabsch_src.size()
 
-	if new_err >= old_err:
-		return
-
-	print("AnchorManager: recalibrated — avg error ", snappedf(old_err, 0.001), "m → ", snappedf(new_err, 0.001), "m")
+	print("AnchorManager: recalibrated — avg error ", snappedf(err, 0.001), "m")
 	_calibration = new_calibration
+	_kabsch_snapshot = kabsch_dst
 	_reposition_virtual_markers()
 
 
