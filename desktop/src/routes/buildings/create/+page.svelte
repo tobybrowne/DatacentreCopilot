@@ -9,6 +9,7 @@
   import BuildingStitchScene from '$lib/BuildingStitchScene.svelte'
   import NavigateSceneInner from '$lib/NavigateSceneInner.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
+  import Button from '$lib/Button.svelte'
   import { downloadMergedGlb as mergeAndDownloadGlb } from '$lib/glbMerge'
   import { overlapArea, extractYaw } from '$lib/polygon2d'
   import type { Building, RigidTransform, Space } from '$lib/types'
@@ -335,13 +336,13 @@
       {/if}
 
       <section>
-        <button
-          class="primary" style="width:100%"
+        <Button
+          variant="primary" style="width:100%"
           disabled={!buildingName.trim() || orderedSpaceIds.length < 2}
           onclick={startBuilding}
         >
           Start stitching →
-        </button>
+        </Button>
       </section>
 
     {:else if phase === 'align'}
@@ -365,14 +366,14 @@
         <label class="section-label">Position</label>
         <div class="pos-row">
           <span class="muted">X {bX.toFixed(2)}  Z {bZ.toFixed(2)}  Y {bYDeg.toFixed(1)}°</span>
-          <button class="small" onclick={() => { bX = 0; bZ = 0; bYDeg = 0; alignResult = null }}>Reset</button>
+          <Button size="sm" onclick={() => { bX = 0; bZ = 0; bYDeg = 0; alignResult = null }}>Reset</Button>
         </div>
       </section>
 
       <section>
-        <button class="primary" style="width:100%" onclick={refine} disabled={refining}>
+        <Button variant="primary" style="width:100%" onclick={refine} disabled={refining}>
           {refining ? 'Snapping…' : 'Snap align'}
-        </button>
+        </Button>
       </section>
 
       {#if alignResult}
@@ -387,17 +388,17 @@
       {/if}
 
       <section>
-        <button style="width:100%" onclick={() => showBoundingBoxes = !showBoundingBoxes}>
+        <Button style="width:100%" onclick={() => showBoundingBoxes = !showBoundingBoxes}>
           {showBoundingBoxes ? 'Hide boxes' : 'Show boxes'}
-        </button>
+        </Button>
       </section>
 
       <section class="row-section">
-        <button onclick={resetBuilding}>Cancel</button>
-        <button disabled={currentIdx <= 1} onclick={goBack}>← Back</button>
-        <button class="primary" onclick={confirmAlign}>
+        <Button onclick={resetBuilding}>Cancel</Button>
+        <Button disabled={currentIdx <= 1} onclick={goBack}>← Back</Button>
+        <Button variant="primary" onclick={confirmAlign}>
           {currentIdx < orderedSpaceIds.length - 1 ? 'Next scan →' : 'Finish →'}
-        </button>
+        </Button>
       </section>
 
     {:else if phase === 'complete'}
@@ -407,15 +408,15 @@
       </section>
 
       <section>
-        <button class="primary" style="width:100%" onclick={downloadMergedGlb} disabled={downloading}>
+        <Button variant="primary" style="width:100%" onclick={downloadMergedGlb} disabled={downloading}>
           {downloading ? 'Exporting…' : '↓ Download GLB'}
-        </button>
+        </Button>
       </section>
       <section class="row-section">
-        <button onclick={resetBuilding}>Reset</button>
-        <button class="primary" onclick={saveBuilding} disabled={saving}>
+        <Button onclick={resetBuilding}>Reset</Button>
+        <Button variant="primary" onclick={saveBuilding} disabled={saving}>
           {saving ? 'Saving…' : 'Save building'}
-        </button>
+        </Button>
       </section>
     {/if}
 
@@ -470,16 +471,6 @@
     overflow: hidden;
   }
 
-  .placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    font-size: 13px;
-    background: var(--bg);
-  }
 
   .row-section { flex-direction: row; }
   .row-section button { flex: 1; }
@@ -558,7 +549,6 @@
     margin-bottom: 4px;
   }
   .muted { font-size: 11px; color: var(--text-muted); font-family: monospace; }
-  .small { padding: 2px 8px; font-size: 11px; border-radius: 4px; }
 
   .result { border-top: 1px solid var(--border); }
   .result.good .section-label { color: #88ff88; }

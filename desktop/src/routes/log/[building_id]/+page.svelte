@@ -1,5 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
+  import { Hand, Video } from 'lucide-svelte'
+  import { formatDate, getStepText } from '$lib/logUtils'
   import Sidebar from '$lib/Sidebar.svelte'
   import { toast } from '$lib/toast'
   import type { LogWithContext, Procedure } from '$lib/types'
@@ -46,19 +48,6 @@
     [...new Map(allLogs.flatMap(l => l.assets).map(a => [a.id, a])).values()]
   )
 
-  function getStepText(log: LogWithContext): string {
-    if (!log.step_id || !log.procedureRun?.procedure.steps) return ''
-    const step = (log.procedureRun.procedure.steps as { id: string; text: string }[])
-      .find(s => s.id === log.step_id)
-    return step?.text ?? ''
-  }
-
-  function formatDate(iso: string): string {
-    return new Date(iso).toLocaleString(undefined, {
-      month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    })
-  }
 
   function clearFilters(): void {
     filterDateFrom = ''
@@ -144,21 +133,18 @@
             disabled={!clickable}
           >
             <div class="lc-header">
-              <div class="badges">
-                {#if hasGesture}<span class="badge b-gesture">Gesture</span>{/if}
-                {#if hasVideo}<span class="badge b-video">Video</span>{/if}
-                {#if !hasGesture && !hasVideo}<span class="badge b-none">No recording</span>{/if}
-              </div>
+              <span class="lc-proc">{log.procedureRun?.procedure.title ?? 'Standalone'}</span>
               <span class="lc-time">{formatDate(log.created_at)}</span>
             </div>
-            <div class="lc-body">
-              <span class="lc-proc">{log.procedureRun?.procedure.title ?? 'Standalone'}</span>
-              {#if getStepText(log)}
-                <span class="lc-step">{getStepText(log)}</span>
-              {/if}
-            </div>
+            {#if getStepText(log)}
+              <span class="lc-step">{getStepText(log)}</span>
+            {/if}
             <div class="lc-footer">
               <span class="lc-user">{log.userEmail ?? log.user_id.slice(0, 8)}</span>
+              <div class="lc-icons">
+                {#if hasGesture}<span class="lc-icon gesture"><Hand size={14} /></span>{/if}
+                {#if hasVideo}<span class="lc-icon video"><Video size={14} /></span>{/if}
+              </div>
             </div>
           </button>
         {/each}
@@ -266,22 +252,15 @@
   .log-card:disabled { opacity: 0.5; cursor: default; }
 
   .lc-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .badges { display: flex; gap: 5px; flex-wrap: wrap; }
-  .badge {
-    font-size: 10px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    border: 1px solid;
-  }
-  .b-gesture { background: #00d4ff18; color: var(--accent); border-color: #00d4ff44; }
-  .b-video   { background: #ff884418; color: #ff8844;       border-color: #ff884444; }
-  .b-none    { background: transparent; color: var(--text-muted); border-color: var(--border); }
-  .lc-time   { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-
-  .lc-body { display: flex; flex-direction: column; gap: 3px; }
   .lc-proc { font-size: 13px; font-weight: 500; color: var(--text); }
+  .lc-time { font-size: 11px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
   .lc-step { font-size: 12px; color: var(--text-muted); font-style: italic; }
+
+  .lc-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .lc-user { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+
+  .lc-icons { display: flex; align-items: center; gap: 6px; }
+  .lc-icon { display: flex; align-items: center; }
+  .lc-icon.gesture { color: var(--accent); }
+  .lc-icon.video { color: #ff8844; }
 </style>

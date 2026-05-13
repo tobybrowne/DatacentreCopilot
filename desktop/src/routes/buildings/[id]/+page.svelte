@@ -4,6 +4,7 @@
   import { onMount } from 'svelte'
   import { fetchBuildingById, getSpaceGlbUrl, deleteBuilding } from '$lib/supabase'
   import Sidebar from '$lib/Sidebar.svelte'
+  import Button from '$lib/Button.svelte'
   import { Canvas } from '@threlte/core'
   import NavigateSceneInner from '$lib/NavigateSceneInner.svelte'
   import { toast } from '$lib/toast'
@@ -71,22 +72,22 @@
       </section>
 
       <section>
-        <button style="width:100%" onclick={() => goto(`/buildings/create?restitch=${building!.id}`)}>Re-stitch</button>
+        <Button style="width:100%" onclick={() => goto(`/buildings/create?restitch=${building!.id}`)}>Re-stitch</Button>
       </section>
 
       {#if mergedSpaces.length > 0}
         <section>
-          <button style="width:100%;margin-bottom:4px" onclick={() => showScanBounds = !showScanBounds}>
+          <Button style="width:100%;margin-bottom:4px" onclick={() => showScanBounds = !showScanBounds}>
             {showScanBounds ? 'Hide Scan Bounds' : 'Show Scan Bounds'}
-          </button>
-          <button style="width:100%" onclick={() => showLocBounds = !showLocBounds}>
+          </Button>
+          <Button style="width:100%" onclick={() => showLocBounds = !showLocBounds}>
             {showLocBounds ? 'Hide Location Bounds' : 'Show Location Bounds'}
-          </button>
+          </Button>
         </section>
       {/if}
 
       <section>
-        <button class="danger" style="width:100%" onclick={handleDelete}>Delete building</button>
+        <Button variant="danger" style="width:100%" onclick={handleDelete}>Delete building</Button>
       </section>
     {/if}
   </Sidebar>
@@ -130,14 +131,6 @@
     margin-bottom: 6px;
   }
 
-  .badge {
-    background: var(--accent-dim);
-    color: var(--accent);
-    border-radius: 10px;
-    padding: 1px 7px;
-    font-size: 11px;
-  }
-
   .space-list {
     list-style: none;
     display: flex;
@@ -163,14 +156,4 @@
     overflow: hidden;
   }
 
-  .placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    font-size: 13px;
-    background: var(--bg);
-  }
 </style>

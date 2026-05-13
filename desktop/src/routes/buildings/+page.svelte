@@ -4,6 +4,7 @@
   import { fetchCompletedBuildings, fetchDraftBuildings, deleteBuilding } from '$lib/supabase'
   import Sidebar from '$lib/Sidebar.svelte'
   import SidebarList from '$lib/SidebarList.svelte'
+  import Button from '$lib/Button.svelte'
   import { toast } from '$lib/toast'
   import type { Building, Space } from '$lib/types'
 
@@ -40,7 +41,7 @@
           <span class="sub">{stitched}/{draft.spaces.length} spaces stitched</span>
         </div>
         <div class="actions">
-          <button class="primary small" onclick={() => goto(`/buildings/create?draft=${draft.id}`)}>Resume</button>
+          <Button variant="primary" size="sm" onclick={() => goto(`/buildings/create?draft=${draft.id}`)}>Resume</Button>
           <button class="icon-btn" onclick={(e) => discard(e, draft.id)}>×</button>
         </div>
       {/snippet}
@@ -54,26 +55,23 @@
     onclick={(b) => goto(`/buildings/${b.id}`)}
   >
     {#snippet item(b)}
-      <div class="info">
-        <span class="name">{b.name || 'Unnamed'}</span>
-        <span class="sub">{b.spaces?.length ?? 0} spaces</span>
-      </div>
+      <span class="name">{b.name || 'Unnamed'}</span>
+      <span class="sub">{b.spaces?.length ?? 0} spaces</span>
     {/snippet}
   </SidebarList>
 
   <section>
-    <button class="primary" style="width:100%" onclick={() => goto('/buildings/create')}>+ New building</button>
+    <Button variant="primary" style="width:100%" onclick={() => goto('/buildings/create')}>+ New building</Button>
   </section>
 </Sidebar>
 
 <style>
   .info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-  .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { font-size: 11px; color: var(--text-muted); }
+  .name { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
 
   .actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 
-  button.small { padding: 3px 8px; font-size: 11px; }
 
   .icon-btn {
     padding: 1px 6px;

@@ -36,6 +36,7 @@ button {
   border-radius: 6px;
   padding: 6px 12px;
   font-size: 13px;
+  font-family: inherit;
   transition: background 0.15s;
 }
 
@@ -45,21 +46,6 @@ button:hover {
 button:disabled {
   opacity: 0.4;
   cursor: default;
-}
-button.primary {
-  background: var(--accent);
-  color: #000;
-  border-color: var(--accent);
-}
-button.primary:hover {
-  background: #00b8d9;
-}
-button.danger {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-button.danger:hover {
-  background: #ff444422;
 }
 
 input[type="text"] {
@@ -128,4 +114,24 @@ aside section {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.badge {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 11px;
+}
+
+.placeholder {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--bg);
 }

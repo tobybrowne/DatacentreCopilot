@@ -5,6 +5,8 @@
   import { fetchAnchors, fetchSpaceById, deleteAnchor, unmapAnchor, setGlbPosition, getSpaceGlbUrl } from '$lib/supabase'
   import Scene from '$lib/Scene.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
+  import Button from '$lib/Button.svelte'
+  import ActionBanner from '$lib/ActionBanner.svelte'
   import { toast } from '$lib/toast'
   import type { Anchor, BoundingBox, Position } from '$lib/types'
 
@@ -192,17 +194,17 @@
 
   {#if boundingBox}
     <section>
-      <button style="width:100%" onclick={() => showBoundingBoxes = !showBoundingBoxes}>
+      <Button style="width:100%" onclick={() => showBoundingBoxes = !showBoundingBoxes}>
         {showBoundingBoxes ? 'Hide boxes' : 'Show boxes'}
-      </button>
+      </Button>
     </section>
   {/if}
 
   {#if glbUrl}
     <section>
-      <button style="width:100%" onclick={() => showDensity = !showDensity}>
+      <Button style="width:100%" onclick={() => showDensity = !showDensity}>
         {showDensity ? 'Hide density map' : 'Show density map'}
-      </button>
+      </Button>
       {#if showDensity}
         <p class="hint-text" style="margin-top:6px">Blue = sparse (doorway glimpse) · Red = dense (room interior)</p>
       {/if}
@@ -223,11 +225,7 @@
 />
 
 {#if mappingAnchor}
-  <div class="mapping-banner">
-    <span class="dot"></span>
-    Click the mesh to map: <strong>{mappingAnchor.name || 'Unnamed'}</strong>
-    <button onclick={cancel}>Cancel</button>
-  </div>
+  <ActionBanner prompt="Click the mesh to map:" name={mappingAnchor.name || 'Unnamed'} oncancel={cancel} />
 {/if}
 
 {#if unmappedRefs.length > 0 && !mappingAnchor && glbUrl}
@@ -245,13 +243,6 @@
 
   .section-label.warning { color: var(--pending); }
 
-  .badge {
-    background: var(--accent-dim);
-    color: var(--accent);
-    border-radius: 10px;
-    padding: 1px 7px;
-    font-size: 11px;
-  }
   .badge.warning { background: #ffcc0022; color: var(--pending); }
 
   .hint-text { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
@@ -325,36 +316,6 @@
 
   .empty-msg { color: var(--text-muted); font-size: 12px; font-style: italic; }
 
-  .mapping-banner {
-    position: fixed;
-    top: 16px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--surface);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    padding: 10px 16px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 13px;
-    z-index: 50;
-    box-shadow: 0 0 20px #00d4ff33;
-  }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--accent);
-    animation: pulse 1s infinite;
-    flex-shrink: 0;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
 
   .unmapped-notice {
     position: fixed;

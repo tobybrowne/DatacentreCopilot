@@ -5,6 +5,7 @@
   import { Canvas } from '@threlte/core'
   import NavigateSceneInner from '$lib/NavigateSceneInner.svelte'
   import GesturePlayer from '$lib/GesturePlayer.svelte'
+  import { formatDate, getStepText } from '$lib/logUtils'
   import Sidebar from '$lib/Sidebar.svelte'
   import { toast } from '$lib/toast'
   import type { GestureRecording, LogWithContext, RigidTransform } from '$lib/types'
@@ -118,29 +119,15 @@
     return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
   }
 
-  function getStepText(): string {
-    if (!log.step_id || !log.procedureRun?.procedure.steps) return ''
-    const step = (log.procedureRun.procedure.steps as { id: string; text: string }[])
-      .find(s => s.id === log.step_id)
-    return step?.text ?? ''
-  }
-
-  function formatDate(iso: string): string {
-    return new Date(iso).toLocaleString(undefined, {
-      month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    })
-  }
-
   const hasGesture = !!log.geometry_recording_path
   const hasVideo   = !!log.camera_recording_path
-  const stepText   = getStepText()
+  const stepText   = getStepText(log)
 
   onDestroy(() => { if (rafId !== null) cancelAnimationFrame(rafId) })
 </script>
 
 <div class="log-view">
-  <Sidebar title="Log" onback={() => goto(`/log/${buildingId}`)}>
+  <Sidebar title="Log Viewer" onback={() => goto(`/log/${buildingId}`)}>
 
     <section>
       <div class="log-meta">
@@ -251,14 +238,6 @@
     background: var(--bg);
   }
 
-  .placeholder {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    font-size: 13px;
-  }
 
   /* Meta */
   .log-meta { display: flex; flex-direction: column; gap: 8px; }
@@ -350,7 +329,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #000;
+    background: var(--bg);
+    padding: 32px;
   }
-  .video-player { max-width: 100%; max-height: 100%; outline: none; }
+  .video-player {
+    max-width: 100%;
+    max-height: 100%;
+    outline: none;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    box-shadow: 0 0 32px #00d4ff22;
+  }
 </style>

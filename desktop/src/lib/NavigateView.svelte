@@ -8,6 +8,8 @@
   import type { MultiPolygon } from 'polygon-clipping'
   import NavigateSceneInner from './NavigateSceneInner.svelte'
   import Sidebar from './Sidebar.svelte'
+  import Checkbox from './Checkbox.svelte'
+  import Button from './Button.svelte'
   import type { BoundingBox, Position, RigidTransform, RoomSegment } from './types'
   import { saveNavMesh, saveLocBoundingBox, supabase } from './supabase'
   import { buildNavMeshFromSpaces, loadNavMeshFromBuffer, computePath, pruneToLargestComponent, type NavMeshParams } from './navmesh'
@@ -50,6 +52,8 @@
   let showNavMesh = $state(true)
   let showPruned = $state(false)
   let showParams = $state(true)
+  let showRouteSection = $state(true)
+  let showRoomSection = $state(true)
   let showRooms = $state(true)
   let showScan = $state(true)
   let showBoundingBoxes = $state(false)
@@ -434,103 +438,89 @@
 </script>
 
 <Sidebar title={buildingName} {onback}>
-  {#if phase === 'loading'}
-    <section>
-      <label class="section-label">Preparing</label>
-      <p class="hint">{loadingMsg}</p>
-      <div class="spinner"></div>
-    </section>
 
-  {:else if phase === 'pickStart'}
-    <section>
-      <label class="section-label">Start</label>
-      <p class="hint">Click anywhere on the map to place your <strong class="green">start</strong> point.</p>
-    </section>
-    <section>
-      <label class="toggle-row">
-        <input type="checkbox" bind:checked={showScan} />
-        <span>Show scan</span>
-      </label>
-      <label class="toggle-row">
-        <input type="checkbox" bind:checked={showBoundingBoxes} />
-        <span>Show bounding boxes</span>
-      </label>
-      <label class="toggle-row">
-        <input type="checkbox" bind:checked={showNavMesh} />
-        <span>Show walkable area</span>
-      </label>
-      <label class="toggle-row">
-        <input type="checkbox" bind:checked={showPruned} />
-        <span>Show pruned only</span>
-      </label>
-      {#if rooms.length > 0}
-        <label class="toggle-row">
-          <input type="checkbox" bind:checked={showRooms} />
-          <span>Show rooms ({rooms.length})</span>
-        </label>
+  <!-- Visualisation toggles — always visible -->
+  <section>
+    <Checkbox bind:checked={showScan} label="Show scan" />
+    <Checkbox bind:checked={showBoundingBoxes} label="Show bounding boxes" />
+    <Checkbox bind:checked={showNavMesh} label="Show walkable area" />
+    <Checkbox bind:checked={showPruned} label="Show pruned only" />
+    {#if rooms.length > 0}
+      <Checkbox bind:checked={showRooms} label={`Show rooms (${rooms.length})`} />
+    {/if}
+    {#if tightBoxes.length > 0}
+      <Checkbox bind:checked={showTightBoxes} label={`Show tight boxes (${tightBoxes.length})`} />
+    {/if}
+    {#if collapsedBoxes.length > 0}
+      <Checkbox bind:checked={showCollapsedBoxes} label={`Show collapsed boxes (${collapsedBoxes.length})`} />
+    {/if}
+  </section>
+
+  <!-- Route -->
+  <section class="collapsible-header" onclick={() => showRouteSection = !showRouteSection}>
+    <label class="section-label" style="cursor:pointer;flex:1">Route</label>
+    <span class="chevron" class:open={showRouteSection}>›</span>
+  </section>
+  {#if showRouteSection}
+    <section class="collapsible-body">
+      {#if phase === 'loading'}
+        <p class="hint">{loadingMsg}</p>
+        <div class="spinner"></div>
+
+      {:else if phase === 'pickStart'}
+        <p class="hint">Click the map to place your <strong class="green">start</strong> point.</p>
+
+      {:else if phase === 'pickEnd'}
+        <p class="hint">Click the map to place your <strong class="red">destination</strong>.</p>
+        <Button style="width:100%" onclick={reset}>Reset</Button>
+
+      {:else if phase === 'result'}
+        <p class="distance">{pathLength.toFixed(1)}<span class="unit">m</span></p>
+        <Button variant="primary" style="width:100%" onclick={reset}>New route</Button>
+
+      {:else if phase === 'error'}
+        <p class="hint danger">{error}</p>
+        <Button style="width:100%" onclick={reset}>Try again</Button>
       {/if}
-      {#if navmeshId}
-        <div class="param-row" style="margin-top:4px">
-          <label style="font-size:11px;color:var(--text-muted)">Resolution</label>
+    </section>
+  {/if}
+
+  <!-- Room Division -->
+  {#if navmeshId}
+    <section class="collapsible-header" onclick={() => showRoomSection = !showRoomSection}>
+      <label class="section-label" style="cursor:pointer;flex:1">Room Division</label>
+      <span class="chevron" class:open={showRoomSection}>›</span>
+    </section>
+    {#if showRoomSection}
+      <section class="collapsible-body">
+        <div class="param-row">
+          <label>Resolution</label>
           <input type="number" min="0.01" step="0.05" bind:value={resolution} />
         </div>
-        <button
-          style="width:100%;margin-top:4px"
+        <Button
+          variant="primary"
+          style="width:100%"
           disabled={roomsState === 'computing'}
           onclick={fetchRooms}
         >
           {roomsState === 'computing' ? 'Computing…' : rooms.length > 0 ? 'Recompute rooms' : 'Compute rooms'}
-        </button>
-      {/if}
-      {#if tightBoxes.length > 0}
-        <label class="toggle-row" style="margin-top:4px">
-          <input type="checkbox" bind:checked={showTightBoxes} />
-          <span>Show tight boxes ({tightBoxes.length})</span>
-        </label>
-        <button style="width:100%;margin-top:4px" onclick={computeCollapsedBoxes}>
-          {collapsedBoxes.length > 0 ? 'Recompute collapsed boxes' : 'Compute collapsed boxes'}
-        </button>
-      {/if}
-      {#if collapsedBoxes.length > 0}
-        <label class="toggle-row" style="margin-top:4px">
-          <input type="checkbox" bind:checked={showCollapsedBoxes} />
-          <span>Show collapsed boxes ({collapsedBoxes.length})</span>
-        </label>
-      {/if}
-    </section>
-
-  {:else if phase === 'pickEnd'}
-    <section>
-      <label class="section-label">Destination</label>
-      <p class="hint">Now click your <strong class="red">destination</strong>.</p>
-    </section>
-    <section>
-      <button style="width:100%" onclick={reset}>Reset</button>
-    </section>
-
-  {:else if phase === 'result'}
-    <section>
-      <label class="section-label">Route</label>
-      <p class="distance">{pathLength.toFixed(1)}<span class="unit">m</span></p>
-    </section>
-    <section>
-      <button class="primary" style="width:100%" onclick={reset}>New route</button>
-    </section>
-
-  {:else if phase === 'error'}
-    <section>
-      <label class="section-label">Error</label>
-      <p class="hint danger">{error}</p>
-      <button style="width:100%" onclick={reset}>Try again</button>
-    </section>
+        </Button>
+        {#if tightBoxes.length > 0}
+          <Button style="width:100%" onclick={computeCollapsedBoxes}>
+            {collapsedBoxes.length > 0 ? 'Recompute collapsed boxes' : 'Compute collapsed boxes'}
+          </Button>
+        {/if}
+      </section>
+    {/if}
   {/if}
 
-  <section class="params-header" onclick={() => showParams = !showParams}>
+  <!-- Navmesh Params -->
+  <section class="collapsible-header" onclick={() => showParams = !showParams}>
     <label class="section-label" style="cursor:pointer;flex:1">Navmesh Params</label>
     <span class="chevron" class:open={showParams}>›</span>
   </section>
   {#if showParams}
-    <section class="params-body">
+    <section class="collapsible-body">
       <div class="param-row">
         <label>Bounds Y max<span class="param-hint">m above floor</span></label>
         <input type="number" step="0.5" min="0.5" bind:value={params.boundsYMax} />
@@ -587,22 +577,20 @@
         <label>Detail sample max err<span class="param-hint">world units</span></label>
         <input type="number" step="0.1" min="0" bind:value={params.detailSampleMaxError} />
       </div>
-      <button class="primary" style="width:100%;margin-top:4px" onclick={buildNavMesh}>Rebuild</button>
+      <Button variant="primary" style="width:100%" onclick={buildNavMesh}>Rebuild</Button>
+      {#if buildingId && navMesh && navMeshDirty}
+        <Button
+          variant="primary"
+          style="width:100%"
+          disabled={saveState === 'saving'}
+          onclick={handleSaveNavMesh}
+        >
+          {saveState === 'saving' ? 'Saving…' : 'Save navmesh'}
+        </Button>
+      {/if}
     </section>
   {/if}
 
-  {#if buildingId && navMesh && navMeshDirty}
-    <section>
-      <button
-        class="primary"
-        style="width:100%"
-        disabled={saveState === 'saving'}
-        onclick={handleSaveNavMesh}
-      >
-        {saveState === 'saving' ? 'Saving…' : 'Save navmesh'}
-      </button>
-    </section>
-  {/if}
 </Sidebar>
 
 <div class="canvas-wrap">
@@ -644,14 +632,6 @@
   }
   .unit { font-size: 16px; font-weight: 400; margin-left: 2px; }
 
-  .toggle-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    color: var(--text-muted);
-    cursor: pointer;
-  }
 
   .spinner {
     width: 20px;
@@ -663,13 +643,13 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .params-header {
+  .collapsible-header {
     flex-direction: row;
     align-items: center;
     cursor: pointer;
     user-select: none;
   }
-  .params-header:hover .section-label { color: var(--text); }
+  .collapsible-header:hover .section-label { color: var(--text); }
 
   .chevron {
     font-size: 16px;
@@ -679,13 +659,14 @@
   }
   .chevron.open { transform: rotate(90deg); }
 
-  .params-body { gap: 6px; }
+  .collapsible-body { gap: 6px; }
 
   .param-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 6px;
+    padding: 4px 0;
   }
   .param-row label {
     font-size: 11px;

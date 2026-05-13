@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { signOut } from '$lib/auth'
+  import { Crosshair, Building2, Navigation, Package, ScrollText } from 'lucide-svelte'
 </script>
 
 <div class="home">
@@ -10,27 +11,27 @@
     <p class="subtitle">What would you like to do?</p>
     <div class="cards">
       <button class="card" onclick={() => goto('/calibration')}>
-        <span class="card-icon">⬡</span>
+        <span class="card-icon"><Crosshair size={24} /></span>
         <span class="card-title">Space Calibration</span>
         <span class="card-desc">View spaces and map reference anchors to your 3D scans</span>
       </button>
       <button class="card" onclick={() => goto('/buildings')}>
-        <span class="card-icon">⬢</span>
+        <span class="card-icon"><Building2 size={24} /></span>
         <span class="card-title">Building Manager</span>
         <span class="card-desc">Stitch multiple room scans together into a single building</span>
       </button>
       <button class="card" onclick={() => goto('/navigate')}>
-        <span class="card-icon">⟐</span>
+        <span class="card-icon"><Navigation size={24} /></span>
         <span class="card-title">Navigate</span>
         <span class="card-desc">Find routes between points in a stitched building</span>
       </button>
       <button class="card" onclick={() => goto('/assets')}>
-        <span class="card-icon">◈</span>
+        <span class="card-icon"><Package size={24} /></span>
         <span class="card-title">Asset Manager</span>
         <span class="card-desc">Manage assets and map them to locations in your buildings</span>
       </button>
       <button class="card" onclick={() => goto('/log')}>
-        <span class="card-icon">◎</span>
+        <span class="card-icon"><ScrollText size={24} /></span>
         <span class="card-title">Log Viewer</span>
         <span class="card-desc">Browse gesture and video logs from field sessions</span>
       </button>
@@ -110,9 +111,8 @@
   }
 
   .card-icon {
-    font-size: 24px;
     color: var(--accent);
-    line-height: 1;
+    display: flex;
   }
 
   .card-title {

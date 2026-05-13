@@ -14,6 +14,9 @@
   } from '$lib/supabase'
   import Scene from '$lib/Scene.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
+  import SidebarList from '$lib/SidebarList.svelte'
+  import Button from '$lib/Button.svelte'
+  import ActionBanner from '$lib/ActionBanner.svelte'
   import type { AssetWithAnchor, Building, Position, RigidTransform, Space } from '$lib/types'
   import { ASSET_TYPES, ASSET_TYPE_LABELS } from '$lib/assetTypes'
   import { toast } from '$lib/toast'
@@ -169,20 +172,17 @@
 {#if phase === 'buildings'}
   <div class="asset-view">
     <Sidebar title="Asset Manager" onback={() => goto('/')}>
-      <div class="asset-list">
-        {#if loadingBuilding}
-          <p class="empty-msg">Loading…</p>
-        {:else if buildings.length === 0}
-          <p class="empty-msg">No completed buildings found.</p>
-        {:else}
-          {#each buildings as b (b.id)}
-            <button class="building-card" onclick={() => selectBuilding(b)}>
-              <span class="building-name">{b.name ?? 'Unnamed Building'}</span>
-              <span class="building-meta">{b.spaces.length} space{b.spaces.length !== 1 ? 's' : ''}</span>
-            </button>
-          {/each}
-        {/if}
-      </div>
+      <SidebarList
+        title="Buildings"
+        items={buildings}
+        empty="No completed buildings found."
+        onclick={selectBuilding}
+      >
+        {#snippet item(b)}
+          <span class="name">{b.name ?? 'Unnamed'}</span>
+          <span class="meta">{b.spaces.length} spaces</span>
+        {/snippet}
+      </SidebarList>
     </Sidebar>
     <div class="scene-wrap empty-scene"></div>
   </div>
@@ -191,7 +191,7 @@
   <div class="asset-view">
     <Sidebar title={selectedBuilding?.name ?? 'Assets'} onback={goBack}>
       <div class="sidebar-actions">
-        <button class="primary new-btn" onclick={() => { showNewDialog = true }}>+ New Asset</button>
+        <Button variant="primary" style="width:100%" onclick={() => { showNewDialog = true }}>+ New Asset</Button>
       </div>
 
       <div class="asset-list">
@@ -240,11 +240,7 @@
   </div>
 
   {#if placingAsset}
-    <div class="placement-banner">
-      <span class="pulse-dot"></span>
-      Click the map to place: <strong>{placingAsset.name ?? 'Unnamed'}</strong>
-      <button onclick={cancelPlacing}>Cancel</button>
-    </div>
+    <ActionBanner prompt="Click the map to place:" name={placingAsset.name ?? 'Unnamed'} oncancel={cancelPlacing} />
   {/if}
 {/if}
 
@@ -266,48 +262,20 @@
         </select>
       </label>
       <div class="dialog-actions">
-        <button onclick={() => showNewDialog = false}>Cancel</button>
-        <button class="primary" onclick={handleCreateAsset} disabled={saving || !newName.trim()}>
+        <Button onclick={() => showNewDialog = false}>Cancel</Button>
+        <Button variant="primary" onclick={handleCreateAsset} disabled={saving || !newName.trim()}>
           {saving ? 'Saving…' : 'Create'}
-        </button>
+        </Button>
       </div>
     </div>
   </div>
 {/if}
 
 <style>
-  .building-card {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 3px;
-    padding: 10px 16px;
-    width: 100%;
-    border-bottom: 1px solid var(--border);
-    background: transparent;
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
-    border-top: none;
-    cursor: pointer;
-    text-align: left;
-    transition: background 0.1s;
-  }
-  .building-card:last-child { border-bottom: none; }
-  .building-card:hover { background: #1e1e1e; }
+  .name { flex: 1; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
 
-  .building-name {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text);
-  }
-
-  .building-meta {
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  .empty-scene {
+.empty-scene {
     background: var(--bg);
   }
 
@@ -324,11 +292,6 @@
     flex-shrink: 0;
   }
 
-  .new-btn {
-    width: 100%;
-    padding: 8px;
-    font-size: 13px;
-  }
 
   .asset-list {
     flex: 1;
@@ -444,36 +407,6 @@
     overflow: hidden;
   }
 
-  .placement-banner {
-    position: fixed;
-    top: 16px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--surface);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    padding: 10px 16px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 13px;
-    z-index: 50;
-    box-shadow: 0 0 20px #00d4ff33;
-  }
-
-  .pulse-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--accent);
-    flex-shrink: 0;
-    animation: pulse 1s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
 
   .dialog h3 {
     font-size: 15px;

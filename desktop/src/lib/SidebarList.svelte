@@ -46,14 +46,6 @@
     gap: 6px;
   }
 
-  .badge {
-    background: var(--accent-dim);
-    color: var(--accent);
-    border-radius: 10px;
-    padding: 1px 7px;
-    font-size: 11px;
-  }
-
   ul { list-style: none; }
 
   li {

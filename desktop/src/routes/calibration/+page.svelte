@@ -34,11 +34,6 @@
             title={space.glb_path ? space.name : `${space.name} — no GLB exported yet`}
           >
             <span class="space-name">{space.name || space.id}</span>
-            {#if space.glb_path}
-              <span class="tag glb">GLB</span>
-            {:else}
-              <span class="tag">no mesh</span>
-            {/if}
           </li>
         {/each}
       </ul>
@@ -79,19 +74,7 @@
 
   .space-name { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .tag {
-    font-size: 10px;
-    padding: 1px 5px;
-    border-radius: 3px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    background: var(--border);
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
-  .tag.glb { background: #00d4ff22; color: var(--accent); }
-
-  .empty-scene {
+.empty-scene {
     flex: 1;
     display: flex;
     align-items: center;

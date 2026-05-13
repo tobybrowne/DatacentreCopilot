@@ -1,19 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
-  import { fetchCompletedBuildings, fetchSpaces } from '$lib/supabase'
+  import { fetchCompletedBuildings } from '$lib/supabase'
   import Sidebar from '$lib/Sidebar.svelte'
   import SidebarList from '$lib/SidebarList.svelte'
   import { toast } from '$lib/toast'
   import type { Building, Space } from '$lib/types'
 
   let buildings: (Building & { spaces: Space[] })[] = $state([])
-  let spaces: Space[] = $state([])
 
   onMount(async () => {
     try {
-      ;[buildings, spaces] = await Promise.all([fetchCompletedBuildings(), fetchSpaces()])
-      spaces = spaces.filter(s => s.glb_path)
+      buildings = await fetchCompletedBuildings()
     } catch (e) {
       toast((e as Error).message)
     }
@@ -33,22 +31,10 @@
     {/snippet}
   </SidebarList>
 
-  <SidebarList
-    title="Individual Spaces"
-    items={spaces}
-    empty="No navigable spaces yet."
-    onclick={(s) => goto(`/navigate/space/${s.id}`)}
-  >
-    {#snippet item(s)}
-      <span class="name">{s.name || 'Unnamed'}</span>
-      <span class="meta">space</span>
-    {/snippet}
-  </SidebarList>
-
 </Sidebar>
 
 <div class="empty-scene">
-  <p>Select a building or space to navigate.</p>
+  <p>Select a building to navigate.</p>
 </div>
 
 <style>

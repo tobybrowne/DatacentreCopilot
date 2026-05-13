@@ -13,6 +13,7 @@
     "@supabase/supabase-js": "^2.47.0",
     "@threlte/core": "^8.5.11",
     "@threlte/extras": "^9.15.0",
+    "lucide-svelte": "^1.0.1",
     "polygon-clipping": "^0.15.7",
     "recast-navigation": "^0.43.0",
     "three": "^0.184.0"

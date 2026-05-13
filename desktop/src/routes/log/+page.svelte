@@ -28,10 +28,8 @@
       onclick={(b) => goto(`/log/${b.id}`)}
     >
       {#snippet item(b)}
-        <div class="building-info">
-          <span class="building-name">{b.name ?? 'Unnamed'}</span>
-          <span class="building-meta">{b.spaces.length} space{b.spaces.length !== 1 ? 's' : ''}</span>
-        </div>
+        <span class="name">{b.name ?? 'Unnamed'}</span>
+        <span class="meta">{b.spaces.length} spaces</span>
       {/snippet}
     </SidebarList>
   </Sidebar>
@@ -67,7 +65,6 @@
     font-size: 13px;
   }
 
-  .building-info { display: flex; flex-direction: column; gap: 2px; }
-  .building-name { font-size: 13px; font-weight: 500; color: var(--text); }
-  .building-meta { font-size: 11px; color: var(--text-muted); }
+  .name { flex: 1; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
 </style>

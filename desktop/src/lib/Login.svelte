@@ -1,5 +1,6 @@
 <script lang="ts">
   import { signIn } from './auth'
+  import Button from './Button.svelte'
 
   let email = $state('')
   let password = $state('')
@@ -32,9 +33,9 @@
       <p class="error">{error}</p>
     {/if}
 
-    <button type="submit" class="primary" style="margin-top: 8px" disabled={loading}>
+    <Button type="submit" variant="primary" style="margin-top: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em" disabled={loading}>
       {loading ? 'Signing in…' : 'Sign in'}
-    </button>
+    </Button>
   </form>
 </div>
 
@@ -91,11 +92,6 @@
     border-color: var(--accent);
   }
 
-  button.primary {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
 
   .error {
     font-size: 12px;
