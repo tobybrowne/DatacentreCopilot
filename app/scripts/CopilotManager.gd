@@ -97,10 +97,11 @@ func _connect_when_ready() -> void:
 	if not authed:
 		push_warning("CopilotManager: skipping connection — not authenticated")
 		return
+	var url := service_url
 	if SupabaseManager.auth_user:
-		_ws.handshake_headers = PackedStringArray(["Authorization: Bearer " + SupabaseManager.auth_user.access_token])
+		url += "?token=" + SupabaseManager.auth_user.access_token
 	print("CopilotManager: connecting...")
-	_ws.connect_to_url(service_url)
+	_ws.connect_to_url(url)
 
 
 func _setup_mic() -> void:
@@ -325,7 +326,7 @@ func setup_hud(camera: Camera3D) -> void:
 	_listen_dot = MeshInstance3D.new()
 	_listen_dot.mesh = sphere
 	_listen_dot.material_override = mat
-	_listen_dot.position = Vector3(0.098, 0.07, -0.3)
+	_listen_dot.position = Vector3(0.074, 0.07, -0.3)
 	_listen_dot.visible = false
 	camera.add_child(_listen_dot)
 

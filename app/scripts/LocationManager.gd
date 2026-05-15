@@ -24,7 +24,7 @@ var _last_loc_confidence := -1
 
 var current_coarse_space := ""
 var _poor_quality_timer := 0.0
-const POOR_RELOC_THRESHOLD := 10.0
+const POOR_RELOC_THRESHOLD := 3.0
 var _relocalising := false
 
 var _indicator: TrackingIndicator
@@ -33,7 +33,7 @@ var _indicator: TrackingIndicator
 	set(v):
 		show_bounding_boxes = v
 		for vis in _bbox_visuals:
-			vis.visible = v
+			vis.visible = v and DevConfig.DEV_MODE
 
 var _bbox_visuals: Array[BoundingBoxVisual] = []
 
@@ -75,7 +75,7 @@ func _rebuild_bbox_visuals() -> void:
 		vis.bbox = space.loc_bounding_box
 		vis.color = BoundingBoxVisual.COLORS[i % BoundingBoxVisual.COLORS.size()]
 		vis.anchor_manager = _anchor_manager
-		vis.visible = show_bounding_boxes
+		vis.visible = show_bounding_boxes and DevConfig.DEV_MODE
 		get_parent().add_child(vis)
 		_bbox_visuals.append(vis)
 
@@ -269,6 +269,11 @@ func _wait_for_fair_localisation() -> void:
 			break
 	if _indicator:
 		_indicator.set_spinning(false)
+
+
+func get_loc_confidence() -> int:
+	var ext := _ml2_ext()
+	return ext.get_localization_confidence() if ext and ext.has_method("get_localization_confidence") else -1
 
 
 func get_current_space_id() -> String:

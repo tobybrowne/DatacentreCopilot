@@ -189,7 +189,7 @@ func _init_async() -> void:
 	var ghost_shader := Shader.new()
 	ghost_shader.code = """
 shader_type spatial;
-render_mode unshaded, cull_back;
+render_mode unshaded, cull_back, blend_mix, depth_draw_always;
 
 uniform vec3 rim_color  : source_color = vec3(0.25, 0.5, 0.85);
 uniform vec3 fill_color : source_color = vec3(0.03, 0.07, 0.18);
@@ -198,15 +198,34 @@ void fragment() {
 	float fresnel = 1.0 - abs(dot(NORMAL, VIEW));
 	fresnel = pow(fresnel, rim_power);
 	ALBEDO = mix(fill_color, rim_color, fresnel);
+	ALPHA = 0.9;
 }
 """
 	var ghost_mat := ShaderMaterial.new()
 	ghost_mat.shader = ghost_shader
+	ghost_mat.render_priority = 0
 
-	_apply_material_recursive(left_inst,  ghost_mat)
-	_apply_material_recursive(right_inst, ghost_mat)
+	# Depth prepass: invisible, writes depth only. Runs at priority -1 so all ghost
+	# geometry establishes correct depth before any ghost color pixels draw at priority 0.
+	# depth_draw_always means order among prepass draw calls doesn't matter — the GPU
+	# depth test keeps the nearest value regardless of which mesh renders first.
+	var prepass_shader := Shader.new()
+	prepass_shader.code = """
+shader_type spatial;
+render_mode unshaded, cull_back, blend_mix, depth_draw_always;
+void fragment() {
+	ALPHA = 0.0;
+}
+"""
+	var ghost_prepass_mat := ShaderMaterial.new()
+	ghost_prepass_mat.shader = prepass_shader
+	ghost_prepass_mat.render_priority = -1
+	ghost_prepass_mat.next_pass = ghost_mat
+
+	_apply_material_recursive(left_inst,  ghost_prepass_mat)
+	_apply_material_recursive(right_inst, ghost_prepass_mat)
 	if _body_inst:
-		_apply_material_recursive(_body_inst, ghost_mat)
+		_apply_material_recursive(_body_inst, ghost_prepass_mat)
 
 	left_inst.visible  = false
 	right_inst.visible = false

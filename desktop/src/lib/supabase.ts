@@ -52,6 +52,16 @@ export async function getSpaceGlbUrl(glbPath: string): Promise<string> {
   return data.signedUrl;
 }
 
+export async function computeBoundingBox(spaceId: string): Promise<void> {
+  const monoUrl = import.meta.env.VITE_MONO_URL as string;
+  const res = await fetch(`${monoUrl}/spaces/compute-bbox`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ space_id: spaceId }),
+  });
+  if (!res.ok) throw new Error(`compute-bbox failed: ${res.statusText}`);
+}
+
 export async function fetchAnchors(
   spaceId: string | null = null
 ): Promise<Anchor[]> {
@@ -320,6 +330,31 @@ export async function saveNavMesh(
   }
 }
 
+export async function prepareAddSpace(
+  buildingId: string,
+  existingCount: number,
+  newSpaceIds: string[]
+): Promise<void> {
+  const { error: buildingErr } = await supabase
+    .from('buildings')
+    .update({ draft: true })
+    .eq('id', buildingId);
+  if (buildingErr) throw buildingErr;
+
+  await Promise.all(
+    newSpaceIds.map((spaceId, index) =>
+      supabase
+        .from('spaces')
+        .update({
+          building_id: buildingId,
+          building_index: existingCount + index,
+          offset_transformation: null,
+        })
+        .eq('id', spaceId)
+    )
+  );
+}
+
 export async function resetBuildingForRestitch(
   buildingId: string,
   name: string,
@@ -364,6 +399,13 @@ export async function saveLocBoundingBox(
     .update({ loc_bounding_box: bb })
     .eq('id', spaceId);
   if (error) throw error;
+}
+
+export async function uploadSpaceGlb(glbPath: string, data: ArrayBuffer): Promise<void> {
+  const { error } = await supabase.storage
+    .from('spaces_bucket')
+    .upload(glbPath, data, { upsert: true, contentType: 'model/gltf-binary' })
+  if (error) throw error
 }
 
 export async function deleteBuilding(buildingId: string): Promise<void> {

@@ -10,6 +10,10 @@ const PROXIMITY_RADIUS := 0.50
 const DWELL_THRESHOLD  := 10.0
 const INTERACT_HOLD    := 1.5
 
+const SURFACE_PROBE  := 0.12  # ray length to check for nearby surface
+const SURFACE_MARGIN := 0.04  # clearance to maintain from surface
+const WORLD_MESH_LAYER := 1 << 19
+
 const GAZE_RADIUS         := 1.5   # metres — must be within this to show fab
 const GAZE_DOT_THRESHOLD  := 0.97  # cos(~14°)
 const GAZE_HIDE_DELAY     := 0.4   # seconds before fab hides after losing gaze
@@ -46,6 +50,7 @@ func get_asset_label() -> String:
 
 
 func _ready() -> void:
+	_nudge_clear_of_surface.call_deferred()
 	if anchor.id.is_empty():
 		return
 	var task = await Supabase.database.query(
@@ -305,6 +310,28 @@ func _is_hand_nearby() -> bool:
 			return true
 	return false
 
+
+
+func _nudge_clear_of_surface() -> void:
+	var space := get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.new()
+	query.collision_mask = WORLD_MESH_LAYER
+
+	var nearest_dist := INF
+	var push_normal := Vector3.ZERO
+
+	for dir: Vector3 in [Vector3.RIGHT, Vector3.LEFT, Vector3.UP, Vector3.DOWN, Vector3.FORWARD, Vector3.BACK]:
+		query.from = global_position
+		query.to = global_position + dir * SURFACE_PROBE
+		var hit := space.intersect_ray(query)
+		if hit and hit.distance < nearest_dist:
+			nearest_dist = hit.distance
+			push_normal = hit.normal
+
+	if push_normal != Vector3.ZERO:
+		var clearance := SURFACE_PROBE - nearest_dist + SURFACE_MARGIN
+		if clearance > 0.0:
+			global_position += push_normal * clearance
 
 
 func _get_xr_origin() -> Node3D:

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { Canvas } from '@threlte/core'
   import { exportNavMesh, NavMeshQuery, type NavMesh } from 'recast-navigation'
+  import { floodFillPruneNavMesh } from '@recast-navigation/core'
   import * as THREE from 'three'
   import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
   import polygonClipping from 'polygon-clipping'
@@ -12,7 +13,7 @@
   import Button from './Button.svelte'
   import type { BoundingBox, Position, RigidTransform, RoomSegment } from './types'
   import { saveNavMesh, saveLocBoundingBox, supabase } from './supabase'
-  import { buildNavMeshFromSpaces, loadNavMeshFromBuffer, computePath, pruneToLargestComponent, type NavMeshParams } from './navmesh'
+  import { buildNavMeshFromSpaces, loadNavMeshFromBuffer, computePath, pruneToLargestComponent, makeNavMeshResult, type NavMeshParams } from './navmesh'
   import { toast } from './toast'
   import { session } from './auth'
   import { get } from 'svelte/store'
@@ -333,14 +334,34 @@
   let activeNavMeshMesh = $derived(showPruned ? prunedNavMeshMesh : navMeshDebugMesh)
   let pickingEnabled = $derived(phase === 'pickStart' || phase === 'pickEnd')
 
+  // Returns the centroid of the lowest-Y vertices in the debug mesh — reliably on
+  // the floor rather than a table top or ceiling fragment.
+  function floorSeedPoint(mesh: THREE.Mesh): { x: number; y: number; z: number } {
+    const pos = mesh.geometry.attributes.position
+    let minY = Infinity
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i)
+      if (y < minY) minY = y
+    }
+    let sumX = 0, sumZ = 0, count = 0
+    for (let i = 0; i < pos.count; i++) {
+      if (Math.abs(pos.getY(i) - minY) < 0.1) {
+        sumX += pos.getX(i)
+        sumZ += pos.getZ(i)
+        count++
+      }
+    }
+    return { x: sumX / count, y: minY, z: sumZ / count }
+  }
+
   async function handleSaveNavMesh(): Promise<void> {
-    if (!navMesh || !prunedNavMeshMesh || !buildingId) return
+    if (!navMesh || !navMeshDebugMesh || !buildingId) return
     saveState = 'saving'
     try {
       const data = exportNavMesh(navMesh)
       const exporter = new GLTFExporter()
       const glbData = await new Promise<ArrayBuffer>((resolve, reject) =>
-        exporter.parse(prunedNavMeshMesh!, resolve as (r: ArrayBuffer | object) => void, reject, { binary: true })
+        exporter.parse(navMeshDebugMesh!, resolve as (r: ArrayBuffer | object) => void, reject, { binary: true })
       )
       await saveNavMesh(buildingId, data, glbData as ArrayBuffer, { ...params } as unknown as Record<string, unknown>)
       saveState = 'saved'
@@ -351,6 +372,17 @@
     }
   }
 
+  function applyFloorPrune(result: { navMesh: NavMesh; navQuery: NavMeshQuery; debugMesh: THREE.Mesh }) {
+    const seed = floorSeedPoint(result.debugMesh)
+    const { success, nearestRef } = result.navQuery.findNearestPoly(seed, { halfExtents: { x: 2, y: 3, z: 2 } })
+    if (!success) return result
+    floodFillPruneNavMesh(result.navMesh, [nearestRef])
+    // Rebuild debug mesh so the viewport reflects the pruned geometry.
+    const pruned = makeNavMeshResult(result.navMesh)
+    result.navQuery.destroy()
+    return pruned
+  }
+
   async function buildNavMesh(): Promise<void> {
     if (navQuery) { navQuery.destroy(); navQuery = null }
     if (navMesh) { navMesh.destroy(); navMesh = null }
@@ -359,12 +391,13 @@
     loadingMsg = 'Building navigation mesh…'
     error = null
     try {
-      const result = await buildNavMeshFromSpaces(spaces, params)
+      const result = applyFloorPrune(await buildNavMeshFromSpaces(spaces, params))
       navMesh = result.navMesh
       navQuery = result.navQuery
       navMeshDebugMesh = result.debugMesh
       navMeshDirty = true
       phase = 'pickStart'
+      if (buildingId) await handleSaveNavMesh()
     } catch (e) {
       error = (e as Error).message
       phase = 'error'
@@ -379,7 +412,7 @@
       const res = await fetch(existingNavMesh.url)
       if (!res.ok) throw new Error(`Failed to fetch navmesh: ${res.status}`)
       const buffer = await res.arrayBuffer()
-      const result = await loadNavMeshFromBuffer(new Uint8Array(buffer))
+      const result = applyFloorPrune(await loadNavMeshFromBuffer(new Uint8Array(buffer)))
       navMesh = result.navMesh
       navQuery = result.navQuery
       navMeshDebugMesh = result.debugMesh
@@ -577,17 +610,9 @@
         <label>Detail sample max err<span class="param-hint">world units</span></label>
         <input type="number" step="0.1" min="0" bind:value={params.detailSampleMaxError} />
       </div>
-      <Button variant="primary" style="width:100%" onclick={buildNavMesh}>Rebuild</Button>
-      {#if buildingId && navMesh && navMeshDirty}
-        <Button
-          variant="primary"
-          style="width:100%"
-          disabled={saveState === 'saving'}
-          onclick={handleSaveNavMesh}
-        >
-          {saveState === 'saving' ? 'Saving…' : 'Save navmesh'}
-        </Button>
-      {/if}
+      <Button variant="primary" style="width:100%" onclick={buildNavMesh} disabled={saveState === 'saving'}>
+        {saveState === 'saving' ? 'Saving…' : 'Rebuild'}
+      </Button>
     </section>
   {/if}
 

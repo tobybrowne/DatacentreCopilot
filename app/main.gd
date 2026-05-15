@@ -60,6 +60,14 @@ func _ready() -> void:
 	CopilotManager.connect_voice_manager(voice_manager)
 	CopilotManager.setup_hud($XROrigin3D/XRCamera3D)
 	PassthroughManager.setup($XROrigin3D/XRCamera3D)
+	var wifi_indicator := WifiIndicator.new()
+	$XROrigin3D/XRCamera3D.add_child(wifi_indicator)
+
+	var occlusion_manager := OcclusionManager.new()
+	occlusion_manager.debug_visible = false
+	occlusion_manager.enabled = DevConfig.OCCLUSION_ENABLED
+	$XROrigin3D.add_child(occlusion_manager)
+	$XROrigin3D/WorldMeshManager.enabled = DevConfig.OCCLUSION_ENABLED
 
 	if OS.get_name() == "Android":
 		OS.request_permissions()

@@ -1,7 +1,7 @@
 class_name TrackingIndicator
 extends Node3D
 
-const _POSITION   := Vector3(0.11, 0.07, -0.3)
+const _POSITION   := Vector3(0.086, 0.07, -0.3)
 const _SPIN_SPEED := 2.2  # radians per second
 
 # dot

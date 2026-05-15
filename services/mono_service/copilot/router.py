@@ -9,11 +9,12 @@ router = APIRouter(prefix="/copilot")
 
 
 @router.websocket("/ws")
-async def realtime_ws(websocket: WebSocket) -> None:
+async def realtime_ws(websocket: WebSocket, token: str = "") -> None:
     await websocket.accept()
-    
-    # check user supabase token before proceeding
-    token = websocket.headers.get("authorization", "").removeprefix("Bearer ").strip()
+
+    # accept token from Authorization header or ?token= query param
+    if not token:
+        token = websocket.headers.get("authorization", "").removeprefix("Bearer ").strip()
     if not await verify_token(token):
         print(f"[copilot] rejected — {'no token' if not token else 'invalid token'}")
         await websocket.send_text(json.dumps({"type": "error", "message": "Unauthorized"}))

@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation'
   import { page } from '$app/stores'
   import { onMount } from 'svelte'
-  import { fetchAnchors, fetchSpaceById, deleteAnchor, unmapAnchor, setGlbPosition, getSpaceGlbUrl } from '$lib/supabase'
+  import { fetchAnchors, fetchSpaceById, deleteAnchor, unmapAnchor, setGlbPosition, getSpaceGlbUrl, computeBoundingBox } from '$lib/supabase'
   import Scene from '$lib/Scene.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
   import Button from '$lib/Button.svelte'
@@ -13,6 +13,7 @@
   const spaceId = $page.params.space_id!
 
   let glbUrl: string | null = $state(null)
+  let glbPath: string | null = $state(null)
   let boundingBox: BoundingBox | null = $state(null)
   let showBoundingBoxes = $state(false)
   let showDensity = $state(false)
@@ -20,6 +21,7 @@
   let selectedId: string | null = $state(null)
   let mappingAnchor: Anchor | null = $state(null)
   let saving = $state(false)
+  let recomputingBbox = $state(false)
 
   let unmappedRefs = $derived(anchors.filter(a => a.anchor_type === 'reference' && !a.glb_position))
   let mappedRefs   = $derived(anchors.filter(a => a.anchor_type === 'reference' && !!a.glb_position))
@@ -29,6 +31,7 @@
     try {
       const space = await fetchSpaceById(spaceId)
       if (!space.glb_path) { toast('Space has no GLB export yet', 'info'); return }
+      glbPath = space.glb_path
       glbUrl = await getSpaceGlbUrl(space.glb_path)
       boundingBox = space.bounding_box
       await refresh()
@@ -82,6 +85,19 @@
       await refresh()
     } catch (e) {
       toast((e as Error).message)
+    }
+  }
+
+  async function handleRecomputeBbox(): Promise<void> {
+    if (recomputingBbox) return
+    recomputingBbox = true
+    try {
+      await computeBoundingBox(spaceId)
+      toast('Bounding box recompute started', 'success')
+    } catch (e) {
+      toast((e as Error).message)
+    } finally {
+      recomputingBbox = false
     }
   }
 
@@ -192,13 +208,16 @@
     {/if}
   </section>
 
-  {#if boundingBox}
-    <section>
-      <Button style="width:100%" onclick={() => showBoundingBoxes = !showBoundingBoxes}>
+  <section>
+    {#if boundingBox}
+      <Button style="width:100%;margin-bottom:6px" onclick={() => showBoundingBoxes = !showBoundingBoxes}>
         {showBoundingBoxes ? 'Hide boxes' : 'Show boxes'}
       </Button>
-    </section>
-  {/if}
+    {/if}
+    <Button style="width:100%" onclick={handleRecomputeBbox} disabled={recomputingBbox}>
+      {recomputingBbox ? 'Starting…' : 'Recompute bounding box'}
+    </Button>
+  </section>
 
   {#if glbUrl}
     <section>
@@ -315,7 +334,6 @@
   .map-btn.active { background: var(--accent); color: #000; }
 
   .empty-msg { color: var(--text-muted); font-size: 12px; font-style: italic; }
-
 
   .unmapped-notice {
     position: fixed;

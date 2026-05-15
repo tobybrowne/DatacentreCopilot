@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -65,7 +67,7 @@ def _resolve_path(sb: Client, req: PathRequest) -> tuple[dict, dict, list[dict]]
     try:
         result = query_navmesh(navmesh_data, pos_a, pos_b)
     except RuntimeError as e:
-        raise HTTPException(500, f'Pathfinding failed: {e}')
+        raise HTTPException(404, f'Pathfinding failed: {e}')
 
     waypoints = result.get('path', [])
 
@@ -83,7 +85,7 @@ def _resolve_path(sb: Client, req: PathRequest) -> tuple[dict, dict, list[dict]]
 async def path(req: PathRequest, _: None = Depends(require_auth)) -> dict:
     """Return computed waypoints as JSON for in-headset route display."""
     sb = get_supabase()
-    _pos_a, _pos_b, waypoints, _result = _resolve_path(sb, req)
+    _pos_a, _pos_b, waypoints, _result = await asyncio.to_thread(_resolve_path, sb, req)
     return {'waypoints': waypoints}
 
 
@@ -91,5 +93,5 @@ async def path(req: PathRequest, _: None = Depends(require_auth)) -> dict:
 async def path_image(req: PathRequest, _: None = Depends(require_auth)) -> Response:
     """Return a PNG visualisation of the computed path (debug/desktop tool)."""
     sb = get_supabase()
-    pos_a, pos_b, _waypoints, result = _resolve_path(sb, req)
+    pos_a, pos_b, _waypoints, result = await asyncio.to_thread(_resolve_path, sb, req)
     return Response(content=render_path_image(pos_a, pos_b, result), media_type='image/png')

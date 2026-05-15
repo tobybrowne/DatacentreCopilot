@@ -4,7 +4,8 @@ import {
   importNavMesh,
   type NavMesh,
 } from "recast-navigation";
-import { threeToSoloNavMesh, NavMeshHelper } from "@recast-navigation/three";
+import { threeToSoloNavMesh } from "@recast-navigation/three";
+import { getNavMeshPositionsAndIndices } from "@recast-navigation/core";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
 import type { Position, RigidTransform } from "./types";
@@ -155,18 +156,23 @@ export function pruneToLargestComponent(mesh: THREE.Mesh): THREE.Mesh {
   return new THREE.Mesh(geom, mesh.material);
 }
 
-function makeResult(navMesh: NavMesh): NavMeshResult {
+export function makeNavMeshResult(navMesh: NavMesh): NavMeshResult {
   const navQuery = new NavMeshQuery(navMesh);
   navQuery.defaultQueryHalfExtents = { x: 2, y: 4, z: 2 };
-  const helper = new NavMeshHelper(navMesh, {
-    navMeshMaterial: new THREE.MeshStandardMaterial({
-      color: "#00d4ff",
-      opacity: 0.4,
-      transparent: true,
-      side: THREE.DoubleSide,
-    }),
+  // Filter by DT_POLYFLAGS_WALK (1) so pruned polys (flags=0) are excluded from
+  // the debug mesh. NavMeshHelper doesn't accept a flags param so we build manually.
+  const [positions, indices] = getNavMeshPositionsAndIndices(navMesh, 1);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({
+    color: "#00d4ff",
+    opacity: 0.4,
+    transparent: true,
+    side: THREE.DoubleSide,
   });
-  return { navMesh, navQuery, debugMesh: helper.mesh };
+  return { navMesh, navQuery, debugMesh: new THREE.Mesh(geo, mat) };
 }
 
 export async function buildNavMeshFromSpaces(
@@ -243,7 +249,7 @@ export async function buildNavMeshFromSpaces(
     );
   }
 
-  const navResult = makeResult(result.navMesh);
+  const navResult = makeNavMeshResult(result.navMesh);
 
   const cx = (inputBox.min.x + inputBox.max.x) / 2;
   const cz = (inputBox.min.z + inputBox.max.z) / 2;
@@ -273,7 +279,7 @@ export async function loadNavMeshFromBuffer(
   await initRecast();
   const result = importNavMesh(data);
   if (!result.navMesh) throw new Error("Failed to import navmesh");
-  return makeResult(result.navMesh);
+  return makeNavMeshResult(result.navMesh);
 }
 
 export function computePath(

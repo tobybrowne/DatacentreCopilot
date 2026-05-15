@@ -13,7 +13,7 @@ extends Node
 @export var hold_time: float = 3.0
 @export var ray_smooth_speed: float = 18.0
 @export var ray_back_offset: float = 0.12
-@export var shoulder_blend: float = 0.5
+@export var shoulder_blend: float = 0.75
 @export var shoulder_side: float = 0.2
 @export var shoulder_drop: float = 0.2
 

@@ -1,10 +1,13 @@
+import io
 import os
 import tempfile
 
 import numpy as np
 import trimesh
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
+from scipy.spatial.transform import Rotation
 from shapely import concave_hull
 from shapely.geometry import MultiPoint
 

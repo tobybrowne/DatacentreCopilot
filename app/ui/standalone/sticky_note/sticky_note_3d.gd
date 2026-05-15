@@ -14,7 +14,7 @@ func init(text: String) -> void:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.albedo_color = NOTE_COLOR
-	mat.no_depth_test = true
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 
 	var bg := MeshInstance3D.new()
 	bg.mesh = quad
@@ -26,7 +26,6 @@ func init(text: String) -> void:
 	lbl.font_size = 52
 	lbl.pixel_size = 0.00055
 	lbl.modulate = TEXT_COLOR
-	lbl.no_depth_test = true
 	lbl.position = Vector3(0.0, 0.0, 0.001)
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.width = 200

@@ -3,6 +3,7 @@
   import { page } from '$app/stores'
   import { onMount } from 'svelte'
   import { fetchBuildingById, getSpaceGlbUrl, deleteBuilding } from '$lib/supabase'
+  import { downloadMergedGlb } from '$lib/glbMerge'
   import Sidebar from '$lib/Sidebar.svelte'
   import Button from '$lib/Button.svelte'
   import { Canvas } from '@threlte/core'
@@ -17,6 +18,7 @@
   let showScanBounds = $state(false)
   let showLocBounds = $state(false)
   let loading = $state(true)
+  let downloading = $state(false)
 
   let locBoundingBoxes = $derived(
     mergedSpaces.flatMap(s => s.locBoundingBox ? [s.locBoundingBox] : [])
@@ -42,6 +44,21 @@
       loading = false
     }
   })
+
+  async function handleDownloadGlb(): Promise<void> {
+    if (downloading) return
+    downloading = true
+    try {
+      await downloadMergedGlb(
+        mergedSpaces.map(s => ({ glbUrl: s.url, transform: s.transform })),
+        building?.name ?? 'building',
+      )
+    } catch (e) {
+      toast((e as Error).message)
+    } finally {
+      downloading = false
+    }
+  }
 
   async function handleDelete(): Promise<void> {
     if (!building) return
@@ -72,6 +89,7 @@
       </section>
 
       <section>
+        <Button style="width:100%;margin-bottom:4px" onclick={() => goto(`/buildings/create?addspace=${building!.id}`)}>Add space</Button>
         <Button style="width:100%" onclick={() => goto(`/buildings/create?restitch=${building!.id}`)}>Re-stitch</Button>
       </section>
 
@@ -80,8 +98,11 @@
           <Button style="width:100%;margin-bottom:4px" onclick={() => showScanBounds = !showScanBounds}>
             {showScanBounds ? 'Hide Scan Bounds' : 'Show Scan Bounds'}
           </Button>
-          <Button style="width:100%" onclick={() => showLocBounds = !showLocBounds}>
+          <Button style="width:100%;margin-bottom:4px" onclick={() => showLocBounds = !showLocBounds}>
             {showLocBounds ? 'Hide Location Bounds' : 'Show Location Bounds'}
+          </Button>
+          <Button style="width:100%" onclick={handleDownloadGlb} disabled={downloading}>
+            {downloading ? 'Exporting…' : 'Download GLB'}
           </Button>
         </section>
       {/if}

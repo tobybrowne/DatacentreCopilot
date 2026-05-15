@@ -4,7 +4,7 @@
   import { onMount } from 'svelte'
   import { get } from 'svelte/store'
   import { Canvas } from '@threlte/core'
-  import { fetchSpaces, fetchBuildingById, getSpaceGlbUrl, createDraftBuilding, resetBuildingForRestitch, updateBuildingSpaceTransform, finalizeDraftBuilding } from '$lib/supabase'
+  import { fetchSpaces, fetchBuildingById, getSpaceGlbUrl, createDraftBuilding, prepareAddSpace, resetBuildingForRestitch, updateBuildingSpaceTransform, finalizeDraftBuilding } from '$lib/supabase'
   import { session } from '$lib/auth'
   import BuildingStitchScene from '$lib/BuildingStitchScene.svelte'
   import NavigateSceneInner from '$lib/NavigateSceneInner.svelte'
@@ -17,6 +17,7 @@
   const MONO_URL = import.meta.env.VITE_MONO_URL as string
   const draftId = $page.url.searchParams.get('draft') ?? undefined
   const restitchId = $page.url.searchParams.get('restitch') ?? undefined
+  const addSpaceId = $page.url.searchParams.get('addspace') ?? undefined
 
   type Phase = 'setup' | 'align' | 'complete'
 
@@ -43,6 +44,9 @@
   let bYRot = $derived((bYDeg * Math.PI) / 180)
   let mode: 'translate' | 'rotate' = $state('translate')
 
+  let frozenCount = $state(0)
+  let frozenSpaces: SpaceEntry[] = []
+
   let refining = $state(false)
   let alignResult: { fitness: number; inlier_rmse: number } | null = $state(null)
   let saving = $state(false)
@@ -57,6 +61,9 @@
       } else if (restitchId) {
         const existing = await fetchBuildingById(restitchId)
         buildingName = existing.name ?? ''
+      } else if (addSpaceId) {
+        const existing = await fetchBuildingById(addSpaceId)
+        await loadForAddSpace(existing)
       }
     } catch (e) { error = (e as Error).message }
   })
@@ -122,32 +129,61 @@
   }
 
   function removeSpace(spaceId: string): void {
+    const idx = orderedSpaceIds.indexOf(spaceId)
+    if (idx < frozenCount) return
     orderedSpaceIds = orderedSpaceIds.filter(id => id !== spaceId)
   }
 
   function moveUp(i: number): void {
-    if (i === 0) return
+    if (i <= frozenCount) return
     const ids = [...orderedSpaceIds]
     ;[ids[i-1], ids[i]] = [ids[i], ids[i-1]]
     orderedSpaceIds = ids
   }
 
+  async function loadForAddSpace(existing: Building & { spaces: Space[] }): Promise<void> {
+    const sorted = [...existing.spaces]
+      .filter(s => s.glb_path)
+      .sort((a, b) => (a.building_index ?? 0) - (b.building_index ?? 0))
+    buildingName = existing.name ?? ''
+    orderedSpaceIds = sorted.map(s => s.id)
+    activeBuildingId = existing.id
+    frozenCount = sorted.length
+    frozenSpaces = await Promise.all(
+      sorted.map(async s => ({
+        space: s,
+        glbUrl: await getSpaceGlbUrl(s.glb_path!),
+        transform: s.offset_transformation as RigidTransform | null,
+      }))
+    )
+  }
+
   async function startBuilding(): Promise<void> {
-    if (!buildingName.trim() || orderedSpaceIds.length < 2) return
+    const hasNewSpaces = addSpaceId ? orderedSpaceIds.length > frozenCount : orderedSpaceIds.length >= 2
+    if (!buildingName.trim() || !hasNewSpaces) return
     try {
-      if (restitchId) {
+      if (addSpaceId) {
+        const newSpaceIds = orderedSpaceIds.slice(frozenCount)
+        await prepareAddSpace(addSpaceId, frozenCount, newSpaceIds)
+        activeBuildingId = addSpaceId
+        builtSpaces = [...frozenSpaces]
+        currentIdx = frozenCount
+      } else if (restitchId) {
         await resetBuildingForRestitch(restitchId, buildingName, orderedSpaceIds)
         activeBuildingId = restitchId
+        const refSpace = allSpaces.find(s => s.id === orderedSpaceIds[0])!
+        builtSpaces = [{ space: refSpace, glbUrl: await getSpaceGlbUrl(refSpace.glb_path!), transform: null }]
+        currentIdx = 1
       } else {
         activeBuildingId = await createDraftBuilding(buildingName, orderedSpaceIds)
+        const refSpace = allSpaces.find(s => s.id === orderedSpaceIds[0])!
+        builtSpaces = [{ space: refSpace, glbUrl: await getSpaceGlbUrl(refSpace.glb_path!), transform: null }]
+        currentIdx = 1
       }
     } catch (e) {
       error = (e as Error).message
       return
     }
-    const refSpace = allSpaces.find(s => s.id === orderedSpaceIds[0])!
-    builtSpaces = [{ space: refSpace, glbUrl: await getSpaceGlbUrl(refSpace.glb_path!), transform: null }]
-    currentIdx = 1
     bX = 0; bZ = 0; bYDeg = 0
     alignResult = null
     phase = 'align'
@@ -252,9 +288,14 @@
   function resetBuilding(): void {
     phase = 'setup'
     builtSpaces = []
-    activeBuildingId = null
-    orderedSpaceIds = []
-    buildingName = ''
+    if (addSpaceId) {
+      orderedSpaceIds = frozenSpaces.map(e => e.space.id)
+      activeBuildingId = addSpaceId
+    } else {
+      activeBuildingId = null
+      orderedSpaceIds = []
+      buildingName = ''
+    }
     bX = 0; bZ = 0; bYDeg = 0
     alignResult = null
   }
@@ -319,16 +360,21 @@
           <ul class="order-list">
             {#each orderedSpaceIds as id, i (id)}
               {@const s = allSpaces.find(sp => sp.id === id)}
-              <li class="order-item">
+              {@const frozen = i < frozenCount}
+              <li class="order-item" class:frozen-item={frozen}>
                 <div class="order-left">
                   {#if i === 0}
                     <span class="ref-badge">ref</span>
+                  {:else if frozen}
+                    <span class="done-badge">✓</span>
                   {:else}
-                    <button class="up-btn" onclick={() => moveUp(i)} disabled={i === 1}>↑</button>
+                    <button class="up-btn" onclick={() => moveUp(i)} disabled={i <= frozenCount}>↑</button>
                   {/if}
                   <span class="order-name">{s?.name || id}</span>
                 </div>
-                <button class="remove-btn" onclick={() => removeSpace(id)}>×</button>
+                {#if !frozen}
+                  <button class="remove-btn" onclick={() => removeSpace(id)}>×</button>
+                {/if}
               </li>
             {/each}
           </ul>
@@ -338,10 +384,10 @@
       <section>
         <Button
           variant="primary" style="width:100%"
-          disabled={!buildingName.trim() || orderedSpaceIds.length < 2}
+          disabled={!buildingName.trim() || (addSpaceId ? orderedSpaceIds.length <= frozenCount : orderedSpaceIds.length < 2)}
           onclick={startBuilding}
         >
-          Start stitching →
+          {addSpaceId ? 'Start adding →' : 'Start stitching →'}
         </Button>
       </section>
 
@@ -393,12 +439,14 @@
         </Button>
       </section>
 
-      <section class="row-section">
-        <Button onclick={resetBuilding}>Cancel</Button>
-        <Button disabled={currentIdx <= 1} onclick={goBack}>← Back</Button>
-        <Button variant="primary" onclick={confirmAlign}>
-          {currentIdx < orderedSpaceIds.length - 1 ? 'Next scan →' : 'Finish →'}
-        </Button>
+      <section class="nav-section">
+        <div class="nav-row">
+          <Button disabled={currentIdx <= frozenCount} onclick={goBack}>← Back</Button>
+          <Button variant="primary" onclick={confirmAlign}>
+            {currentIdx < orderedSpaceIds.length - 1 ? 'Next →' : 'Finish →'}
+          </Button>
+        </div>
+        <Button style="width:100%" onclick={resetBuilding}>Cancel</Button>
       </section>
 
     {:else if phase === 'complete'}
@@ -474,6 +522,9 @@
 
   .row-section { flex-direction: row; }
   .row-section button { flex: 1; }
+  .nav-section { gap: 6px; }
+  .nav-row { display: flex; gap: 6px; }
+  .nav-row :global(button) { flex: 1; }
 
   .muted { text-transform: none; letter-spacing: 0; font-size: 10px; }
   .hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0; }
@@ -517,6 +568,15 @@
     letter-spacing: 0.05em;
     flex-shrink: 0;
   }
+  .done-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .frozen-item .order-name { color: var(--text-muted); }
   .up-btn { padding: 1px 5px; font-size: 11px; border-radius: 3px; flex-shrink: 0; }
   .remove-btn {
     padding: 1px 6px;

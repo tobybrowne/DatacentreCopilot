@@ -68,7 +68,10 @@ func _begin_step(step: Step) -> void:
 	var log_type: String = _procedure.log_type
 
 	if log_type in ["FULL", "GEOMETRY_ONLY"]:
-		_gesture_manager.start_recording(_anchor_manager.get_calibration())
+		var current_space_id := _anchor_manager.get_current_space_id()
+		var offsets := _anchor_manager.get_space_offsets()
+		var current_offset: Transform3D = offsets.get(current_space_id, Transform3D.IDENTITY)
+		_gesture_manager.start_recording(_anchor_manager.get_calibration() * current_offset.affine_inverse())
 
 	if log_type in ["FULL", "CAMERA_ONLY"]:
 		if _camera_manager:

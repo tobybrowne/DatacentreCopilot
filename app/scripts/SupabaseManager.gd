@@ -369,6 +369,24 @@ func insert_log_assets(log_id: String, asset_ids: Array[String]) -> void:
 		print("insert_log_assets error: ", task.error.message)
 
 
+func insert_experiment_log(data: Dictionary) -> String:
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("experiment_logs").insert([{"data": data}])
+	).completed
+	if task.error != null:
+		print("insert_experiment_log error: ", task.error.message)
+		return ""
+	return task.data[0].get("id", "") if task.data and not task.data.is_empty() else ""
+
+
+func update_experiment_log(row_id: String, data: Dictionary) -> void:
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("experiment_logs").update({"data": data}).eq("id", row_id)
+	).completed
+	if task.error != null:
+		print("update_experiment_log error: ", task.error.message)
+
+
 func _ready() -> void:
 	pass
 

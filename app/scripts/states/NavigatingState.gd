@@ -9,6 +9,9 @@ const _SPACE_LABEL_SCENE := preload("res://ui/standalone/space_label/space_label
 
 var _space_label_3d: ViewportPanel3D = null
 var _space_names: Dictionary = {}  # space_id → name
+var _experiment_running := false
+var _experiment_samples: Array = []
+var _experiment_row_id := ""
 
 
 func enter(data: Dictionary) -> void:
@@ -32,8 +35,62 @@ func enter(data: Dictionary) -> void:
 	if not space_id.is_empty() and not data.get("pre_calibrated", false):
 		location_manager.calibrate_to_space(space_id)
 
+	if DevConfig.LOCATION_EXPERIMENT:
+		_experiment_running = true
+		_run_experiment_loop()
+
+
+func _serialise_transform(t: Transform3D) -> Dictionary:
+	var q := t.basis.get_rotation_quaternion()
+	return {
+		"position": {"x": snappedf(t.origin.x, 0.0001), "y": snappedf(t.origin.y, 0.0001), "z": snappedf(t.origin.z, 0.0001)},
+		"quaternion": {"x": snappedf(q.x, 0.0001), "y": snappedf(q.y, 0.0001), "z": snappedf(q.z, 0.0001), "w": snappedf(q.w, 0.0001)},
+	}
+
+
+func _run_experiment_loop() -> void:
+	while _experiment_running:
+		await location_manager.get_tree().create_timer(DevConfig.LOCATION_EXPERIMENT_INTERVAL).timeout
+		if not _experiment_running:
+			break
+		var camera := location_manager.get_viewport().get_camera_3d()
+		var user_building_pos := Vector3.ZERO
+		if camera and anchor_manager._calibrated:
+			var glb_pos := anchor_manager.world_to_glb(camera.position)
+			var offsets := anchor_manager.get_space_offsets()
+			var offset: Transform3D = offsets.get(anchor_manager.get_current_space_id(), Transform3D.IDENTITY)
+			user_building_pos = offset * glb_pos
+		var data := {
+			"loc_confidence": location_manager.get_loc_confidence(),
+			"kabsch_error_m": snappedf(anchor_manager.get_last_kabsch_error(), 0.0001),
+			"coarse_space_id": location_manager.current_coarse_space,
+			"localised_space_id": anchor_manager.get_current_space_id(),
+			"user_pos": {
+				"x": snappedf(user_building_pos.x, 0.001),
+				"y": snappedf(user_building_pos.y, 0.001),
+				"z": snappedf(user_building_pos.z, 0.001),
+			},
+			"anchor_pairs": anchor_manager.get_kabsch_pairs(),
+			"calibration": _serialise_transform(anchor_manager.get_calibration()),
+		}
+		_experiment_samples.append(data)
+		var payload := {"samples": _experiment_samples}
+		if _experiment_row_id.is_empty():
+			_experiment_row_id = await SupabaseManager.insert_experiment_log(payload)
+		else:
+			SupabaseManager.update_experiment_log(_experiment_row_id, payload)
+
 
 func exit() -> void:
+	_experiment_running = false
+	if not _experiment_samples.is_empty():
+		var payload := {"samples": _experiment_samples}
+		if _experiment_row_id.is_empty():
+			SupabaseManager.insert_experiment_log(payload)
+		else:
+			SupabaseManager.update_experiment_log(_experiment_row_id, payload)
+		_experiment_samples.clear()
+		_experiment_row_id = ""
 	location_manager.coarse_space_changed.disconnect(_on_coarse_space_changed)
 	location_manager.localised_space_changed.disconnect(_on_localised_space_changed)
 	if _space_label_3d:

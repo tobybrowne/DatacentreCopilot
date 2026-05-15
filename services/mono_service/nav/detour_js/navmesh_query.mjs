@@ -25,12 +25,14 @@ async function main() {
   const query = new NavMeshQuery(navMesh)
 
   function snapToNavMesh(pos) {
-    // Try a tight vertical column first — finds the polygon directly below/above
-    // the anchor rather than jumping sideways through gaps or across walls.
+    // Tight vertical column first — prefers the polygon directly below/above the anchor.
     const tight = query.findClosestPoint(pos, { halfExtents: { x: 0.3, y: 5.0, z: 0.3 } })
     if (tight.success) return tight
-    // Fallback: wider search if XZ is over non-walkable space
-    return query.findClosestPoint(pos, { halfExtents: { x: 1.5, y: 2.0, z: 1.5 } })
+    // Wider search for anchors on walls or in narrow spaces.
+    const wide = query.findClosestPoint(pos, { halfExtents: { x: 3.0, y: 5.0, z: 3.0 } })
+    if (wide.success) return wide
+    // Last resort: very wide sweep for anchors far from walkable surface.
+    return query.findClosestPoint(pos, { halfExtents: { x: 8.0, y: 5.0, z: 8.0 } })
   }
 
   const { point: start, success: startOk } = snapToNavMesh({ x: x1, y: y1, z: z1 })

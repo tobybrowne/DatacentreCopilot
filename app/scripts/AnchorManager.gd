@@ -18,6 +18,7 @@ var _kabsch_src: Array[Vector3] = []
 var _kabsch_nodes: Array[Node3D] = []
 var _calibration := Transform3D.IDENTITY
 var _calibrated := false
+var _last_kabsch_error := 0.0
 
 # Building stitching: space_id → Transform3D (offset from that space's GLB to the reference space's GLB)
 var _space_offsets: Dictionary = {}
@@ -37,6 +38,7 @@ const STORAGE_RETRY_INTERVAL := 2.0
 
 const RECALIB_MOVE_THRESHOLD := 0.005  # 5 mm
 var _kabsch_snapshot: Array[Vector3] = []  # last positions used for calibration
+var _periodic_recalib_timer := 0.0
 
 var _anchor_editing := false
 
@@ -73,12 +75,18 @@ func _process(delta: float) -> void:
 				_ml_mgr.call("load_anchor", StringName(uuid))
 
 	if _calibrated and _kabsch_nodes.size() >= 3 and _kabsch_snapshot.size() == _kabsch_nodes.size():
-		for i in _kabsch_nodes.size():
-			if not is_instance_valid(_kabsch_nodes[i]):
-				break
-			if _kabsch_nodes[i].position.distance_to(_kabsch_snapshot[i]) >= RECALIB_MOVE_THRESHOLD:
+		if DevConfig.PERIODIC_RECALIBRATION:
+			_periodic_recalib_timer += delta
+			if _periodic_recalib_timer >= DevConfig.PERIODIC_RECALIBRATION_INTERVAL:
+				_periodic_recalib_timer = 0.0
 				_refresh_calibration()
-				break
+		else:
+			for i in _kabsch_nodes.size():
+				if not is_instance_valid(_kabsch_nodes[i]):
+					break
+				if _kabsch_nodes[i].position.distance_to(_kabsch_snapshot[i]) >= RECALIB_MOVE_THRESHOLD:
+					_refresh_calibration()
+					break
 
 
 # ── Calibration API ───────────────────────────────────────────────────────────
@@ -110,6 +118,31 @@ func get_space_offsets() -> Dictionary:
 
 func get_building_spaces() -> Array[Space]:
 	return _building_spaces
+
+func get_last_kabsch_error() -> float:
+	return _last_kabsch_error
+
+# Returns one dict per Kabsch pair: ml2_id, current world pos, and stored GLB pos.
+func get_kabsch_pairs() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for i in _kabsch_src.size():
+		if not is_instance_valid(_kabsch_nodes[i]):
+			continue
+		var ml2_id := ""
+		for uuid in tracked_nodes:
+			if tracked_nodes[uuid] == _kabsch_nodes[i]:
+				ml2_id = uuid
+				break
+		result.append({
+			"ml2_id": ml2_id,
+			"world_pos": _v3_dict(_kabsch_nodes[i].position),
+			"glb_pos": _v3_dict(_kabsch_src[i]),
+		})
+	return result
+
+
+func _v3_dict(v: Vector3) -> Dictionary:
+	return {"x": snappedf(v.x, 0.0001), "y": snappedf(v.y, 0.0001), "z": snappedf(v.z, 0.0001)}
 
 func get_current_space_id() -> String:
 	return _current_space_id
@@ -303,14 +336,18 @@ func _try_calibrate() -> void:
 		kabsch_dst.append(node.position)
 
 	var first_calibration := not _calibrated
-	_calibration = Kabsch.compute(_kabsch_src, kabsch_dst)
+	_calibration = Kabsch.compute_yaw_locked(_kabsch_src, kabsch_dst)
 	_calibrated = true
 	_kabsch_snapshot = kabsch_dst
 
-	print("AnchorManager: calibrated from ", _kabsch_src.size(), " reference points")
+	var total_err := 0.0
 	for i in _kabsch_src.size():
 		var predicted := _calibration * _kabsch_src[i]
-		print("  ref[", i, "] error=", snappedf(predicted.distance_to(kabsch_dst[i]), 0.001), "m")
+		var err := predicted.distance_to(kabsch_dst[i])
+		total_err += err
+		print("  ref[", i, "] error=", snappedf(err, 0.001), "m")
+	_last_kabsch_error = total_err / _kabsch_src.size()
+	print("AnchorManager: calibrated from ", _kabsch_src.size(), " reference points — avg error ", snappedf(_last_kabsch_error, 0.001), "m")
 
 	if not first_calibration:
 		return
@@ -330,7 +367,7 @@ func _try_calibrate() -> void:
 	for anchor in _all_anchors.values():
 		if anchor.space_id == _current_space_id or anchor.glb_position == null:
 			continue
-		if anchor.anchor_type != Anchor.TYPE_CONTENT and anchor.anchor_type != Anchor.TYPE_ASSET:
+		if anchor.anchor_type != Anchor.TYPE_CONTENT and anchor.anchor_type != Anchor.TYPE_ASSET and anchor.anchor_type != Anchor.TYPE_NOTE:
 			continue
 		_place_virtual_marker(anchor, true)
 
@@ -346,13 +383,14 @@ func _refresh_calibration() -> void:
 			return
 		kabsch_dst.append(node.position)
 
-	var new_calibration := Kabsch.compute(_kabsch_src, kabsch_dst)
+	var new_calibration := Kabsch.compute_yaw_locked(_kabsch_src, kabsch_dst)
 
 	var err := 0.0
 	for i in _kabsch_src.size():
 		err += (new_calibration * _kabsch_src[i]).distance_to(kabsch_dst[i])
 	err /= _kabsch_src.size()
 
+	_last_kabsch_error = err
 	print("AnchorManager: recalibrated — avg error ", snappedf(err, 0.001), "m")
 	_calibration = new_calibration
 	_kabsch_snapshot = kabsch_dst
@@ -395,7 +433,7 @@ func _create_virtual_marker(anchor: Anchor, other_space: bool) -> Node3D:
 			m.anchor = anchor
 			return m
 		_:
-			if DevConfig.DEV_MODE:
+			if not DevConfig.DEV_MODE:
 				return Node3D.new()  # invisible placeholder
 			var m := ContentAnchorMarker.new()
 			m.anchor = anchor
@@ -410,7 +448,7 @@ func _create_tracked_marker(anchor: Anchor) -> Node3D:
 			m.anchor = anchor
 			return m
 		Anchor.TYPE_REFERENCE:
-			if DevConfig.DEV_MODE and not _anchor_editing:
+			if not DevConfig.DEV_MODE and not _anchor_editing:
 				return Node3D.new()
 			var m := ReferenceAnchorMarker.new()
 			m.anchor = anchor
@@ -420,7 +458,7 @@ func _create_tracked_marker(anchor: Anchor) -> Node3D:
 			m.anchor = anchor
 			return m
 		_:
-			if DevConfig.DEV_MODE:
+			if not DevConfig.DEV_MODE:
 				return Node3D.new()
 			var m := ContentAnchorMarker.new()
 			m.anchor = anchor

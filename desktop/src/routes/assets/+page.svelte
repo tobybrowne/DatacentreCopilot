@@ -40,7 +40,12 @@
   let loadingBuilding = $state(false)
 
   let mergedSpacesClickable = $derived(!!placingAsset)
-  let sceneAnchors = $derived(assets.filter(a => a.anchor?.glb_position).map(a => a.anchor!))
+  let sceneAnchors = $derived(assets.filter(a => a.anchor?.glb_position).map(a => {
+    const anchor = a.anchor!
+    const space = buildingSpaces.find(s => s.id === anchor.space_id)
+    const worldPosition = glbToWorld(anchor.glb_position!, space?.offset_transformation ?? null)
+    return { ...anchor, glb_position: worldPosition }
+  }))
   let selectedAnchorId = $derived(selectedAssetId
     ? (assets.find(a => a.id === selectedAssetId)?.anchor?.id ?? null)
     : null)
@@ -110,19 +115,45 @@
     }
   }
 
+  // e.point from TransformedGltf is in scene world space (offset_transformation applied).
+  // Invert the space transform to recover raw GLB coordinates expected by the headset.
+  function worldToGlb(position: Position, transform: RigidTransform | null): Position {
+    if (!transform) return position
+    const q = transform.quaternion
+    const iq = { x: -q.x, y: -q.y, z: -q.z, w: q.w }
+    const t = { x: position.x - transform.position.x, y: position.y - transform.position.y, z: position.z - transform.position.z }
+    const rx = (1 - 2*(iq.y*iq.y + iq.z*iq.z))*t.x + 2*(iq.x*iq.y - iq.z*iq.w)*t.y + 2*(iq.x*iq.z + iq.y*iq.w)*t.z
+    const ry = 2*(iq.x*iq.y + iq.z*iq.w)*t.x + (1 - 2*(iq.x*iq.x + iq.z*iq.z))*t.y + 2*(iq.y*iq.z - iq.x*iq.w)*t.z
+    const rz = 2*(iq.x*iq.z - iq.y*iq.w)*t.x + 2*(iq.y*iq.z + iq.x*iq.w)*t.y + (1 - 2*(iq.x*iq.x + iq.y*iq.y))*t.z
+    return { x: rx, y: ry, z: rz }
+  }
+
+  // Apply the space transform to a raw GLB position to get scene world-space position.
+  function glbToWorld(position: Position, transform: RigidTransform | null): Position {
+    if (!transform) return position
+    const q = transform.quaternion
+    const rx = (1 - 2*(q.y*q.y + q.z*q.z))*position.x + 2*(q.x*q.y - q.z*q.w)*position.y + 2*(q.x*q.z + q.y*q.w)*position.z
+    const ry = 2*(q.x*q.y + q.z*q.w)*position.x + (1 - 2*(q.x*q.x + q.z*q.z))*position.y + 2*(q.y*q.z - q.x*q.w)*position.z
+    const rz = 2*(q.x*q.z - q.y*q.w)*position.x + 2*(q.y*q.z + q.x*q.w)*position.y + (1 - 2*(q.x*q.x + q.y*q.y))*position.z
+    return { x: rx + transform.position.x, y: ry + transform.position.y, z: rz + transform.position.z }
+  }
+
   async function handlePlace(detail: { position: Position; spaceIndex: number | null }): Promise<void> {
     if (!placingAsset || saving) return
     saving = true
     try {
       const { position, spaceIndex } = detail
+      const spaceIdx = spaceIndex ?? 0
+      const space = buildingSpaces[spaceIdx]
+      const glbPosition = worldToGlb(position, space?.offset_transformation ?? null)
       if (placingAsset.anchor_id) {
-        await setGlbPosition(placingAsset.anchor_id, position)
+        await setGlbPosition(placingAsset.anchor_id, glbPosition)
       } else {
-        const spaceId = spaceIndex !== null ? buildingSpaces[spaceIndex]?.id : buildingSpaces[0]?.id
+        const spaceId = space?.id
         if (!spaceId) throw new Error('No space found')
         const anchor = await insertAnchor({
           name: placingAsset.name ?? 'Asset',
-          glbPosition: position,
+          glbPosition,
           spaceId,
           anchorType: 'asset',
         })
@@ -210,6 +241,9 @@
                 <div class="asset-info">
                   <span class="asset-name">{asset.name ?? 'Unnamed'}</span>
                   <span class="asset-type">{ASSET_TYPE_LABELS[asset.asset_type ?? ''] ?? asset.asset_type ?? '—'}</span>
+                  {#if asset.anchor?.space_id}
+                    <span class="asset-space">{selectedBuilding?.spaces.find(s => s.id === asset.anchor!.space_id)?.name ?? '—'}</span>
+                  {/if}
                 </div>
               </div>
               <div class="asset-actions">
@@ -357,6 +391,12 @@
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+
+  .asset-space {
+    font-size: 11px;
+    color: var(--text-muted);
+    opacity: 0.7;
   }
 
   .asset-actions {

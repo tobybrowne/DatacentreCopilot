@@ -6,16 +6,31 @@ extends Node3D
 
 @export var bounding_extents := Vector3(10, 10, 10)
 # level-of-detail, passed directly to the ML2, to state the resolution of the meshes required
-@export var lod: int = 1  # 0 = minimum, 1 = medium, 2 = maximum
+@export var lod: int = 0  # 0 = minimum, 1 = medium, 2 = maximum
 # true = depth-only occluder (production); false = visible blue mesh (debug)
 @export var depth_occlude := true
-# How many mesh block updates to skip between collision shape rebuilds.
-# Render mesh updates every time; collision only needs to be fresh for panel placement.
-# 0 = rebuild every update (most accurate, most expensive)
+# When false, collision shapes are never rebuilt — saves significant CPU when only occlusion is needed.
+# Enable only when raycasting against the world mesh (e.g. panel placement).
+@export var collision_enabled: bool = true
+# How many mesh block updates to skip between collision shape rebuilds (only used when collision_enabled).
 @export var collision_update_stride: int = 10
+# Minimum area (m²) of disconnected mesh fragments to keep — raise to cull noisy floating geometry.
+@export var disconnected_component_area: float = 0.5
+# Maximum hole perimeter (m) to fill — larger values close more gaps in the mesh surface.
+@export var fill_hole_length: float = 1.0
+# Minimum time between mesh query cycles in milliseconds — reduces ML2 meshing load.
+@export var min_query_interval_ms: int = 500
 @export var mesh_material: Material
+@export var enabled: bool = true:
+	set(v):
+		enabled = v
+		for body: StaticBody3D in _blocks.values():
+			if is_instance_valid(body):
+				body.get_node("Mesh").visible = v
 
 var _collision_update_counter: int = 0
+var _mesh_flags: int = 0
+var _restarting := false
 
 # Godot has "collision layers", only objects on the same layer can collide with each other
 # for some reason these are set using a bitmask :/
@@ -39,7 +54,7 @@ func _initialize() -> void:
 	_ext = Engine.get_singleton("OpenXRMlWorldMeshDetectionExtension")
 	_ext.mesh_block_updated.connect(_on_block_updated)
 	_ext.mesh_block_deleted.connect(_on_block_deleted)
-	_ext.meshing_error.connect(func(err): push_warning("WorldMeshManager: %s" % err))
+	_ext.meshing_error.connect(_on_meshing_error)
 
 	if not mesh_material:
 		mesh_material = _make_depth_material() if depth_occlude else _make_debug_material()
@@ -47,9 +62,13 @@ func _initialize() -> void:
 	if not _ext.is_available():
 		return
 
-	# FLAG_COMPUTE_NORMALS (2) | FLAG_REMOVE_MESH_SKIRT (16)
-	var mesh_flags := 2 | 16
-	_ext.start(bounding_extents, lod, mesh_flags)
+	# FLAG_PLANARIZE (8)
+	# COMPUTE_NORMALS and REMOVE_MESH_SKIRT omitted — skirt kept to cover block seams for occlusion
+	_mesh_flags = 8
+	_ext.set_disconnected_component_area(disconnected_component_area)
+	_ext.set_fill_hole_length(fill_hole_length)
+	_ext.set_min_query_interval_ms(min_query_interval_ms)
+	_ext.start(bounding_extents, lod, _mesh_flags)
 
 
 func _exit_tree() -> void:
@@ -73,6 +92,7 @@ func _on_block_updated(block_id: String, status: int, vertices: PackedVector3Arr
 		mesh_inst = MeshInstance3D.new()
 		mesh_inst.name = "Mesh"
 		mesh_inst.material_override = mesh_material
+		mesh_inst.visible = enabled
 		body.add_child(mesh_inst)
 		coll = CollisionShape3D.new()
 		coll.name = "Collision"
@@ -89,13 +109,13 @@ func _on_block_updated(block_id: String, status: int, vertices: PackedVector3Arr
 	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mesh_inst.mesh = arr_mesh
 
-	# Collision BVH rebuild is expensive — throttle it via stride counter.
-	_collision_update_counter += 1
-	if collision_update_stride == 0 or _collision_update_counter >= collision_update_stride:
-		_collision_update_counter = 0
-		var shape := ConcavePolygonShape3D.new()
-		shape.set_faces(arr_mesh.get_faces())
-		coll.shape = shape
+	if collision_enabled:
+		_collision_update_counter += 1
+		if collision_update_stride == 0 or _collision_update_counter >= collision_update_stride:
+			_collision_update_counter = 0
+			var shape := ConcavePolygonShape3D.new()
+			shape.set_faces(arr_mesh.get_faces())
+			coll.shape = shape
 
 
 func _on_block_deleted(block_id: String) -> void:
@@ -103,6 +123,30 @@ func _on_block_deleted(block_id: String) -> void:
 		var body: StaticBody3D = _blocks[block_id]
 		body.queue_free()
 		_blocks.erase(block_id)
+
+
+func _on_meshing_error(err: String) -> void:
+	if _restarting:
+		return
+	push_warning("WorldMeshManager: %s — restarting" % err)
+	_restarting = true
+	if _ext.is_running():
+		_ext.stop()
+	_clear_blocks()
+	await get_tree().create_timer(3.0).timeout
+	if _ext.is_available():
+		_ext.start(bounding_extents, lod, _mesh_flags)
+	else:
+		push_warning("WorldMeshManager: ext not available after error — not restarting")
+	_restarting = false
+
+
+func _clear_blocks() -> void:
+	for body in _blocks.values():
+		if is_instance_valid(body):
+			body.queue_free()
+	_blocks.clear()
+	_collision_update_counter = 0
 
 
 func _make_depth_material() -> ShaderMaterial:

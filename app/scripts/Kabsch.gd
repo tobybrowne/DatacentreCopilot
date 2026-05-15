@@ -41,6 +41,45 @@ static func compute(src: Array[Vector3], dst: Array[Vector3]) -> Transform3D:
 	return Transform3D(basis, origin)
 
 
+## Yaw-locked variant: solves for rotation around Y only (pitch and roll fixed to zero).
+## Use when both src and dst are gravity-aligned (Y-up), which is always true for
+## GLB↔ML2 calibration. Requires at least 2 non-coincident point pairs.
+static func compute_yaw_locked(src: Array[Vector3], dst: Array[Vector3]) -> Transform3D:
+	var n := src.size()
+	assert(n >= 2, "Kabsch.compute_yaw_locked requires at least 2 point pairs")
+	assert(dst.size() == n, "Kabsch.compute_yaw_locked: src and dst must be the same length")
+
+	# 1. Centroids
+	var c_src := Vector3.ZERO
+	var c_dst := Vector3.ZERO
+	for i in n:
+		c_src += src[i]
+		c_dst += dst[i]
+	c_src /= n
+	c_dst /= n
+
+	# 2. Accumulate the 2D cross-covariance in the XZ plane.
+	#    Summing (p.x*q.x + p.z*q.z) and (p.z*q.x - p.x*q.z) gives the
+	#    least-squares optimal yaw angle across all N pairs.
+	var scc := 0.0  # sum of cos terms
+	var sss := 0.0  # sum of sin terms
+	for k in n:
+		var p := src[k] - c_src
+		var q := dst[k] - c_dst
+		scc += p.x * q.x + p.z * q.z
+		sss += p.z * q.x - p.x * q.z
+
+	var yaw := atan2(sss, scc)
+
+	# 3. Build a pure Y-rotation basis from the yaw angle.
+	var rot := Quaternion(Vector3.UP, yaw)
+	var basis := Basis(rot)
+
+	# 4. Translation from centroid constraint.
+	var origin := c_dst - basis * c_src
+	return Transform3D(basis, origin)
+
+
 static func _horn_quaternion(H: Array) -> Quaternion:
 	var Sxx: float = H[0].x; var Sxy: float = H[0].y; var Sxz: float = H[0].z
 	var Syx: float = H[1].x; var Syy: float = H[1].y; var Syz: float = H[1].z

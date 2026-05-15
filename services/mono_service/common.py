@@ -2,7 +2,7 @@ import asyncio
 import os
 
 from fastapi import Header, HTTPException
-from supabase import Client, create_client
+from supabase import Client, ClientOptions, create_client
 
 
 def get_supabase() -> Client:
@@ -10,7 +10,7 @@ def get_supabase() -> Client:
     key = os.environ.get("SUPABASE_KEY")
     if not url or not key:
         raise HTTPException(500, "SUPABASE_URL and SUPABASE_KEY must be set")
-    return create_client(url, key)
+    return create_client(url, key, options=ClientOptions(storage_client_timeout=120))
 
 
 async def verify_token(token: str) -> bool:
