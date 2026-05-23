@@ -52,7 +52,10 @@
       const url = await getLogBucketUrl(log.geometry_recording_path!)
       const resp = await fetch(url)
       if (!resp.ok) throw new Error(`Gesture fetch failed: ${resp.statusText}`)
-      gestureRecording = (await resp.json()) as GestureRecording
+      const compressed = await resp.arrayBuffer()
+      const ds = new DecompressionStream('gzip')
+      const raw = await new Response(new Blob([compressed]).stream().pipeThrough(ds)).arrayBuffer()
+      gestureRecording = { frames: parseBinaryFrames(raw) }
       playbackTime = 0
       view = 'gesture'
     } catch (e) {
@@ -60,6 +63,24 @@
     } finally {
       gestureLoading = false
     }
+  }
+
+  function parseBinaryFrames(buf: ArrayBuffer): number[][] {
+    const view = new DataView(buf)
+    let off = 0
+    const frameCount = view.getInt32(off, true); off += 4
+    const frames: number[][] = new Array(frameCount)
+    for (let i = 0; i < frameCount; i++) {
+      const row = new Array(639)
+      row[0] = view.getInt32(off, true); off += 4
+      const leftTracked  = view.getUint8(off++)
+      const rightTracked = view.getUint8(off++)
+      for (let j = 1; j <= 636; j++) { row[j] = view.getFloat32(off, true); off += 4 }
+      row[637] = leftTracked
+      row[638] = rightTracked
+      frames[i] = row
+    }
+    return frames
   }
 
   async function loadVideo(): Promise<void> {

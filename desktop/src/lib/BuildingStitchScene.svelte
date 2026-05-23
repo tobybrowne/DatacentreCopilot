@@ -17,10 +17,17 @@
     mode: 'translate' | 'rotate'
     showBoundingBoxes?: boolean
     bestReferenceIndex?: number | null
+    exportTrigger?: number
     ontransform: (x: number, z: number, yRot: number) => void
+    onexportblob?: (blob: Blob) => void
   }
 
-  let { builtSpaces, newSpaceUrl, newX, newZ, newYRot, newBoundingBox = null, mode, showBoundingBoxes = false, bestReferenceIndex = null, ontransform }: Props = $props()
+  let { builtSpaces, newSpaceUrl, newX, newZ, newYRot, newBoundingBox = null, mode, showBoundingBoxes = false, bestReferenceIndex = null, exportTrigger = 0, ontransform, onexportblob }: Props = $props()
+
+  const BOX_COLORS = [
+    0x00ff88, 0x4488ff, 0xff4444, 0xffaa00,
+    0xff44ff, 0x44ffff, 0xffff44, 0x88ff44,
+  ]
 
   const { renderer, camera, scene, invalidate } = useThrelte()
 
@@ -137,6 +144,32 @@
     if (tc && newGroup) tc.attach(newGroup)
   })
 
+  $effect(() => {
+    if (exportTrigger === 0) return
+    invalidate()
+    requestAnimationFrame(() => {
+      const size = renderer.getSize(new THREE.Vector2())
+      const w = size.x * 2
+      const h = size.y * 2
+      renderer.setSize(w, h, false)
+      const cam = camera.current
+      if (cam instanceof THREE.PerspectiveCamera) {
+        cam.aspect = w / h
+        cam.updateProjectionMatrix()
+      }
+      renderer.render(scene, cam)
+      renderer.domElement.toBlob(blob => {
+        if (blob) onexportblob?.(blob)
+        renderer.setSize(size.x, size.y, false)
+        if (cam instanceof THREE.PerspectiveCamera) {
+          cam.aspect = size.x / size.y
+          cam.updateProjectionMatrix()
+        }
+        invalidate()
+      })
+    })
+  })
+
   onDestroy(() => {
     if (tc) {
       tc.removeEventListener('change', onChange)
@@ -160,7 +193,7 @@
   <T.Group bind:ref={groupRefs[i]}>
     <GLTF url={space.url} />
     {#if showBoundingBoxes && space.boundingBox}
-      <BoundingBoxMesh boundingBox={space.boundingBox} />
+      <BoundingBoxMesh boundingBox={space.boundingBox} color={BOX_COLORS[i % BOX_COLORS.length]} />
     {/if}
   </T.Group>
 {/each}

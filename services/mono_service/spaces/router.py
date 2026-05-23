@@ -1,43 +1,26 @@
-import io
 import os
 import tempfile
 
 import numpy as np
 import trimesh
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 from scipy.spatial.transform import Rotation
 from shapely import concave_hull
 from shapely.geometry import MultiPoint
 
-from common import get_supabase
+from common import get_supabase, require_webhook_auth
 
 router = APIRouter(prefix='/spaces')
 
 
 class BboxRequest(BaseModel):
     space_id: str
-    n_sides: int = 40
     ratio: float = 0.3
 
 
-def _sample_perimeter(pts: np.ndarray, n: int) -> np.ndarray:
-    """Resample a convex polygon to n evenly-spaced points along its perimeter."""
-    m = len(pts)
-    closed = np.vstack([pts, pts[0]])
-    seg_lens = np.linalg.norm(np.diff(closed, axis=0), axis=1)
-    cum = np.concatenate([[0.0], np.cumsum(seg_lens)])
-    total = cum[-1]
-    result = []
-    for t in np.linspace(0, total, n, endpoint=False):
-        seg = min(int(np.searchsorted(cum[1:], t, side='right')), m - 1)
-        alpha = (t - cum[seg]) / seg_lens[seg] if seg_lens[seg] > 1e-12 else 0.0
-        result.append(pts[seg] + alpha * (pts[(seg + 1) % m] - pts[seg]))
-    return np.array(result)
-
-
-def _compute_bounding_box(space_id: str, n_sides: int = 40, ratio: float = 0.3) -> None:
+def _compute_bounding_box(space_id: str, ratio: float = 0.3) -> None:
     sb = get_supabase()
 
     row = (
@@ -112,9 +95,6 @@ def _compute_bounding_box(space_id: str, n_sides: int = 40, ratio: float = 0.3) 
 
         hull_pts = np.array(shape.exterior.coords[:-1])  # drop repeated closing vertex
 
-        if len(hull_pts) > n_sides:
-            hull_pts = _sample_perimeter(hull_pts, n_sides)
-
         bounding_box = {
             'vertices_2d': [[float(p[0]), float(p[1])] for p in hull_pts],
             'y_min': float(verts[:, 1].min()),
@@ -128,7 +108,7 @@ def _compute_bounding_box(space_id: str, n_sides: int = 40, ratio: float = 0.3) 
 
 
 @router.post('/compute-bbox')
-async def compute_bbox(req: BboxRequest, background_tasks: BackgroundTasks) -> dict:
+async def compute_bbox(req: BboxRequest, background_tasks: BackgroundTasks, _: None = Depends(require_webhook_auth)) -> dict:
     """Compute and store the N-gon prism footprint for a space's GLB. Runs in background."""
-    background_tasks.add_task(_compute_bounding_box, req.space_id, req.n_sides, req.ratio)
-    return {'status': 'computing', 'space_id': req.space_id, 'n_sides': req.n_sides, 'ratio': req.ratio}
+    background_tasks.add_task(_compute_bounding_box, req.space_id, req.ratio)
+    return {'status': 'computing', 'space_id': req.space_id, 'ratio': req.ratio}

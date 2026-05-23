@@ -3,7 +3,7 @@
   import SceneInner from './SceneInner.svelte'
   import type { Anchor, BoundingBox, Position, RigidTransform } from './types'
 
-
+  let whiteBackground = $state(false)
 
   interface Props {
     glbUrl?: string | null;
@@ -71,10 +71,14 @@
       {pointClouds}
       {mergedSpacesClickable}
       {showDensity}
+      {whiteBackground}
       {onplace}
       {onselect}
     />
   </Canvas>
+  <button class="bg-toggle" onclick={() => whiteBackground = !whiteBackground}>
+    {whiteBackground ? 'Dark' : 'White'} bg
+  </button>
 </div>
 
 <style>
@@ -82,5 +86,23 @@
     flex: 1;
     height: 100vh;
     overflow: hidden;
+    position: relative;
+  }
+
+  .bg-toggle {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: rgba(0,0,0,0.4);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .bg-toggle:hover {
+    background: rgba(0,0,0,0.6);
   }
 </style>

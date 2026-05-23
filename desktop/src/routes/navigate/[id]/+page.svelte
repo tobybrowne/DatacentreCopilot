@@ -15,6 +15,8 @@
   buildingName={data.buildingName}
   spaces={data.spaces}
   existingNavMesh={data.existingNavMesh}
+  existingFloorplanNavMesh={data.existingFloorplanNavMesh}
   navmeshId={data.navmeshId}
+  floorplanId={data.floorplanId}
   onback={() => goto('/navigate')}
 />

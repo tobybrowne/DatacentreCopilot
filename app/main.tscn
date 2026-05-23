@@ -1,7 +1,6 @@
 [gd_scene format=3 uid="uid://cr2ecfpaecnev"]
 
 [ext_resource type="Script" uid="uid://cds85vytekarp" path="res://main.gd" id="1_ig7tw"]
-[ext_resource type="Script" path="res://scripts/ArmIK.gd" id="99_armik"]
 [ext_resource type="PackedScene" uid="uid://c1tj181ndel56" path="res://assets/hands/LeftHandHumanoid.gltf" id="2_left"]
 [ext_resource type="PackedScene" uid="uid://b4in1gm7dioen" path="res://assets/hands/RightHandHumanoid.gltf" id="3_right"]
 [ext_resource type="PackedScene" path="res://ui/panelrouter/ui_panel_3d.tscn" id="5_docspanel"]
@@ -14,6 +13,7 @@
 [ext_resource type="Script" uid="uid://cfbcxpqu3764e" path="res://scripts/WorldMeshManager.gd" id="19_worldmeshmgr"]
 [ext_resource type="PackedScene" path="res://ui/standalone/keyboard/keyboard_3d.tscn" id="20_kb3d"]
 [ext_resource type="Script" uid="uid://cvv35ga36auf" path="res://scripts/desktop_xr_sim.gd" id="21_desktopsim"]
+[ext_resource type="Script" path="res://scripts/ArmIK.gd" id="99_armik"]
 
 [sub_resource type="Environment" id="Environment_ar"]
 ambient_light_source = 2
@@ -79,11 +79,10 @@ script = ExtResource("18_routemgr")
 
 [node name="WorldMeshManager" type="Node3D" parent="XROrigin3D" unique_id=2100000001]
 script = ExtResource("19_worldmeshmgr")
-depth_occlude = true
 
 [node name="ArmIK" type="Node3D" parent="XROrigin3D" unique_id=999999901]
-visible = false
 process_mode = 4
+visible = false
 script = ExtResource("99_armik")
 
 [editable path="XROrigin3D/LeftHand/LeftHandHumanoid"]

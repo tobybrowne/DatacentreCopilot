@@ -110,33 +110,31 @@ func _upload_gesture_recording(frames: Array[PoseRec], step_id: String) -> Strin
 	if frames.is_empty():
 		return ""
 
-	# Each frame is a flat array: [timestamp_msec, ...12 floats per transform × 53 transforms]
-	var frame_list := []
-	for f in frames:
-		var row: Array = [f.timestamp_msec]
-		_append_transform(row, f.head_transform)
-		for t in f.left_joints:
-			_append_transform(row, t)
-		for t in f.right_joints:
-			_append_transform(row, t)
-		row.append(1 if f.left_tracked  else 0)
-		row.append(1 if f.right_tracked else 0)
-		frame_list.append(row)
+	var buf := StreamPeerBuffer.new()
+	buf.put_32(frames.size())
+	for f: PoseRec in frames:
+		buf.put_32(f.timestamp_msec)
+		buf.put_u8(1 if f.left_tracked  else 0)
+		buf.put_u8(1 if f.right_tracked else 0)
+		_write_transform(buf, f.head_transform)
+		for t: Transform3D in f.left_joints:
+			_write_transform(buf, t)
+		for t: Transform3D in f.right_joints:
+			_write_transform(buf, t)
 
-	# store data in a local temp file
-	var tmp_path := "user://gesture_%s.json" % step_id
+	var compressed := buf.data_array.compress(FileAccess.COMPRESSION_GZIP)
+
+	var tmp_path := "user://gesture_%s.bin" % step_id
 	var file := FileAccess.open(tmp_path, FileAccess.WRITE)
 	if not file:
 		push_warning("LogRecordManager: failed to open temp file for gesture recording")
 		return ""
-	# TO-DO: should consider JSON alternatives, this is pretty heavy
-	var json_str := JSON.stringify({"v": 1, "frames": frame_list})
-	file.store_string(json_str)
+	file.store_buffer(compressed)
 	file.close()
-	print("LogRecordManager: gesture file size=%d frames=%d" % [json_str.length(), frame_list.size()])
+	print("LogRecordManager: gesture binary raw=%d compressed=%d frames=%d" % [
+		buf.data_array.size(), compressed.size(), frames.size()])
 
-	# upload local temp file to supabase storage
-	var remote_path := "gestures/%s_%s.json" % [_procedure_run_id, step_id]
+	var remote_path := "gestures/%s_%s.bin" % [_procedure_run_id, step_id]
 	print("LogRecordManager: uploading as user_id=%s" % (SupabaseManager.auth_user.id if SupabaseManager.auth_user else "null"))
 	var task = await Supabase.storage.from("log_bucket").upload(remote_path, tmp_path, false).completed
 	DirAccess.remove_absolute(tmp_path)
@@ -162,19 +160,10 @@ func _upload_camera_recording(local_path: String, step_id: String) -> String:
 	return remote_path
 
 
-# we collapse transform dicts to arrays, this saves a lot of space
-func _append_transform(row: Array, t: Transform3D) -> void:
-	row.append(snappedf(t.basis.x.x, 0.0001))
-	row.append(snappedf(t.basis.x.y, 0.0001))
-	row.append(snappedf(t.basis.x.z, 0.0001))
-	row.append(snappedf(t.basis.y.x, 0.0001))
-	row.append(snappedf(t.basis.y.y, 0.0001))
-	row.append(snappedf(t.basis.y.z, 0.0001))
-	row.append(snappedf(t.basis.z.x, 0.0001))
-	row.append(snappedf(t.basis.z.y, 0.0001))
-	row.append(snappedf(t.basis.z.z, 0.0001))
-	row.append(snappedf(t.origin.x, 0.0001))
-	row.append(snappedf(t.origin.y, 0.0001))
-	row.append(snappedf(t.origin.z, 0.0001))
+func _write_transform(buf: StreamPeerBuffer, t: Transform3D) -> void:
+	buf.put_float(t.basis.x.x); buf.put_float(t.basis.x.y); buf.put_float(t.basis.x.z)
+	buf.put_float(t.basis.y.x); buf.put_float(t.basis.y.y); buf.put_float(t.basis.y.z)
+	buf.put_float(t.basis.z.x); buf.put_float(t.basis.z.y); buf.put_float(t.basis.z.z)
+	buf.put_float(t.origin.x);  buf.put_float(t.origin.y);  buf.put_float(t.origin.z)
 
 

@@ -16,6 +16,11 @@
     0xff6347, 0xba55d3, 0x20b2aa, 0xffd700,
   ]
 
+  const BOX_COLORS = [
+    0x00ff88, 0x4488ff, 0xff4444, 0xffaa00,
+    0xff44ff, 0x44ffff, 0xffff44, 0x88ff44,
+  ]
+
   interface Props {
     spaces: Array<{ url: string; transform: RigidTransform | null; boundingBox?: BoundingBox | null }>;
     showBoundingBoxes?: boolean;
@@ -24,12 +29,18 @@
     endPos?: Position | null;
     pathGeometry?: THREE.TubeGeometry | null;
     navMeshMesh?: THREE.Mesh | null;
+    floorplanMesh?: THREE.Mesh | null;
     recastInputDebug?: THREE.Group | null;
     rooms?: RoomSegment[];
     tightBoxes?: BoundingBox[];
     collapsedBoxes?: BoundingBox[];
     pickingEnabled?: boolean;
+    whiteBackground?: boolean;
+    shadedBoxes?: boolean;
+    exportTrigger?: number;
+    exportScale?: number;
     onplace?: (pos: Position) => void;
+    onexportblob?: (blob: Blob) => void;
   }
 
   let {
@@ -40,15 +51,83 @@
     endPos = null,
     pathGeometry = null,
     navMeshMesh = null,
+    floorplanMesh = null,
     recastInputDebug = null,
     rooms = [],
     tightBoxes = [],
     collapsedBoxes = [],
     pickingEnabled = false,
-    onplace
+    whiteBackground = false,
+    shadedBoxes = false,
+    exportTrigger = 0,
+    exportScale = 1,
+    onplace,
+    onexportblob
   }: Props = $props();
 
-  const { invalidate } = useThrelte()
+  const { invalidate, renderer, scene, camera } = useThrelte()
+
+  $effect(() => {
+    if (exportTrigger === 0) return
+    invalidate()
+    requestAnimationFrame(() => {
+      const size = renderer.getSize(new THREE.Vector2())
+      const w = size.x * exportScale
+      const h = size.y * exportScale
+
+      renderer.setSize(w, h, false)
+
+      const cam = camera.current
+      if (cam instanceof THREE.PerspectiveCamera) {
+        cam.aspect = w / h
+        cam.updateProjectionMatrix()
+      }
+
+      renderer.render(scene, cam)
+
+      renderer.domElement.toBlob(blob => {
+        if (blob) onexportblob?.(blob)
+        renderer.setSize(size.x, size.y, false)
+        if (cam instanceof THREE.PerspectiveCamera) {
+          cam.aspect = size.x / size.y
+          cam.updateProjectionMatrix()
+        }
+        invalidate()
+      })
+    })
+  })
+  function buildBoxObjects(verts: [number, number][], y_min: number, y_max: number, color: number, shaded: boolean): THREE.Object3D[] {
+    const n = verts.length
+    const linePositions: number[] = []
+    for (let j = 0; j < n; j++) {
+      const [x0, z0] = verts[j]
+      const [x1, z1] = verts[(j + 1) % n]
+      linePositions.push(x0, y_min, z0, x1, y_min, z1)
+      linePositions.push(x0, y_max, z0, x1, y_max, z1)
+      linePositions.push(x0, y_min, z0, x0, y_max, z0)
+    }
+    const lineGeo = new THREE.BufferGeometry()
+    lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3))
+    const objects: THREE.Object3D[] = [new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ color }))]
+
+    if (shaded) {
+      const positions: number[] = []
+      const indices: number[] = []
+      for (const [x, z] of verts) positions.push(x, y_min, z)
+      for (const [x, z] of verts) positions.push(x, y_max, z)
+      for (let j = 0; j < n; j++) {
+        const k = (j + 1) % n
+        indices.push(j, k, j + n, k, k + n, j + n)
+      }
+      const fillGeo = new THREE.BufferGeometry()
+      fillGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+      fillGeo.setIndex(indices)
+      objects.push(new THREE.Mesh(fillGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.15, side: THREE.DoubleSide, depthWrite: false })))
+    }
+
+    return objects
+  }
+
   const rot = new THREE.Matrix4().makeRotationX(Math.PI / 2)
   const roomsGroup = new THREE.Group()
   const tightBoxesGroup = new THREE.Group()
@@ -96,19 +175,7 @@
     tightBoxesGroup.clear()
     tightBoxes.forEach((bb, i) => {
       const color = TIGHT_BOX_COLORS[i % TIGHT_BOX_COLORS.length]
-      const { vertices_2d: verts, y_min, y_max } = bb
-      const n = verts.length
-      const positions: number[] = []
-      for (let j = 0; j < n; j++) {
-        const [x0, z0] = verts[j]
-        const [x1, z1] = verts[(j + 1) % n]
-        positions.push(x0, y_min, z0, x1, y_min, z1)
-        positions.push(x0, y_max, z0, x1, y_max, z1)
-        positions.push(x0, y_min, z0, x0, y_max, z0)
-      }
-      const geo = new THREE.BufferGeometry()
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-      tightBoxesGroup.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color })))
+      buildBoxObjects(bb.vertices_2d, bb.y_min, bb.y_max, color, shadedBoxes).forEach(o => tightBoxesGroup.add(o))
     })
     invalidate()
   })
@@ -117,19 +184,7 @@
     collapsedBoxesGroup.clear()
     collapsedBoxes.forEach((bb, i) => {
       const color = COLLAPSED_BOX_COLORS[i % COLLAPSED_BOX_COLORS.length]
-      const { vertices_2d: verts, y_min, y_max } = bb
-      const n = verts.length
-      const positions: number[] = []
-      for (let j = 0; j < n; j++) {
-        const [x0, z0] = verts[j]
-        const [x1, z1] = verts[(j + 1) % n]
-        positions.push(x0, y_min, z0, x1, y_min, z1)
-        positions.push(x0, y_max, z0, x1, y_max, z1)
-        positions.push(x0, y_min, z0, x0, y_max, z0)
-      }
-      const geo = new THREE.BufferGeometry()
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-      collapsedBoxesGroup.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color })))
+      buildBoxObjects(bb.vertices_2d, bb.y_min, bb.y_max, color, shadedBoxes).forEach(o => collapsedBoxesGroup.add(o))
     })
     invalidate()
   })
@@ -163,6 +218,10 @@
   })
 </script>
 
+{#if whiteBackground}
+  <T.Color attach="background" args={[0xffffff]} />
+{/if}
+
 <T.AmbientLight intensity={0.6} />
 <T.DirectionalLight position={[5, 10, 5]} intensity={1} />
 
@@ -176,7 +235,7 @@
       <GLTF url={space.url} onclick={handleClick} />
     {/if}
     {#if showBoundingBoxes && space.boundingBox}
-      <BoundingBoxMesh boundingBox={space.boundingBox} />
+      <BoundingBoxMesh boundingBox={space.boundingBox} color={BOX_COLORS[i % BOX_COLORS.length]} shaded={shadedBoxes} />
     {/if}
   </T.Group>
 {/each}
@@ -203,6 +262,10 @@
 
 {#if navMeshMesh}
   <T is={navMeshMesh} />
+{/if}
+
+{#if floorplanMesh}
+  <T is={floorplanMesh} />
 {/if}
 
 {#if recastInputDebug}

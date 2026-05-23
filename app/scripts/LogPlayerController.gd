@@ -162,8 +162,16 @@ func _on_playback_finished() -> void:
 func _play_paths(geo_path: String, ogv_path: String, loop: bool) -> bool:
 	var started := false
 
+	# Kick off both downloads before awaiting either.
+	var geo_task = null
+	var vid_task = null
 	if not geo_path.is_empty():
-		var dl = await Supabase.storage.from("log_bucket").download(geo_path, "", true).completed
+		geo_task = Supabase.storage.from("log_bucket").download(geo_path, "", true)
+	if not ogv_path.is_empty():
+		vid_task = Supabase.storage.from("log_bucket").download(ogv_path, "", true)
+
+	if geo_task != null:
+		var dl = await geo_task.completed
 		if dl.error != null:
 			push_warning("LogPlayerController: geo download failed — %s" % dl.error.message)
 		else:
@@ -178,8 +186,8 @@ func _play_paths(geo_path: String, ogv_path: String, loop: bool) -> bool:
 				_replayer.play(frames, loop)
 				started = true
 
-	if not ogv_path.is_empty():
-		var vdl = await Supabase.storage.from("log_bucket").download(ogv_path, "", true).completed
+	if vid_task != null:
+		var vdl = await vid_task.completed
 		if vdl.error != null:
 			push_warning("LogPlayerController: video download failed — %s" % vdl.error.message)
 		else:

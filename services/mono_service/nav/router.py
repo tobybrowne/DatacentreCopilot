@@ -42,7 +42,7 @@ def _resolve_path(sb: Client, req: PathRequest) -> tuple[dict, dict, list[dict]]
     space_ids = list({anchor_a['space_id'], anchor_b['space_id']})
     rows = (
         sb.table('spaces')
-        .select('id,offset_transformation,buildings(navmeshes(navmesh_path))')
+        .select('id,offset_transformation,buildings(navmeshes!buildings_navmesh_id_fkey(navmesh_path))')
         .in_('id', space_ids)
         .execute()
         .data

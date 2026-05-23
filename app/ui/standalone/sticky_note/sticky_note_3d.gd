@@ -34,8 +34,3 @@ func init(text: String) -> void:
 	add_child(lbl)
 
 
-func _process(_delta: float) -> void:
-	var camera := get_viewport().get_camera_3d()
-	if camera and global_position.distance_to(camera.global_position) > 0.01:
-		look_at(camera.global_position, Vector3.UP)
-		rotate_object_local(Vector3.UP, PI)

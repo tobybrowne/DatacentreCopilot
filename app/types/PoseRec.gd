@@ -14,40 +14,35 @@ func _init() -> void:
 	right_joints.resize(JOINT_COUNT)
 
 
-static func _transform_from_array(arr: Array, offset: int) -> Transform3D:
+static func _read_transform(buf: StreamPeerBuffer) -> Transform3D:
 	return Transform3D(
 		Basis(
-			Vector3(arr[offset + 0], arr[offset + 1], arr[offset + 2]),
-			Vector3(arr[offset + 3], arr[offset + 4], arr[offset + 5]),
-			Vector3(arr[offset + 6], arr[offset + 7], arr[offset + 8])
+			Vector3(buf.get_float(), buf.get_float(), buf.get_float()),
+			Vector3(buf.get_float(), buf.get_float(), buf.get_float()),
+			Vector3(buf.get_float(), buf.get_float(), buf.get_float())
 		),
-		Vector3(arr[offset + 9], arr[offset + 10], arr[offset + 11])
+		Vector3(buf.get_float(), buf.get_float(), buf.get_float())
 	)
 
 
-static func from_flat_row(row: Array) -> PoseRec:
-	var rec := PoseRec.new()
-	rec.timestamp_msec = int(row[0])
-	var off := 1
-	rec.head_transform = _transform_from_array(row, off)
-	off += 12
-	for i in JOINT_COUNT:
-		rec.left_joints[i] = _transform_from_array(row, off)
-		off += 12
-	for i in JOINT_COUNT:
-		rec.right_joints[i] = _transform_from_array(row, off)
-		off += 12
-	if row.size() > off + 1:
-		rec.left_tracked  = int(row[off])     != 0
-		rec.right_tracked = int(row[off + 1]) != 0
-	return rec
-
-
 static func frames_from_bytes(data: PackedByteArray) -> Array[PoseRec]:
-	var parsed = JSON.parse_string(data.get_string_from_utf8())
-	if not parsed or not parsed.has("frames"):
+	var raw := data.decompress_dynamic(-1, FileAccess.COMPRESSION_GZIP)
+	if raw.is_empty():
 		return []
+	var buf := StreamPeerBuffer.new()
+	buf.data_array = raw
+	var frame_count := buf.get_32()
 	var result: Array[PoseRec] = []
-	for row in parsed["frames"]:
-		result.append(from_flat_row(row))
+	result.resize(frame_count)
+	for i in frame_count:
+		var rec := PoseRec.new()
+		rec.timestamp_msec = buf.get_32()
+		rec.left_tracked   = buf.get_u8() != 0
+		rec.right_tracked  = buf.get_u8() != 0
+		rec.head_transform = _read_transform(buf)
+		for j in JOINT_COUNT:
+			rec.left_joints[j]  = _read_transform(buf)
+		for j in JOINT_COUNT:
+			rec.right_joints[j] = _read_transform(buf)
+		result[i] = rec
 	return result

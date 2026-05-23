@@ -40,11 +40,25 @@ export const load: PageLoad = async ({ params }) => {
     }
   }
 
+  let existingFloorplanNavMesh: { url: string } | null = null;
+  if ((building as any).floorplan_id) {
+    const { data: fp } = await supabase
+      .from("navmeshes")
+      .select("navmesh_path")
+      .eq("id", (building as any).floorplan_id)
+      .single();
+    if (fp?.navmesh_path) {
+      existingFloorplanNavMesh = { url: await getNavMeshUrl(fp.navmesh_path) };
+    }
+  }
+
   return {
     buildingId: params.id,
     buildingName: building.name ?? "Building",
     spaces: spaceEntries,
     existingNavMesh,
+    existingFloorplanNavMesh,
     navmeshId: (building as any).navmesh_id ?? null,
+    floorplanId: (building as any).floorplan_id ?? null,
   };
 };

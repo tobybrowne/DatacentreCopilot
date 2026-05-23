@@ -28,6 +28,7 @@
     pointClouds?: Array<{ points: Position[]; color: number }>;
     mergedSpacesClickable?: boolean;
     showDensity?: boolean;
+    whiteBackground?: boolean;
     onplace?: (detail: { position: Position; spaceIndex: number | null }) => void;
     onselect?: (id: string) => void;
   }
@@ -50,6 +51,7 @@
     pointClouds = [],
     mergedSpacesClickable = false,
     showDensity = false,
+    whiteBackground = false,
     onplace,
     onselect
   }: Props = $props();
@@ -99,6 +101,10 @@
   }
 </script>
 
+
+{#if whiteBackground}
+  <T.Color attach="background" args={[0xffffff]} />
+{/if}
 
 <!-- generic scene setting, define lighting and add axis helper at 0,0,0 -->
 <T.AmbientLight intensity={0.6} />

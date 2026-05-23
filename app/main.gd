@@ -55,6 +55,7 @@ func _ready() -> void:
 	app_state.transition_to(AppState.States.IDLE)
 	ContextManager.setup()
 	location_manager.coarse_space_changed.connect(ContextManager.set_space)
+	location_manager.coarse_space_changed.connect(LiveDataManager.set_space)
 	app_state.state_changed.connect(func(_from, to): ContextManager.set_app_state(AppState.States.find_key(to).to_lower()))
 	PanelRouter.panel_changed.connect(func(panel_id, _data): ContextManager.set_panel(panel_id))
 	CopilotManager.connect_voice_manager(voice_manager)

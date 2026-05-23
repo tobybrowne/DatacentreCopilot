@@ -50,6 +50,9 @@ var _home_fired := {"left": false, "right": false}
 var _recording := false
 var _recording_origin := Transform3D()
 var _frames: Array[PoseRec] = []
+var _last_record_msec: int = 0
+
+const _RECORD_INTERVAL_MSEC := 33  # ~30fps
 
 # Ray state — read by consumers each frame (keyed by "left"/"right")
 var ray_origins := {"left": Vector3.ZERO, "right": Vector3.ZERO}
@@ -335,8 +338,12 @@ func is_recording() -> bool:
 	return _recording
 
 func _record_frame() -> void:
+	var now := Time.get_ticks_msec()
+	if now - _last_record_msec < _RECORD_INTERVAL_MSEC:
+		return
+	_last_record_msec = now
 	var pose := PoseRec.new()
-	pose.timestamp_msec = Time.get_ticks_msec()
+	pose.timestamp_msec = now
 	var inv_origin := _recording_origin.affine_inverse()
 	var camera := get_viewport().get_camera_3d()
 	if camera:

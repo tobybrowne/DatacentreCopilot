@@ -17,11 +17,26 @@ func create_note_at(world_pos: Vector3, text: String) -> void:
 	var space_id := _location_manager.get_current_space_id()
 	var glb_pos  := _anchor_manager.world_to_glb(world_pos)
 
+	# Compute a vertical rotation facing the camera at creation time.
+	# +Z of the note points toward the camera, Y stays world-up.
+	var glb_rot := Quaternion.IDENTITY
+	var camera := get_viewport().get_camera_3d()
+	if camera:
+		var to_cam := (camera.global_position - world_pos)
+		to_cam.y = 0.0
+		to_cam = to_cam.normalized()
+		if to_cam.length_squared() > 0.001:
+			var right := Vector3.UP.cross(to_cam).normalized()
+			var up    := to_cam.cross(right).normalized()
+			var world_basis := Basis(right, up, to_cam)
+			glb_rot = (_anchor_manager.get_calibration().basis.inverse() * world_basis).get_rotation_quaternion()
+
 	var anchor := Anchor.new()
 	anchor.anchor_type  = Anchor.TYPE_NOTE
 	anchor.name         = "note"
 	anchor.space_id     = space_id
 	anchor.glb_position = glb_pos
+	anchor.glb_rotation = glb_rot
 
 	var inserted_anchor: Anchor = await SupabaseManager.insert_anchor(anchor)
 	if inserted_anchor:

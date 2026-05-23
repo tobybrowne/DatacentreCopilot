@@ -11,7 +11,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-05-07T11:39:18Z"
+exclude-newer = "2026-05-15T15:38:35Z"
 
 [[package]]
 name = "addict"

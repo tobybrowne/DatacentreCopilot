@@ -41,8 +41,7 @@ var _blocks: Dictionary = {}  # block_id (String) -> StaticBody3D (with MeshInst
 
 
 func _ready() -> void:
-	# defer initialization to ensure OpenXR singletons are registered
-	# (queues this function to run at the end of the frame)
+	OS.request_permissions()
 	call_deferred("_initialize")
 
 

@@ -5,6 +5,7 @@
   import { floodFillPruneNavMesh } from '@recast-navigation/core'
   import * as THREE from 'three'
   import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
+  import concaveman from 'concaveman'
   import polygonClipping from 'polygon-clipping'
   import type { MultiPolygon } from 'polygon-clipping'
   import NavigateSceneInner from './NavigateSceneInner.svelte'
@@ -26,15 +27,19 @@
     buildingName: string;
     spaces: Array<{ id: string; url: string; transform: RigidTransform | null }>;
     existingNavMesh?: { url: string; buildSettings: Record<string, unknown> } | null;
+    existingFloorplanNavMesh?: { url: string } | null;
+    floorplanId?: string | null;
     onback?: () => void;
   }
 
   let {
     buildingId = null,
     navmeshId = null,
+    floorplanId = null,
     buildingName,
     spaces,
     existingNavMesh = null,
+    existingFloorplanNavMesh = null,
     onback
   }: Props = $props();
 
@@ -46,11 +51,13 @@
   let navMesh: NavMesh | null = $state(null)
   let navQuery: NavMeshQuery | null = null
   let navMeshDebugMesh: THREE.Mesh | null = $state(null)
+  let floorplanDebugMesh: THREE.Mesh | null = $state(null)
   let startPos: Position | null = $state(null)
   let endPos: Position | null = $state(null)
   let pathGeometry: THREE.TubeGeometry | null = $state(null)
   let pathLength = $state(0)
   let showNavMesh = $state(true)
+  let showFloorplanMesh = $state(false)
   let showPruned = $state(false)
   let showParams = $state(true)
   let showRouteSection = $state(true)
@@ -58,6 +65,7 @@
   let showRooms = $state(true)
   let showScan = $state(true)
   let showBoundingBoxes = $state(false)
+  let shadedBoxes = $state(false)
   let collapsedBoxesBySpace: (BoundingBox | null)[] = $state([])
   let collapsedBoxes = $derived(collapsedBoxesBySpace.filter((b): b is BoundingBox => b !== null))
   let showCollapsedBoxes = $state(false)
@@ -125,20 +133,21 @@
 
   function computeTightBoxes(): void {
     const buckets = assignRoomsToBuckets()
+    const closeRing = (v: [number, number][]): [number, number][] => [...v, v[0]]
+    const polyArea = (v: [number, number][]) => Math.abs(
+      v.reduce((s, [x, z], k) => { const [nx, nz] = v[(k + 1) % v.length]; return s + x * nz - nx * z }, 0) / 2
+    )
+
     const hulls: (BoundingBox | null)[] = spaces.map((space, i) => {
       if (buckets[i].length === 0) return null
       const bbOrig = (space as any).boundingBox as BoundingBox | null
       if (!bbOrig) return null
       const allVerts = buckets[i].flatMap(r => r.polygon_2d) as [number, number][]
-      const hull = convexHull(allVerts)
+      const hull = concaveman(allVerts, concavity)
+      hull.pop() // concaveman closes the ring; drop the repeated first point
       if (hull.length < 3) return null
-      return { vertices_2d: hull, y_min: bbOrig.y_min, y_max: bbOrig.y_max }
+      return { vertices_2d: hull as [number, number][], y_min: bbOrig.y_min, y_max: bbOrig.y_max }
     })
-
-    const closeRing = (v: [number, number][]): [number, number][] => [...v, v[0]]
-    const polyArea = (v: [number, number][]) => Math.abs(
-      v.reduce((s, [x, z], k) => { const [nx, nz] = v[(k + 1) % v.length]; return s + x * nz - nx * z }, 0) / 2
-    )
 
     const order = hulls
       .map((h, i) => [i, h ? polyArea(h.vertices_2d) : 0] as [number, number])
@@ -231,16 +240,17 @@
 
         const tbJ = tightBoxesBySpace[j]
 
-        // Subtract tight box j (j's firmly claimed area)
-        if (tbJ && tbJ.vertices_2d.length >= 3 &&
-            tbJ.vertices_2d.some(([x, z]) => pointInPolygon(x, z, bigPoly)))
-          clips.push([[closeRing(tbJ.vertices_2d)]])
-
-        // For the unclaimed overlap zone, split at the bisector between centroids
-        // so each space keeps the half closer to it rather than leaving a void
         try {
           const overlapZone = polygonClipping.intersection([[closeRing(bigPoly)]], [[closeRing(bigPolyJ)]])
           if (overlapZone.length > 0) {
+            // Subtract tight box j from space i's area — use intersection test rather than
+            // vertex-in-polygon which fails when tbJ straddles the boundary
+            if (tbJ && tbJ.vertices_2d.length >= 3) {
+              const tbJOverlap = polygonClipping.intersection([[closeRing(tbJ.vertices_2d)]], [[closeRing(bigPoly)]])
+              if (tbJOverlap.length > 0) clips.push([[closeRing(tbJ.vertices_2d)]])
+            }
+
+            // Split the unclaimed overlap zone at the bisector between centroids
             let unclaimed = overlapZone
             if (tbI && tbI.vertices_2d.length >= 3)
               unclaimed = polygonClipping.difference(unclaimed, [[closeRing(tbI.vertices_2d)]])
@@ -255,7 +265,9 @@
               if (jPortion.length > 0) clips.push(jPortion)
             }
           }
-        } catch {}
+        } catch (e) {
+          console.warn(`[collapsedBox] clipping failed for spaces ${i}↔${j}:`, e)
+        }
       }
 
       let fragments: BoundingBox[]
@@ -286,21 +298,39 @@
       saveLocBoundingBox(space.id, collapsedBoxesBySpace[i])
     ))
   }
+  let whiteBackground = $state(false)
+  let exportTrigger = $state(0)
+
+  function exportPng(): void {
+    exportTrigger++
+  }
+
+  function handleExportBlob(blob: Blob): void {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${buildingName}-navmesh.png`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   let saveState: 'idle' | 'saving' | 'saved' | 'error' = $state('idle')
   let navMeshDirty = $state(false)
   let rooms: RoomSegment[] = $state([])
   let roomsState: 'idle' | 'computing' = $state('idle')
   let resolution: number = $state(0.2)
+  let concavity: number = $state(30)
 
   async function fetchRooms(): Promise<void> {
-    if (!navmeshId) return
+    const segmentId = floorplanId ?? navmeshId
+    if (!segmentId) return
     roomsState = 'computing'
     try {
       const token = get(session)?.access_token ?? ''
       const res = await fetch(`${MONO_URL}/navmesh-rooms/segment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ navmesh_id: navmeshId, resolution }),
+        body: JSON.stringify({ navmesh_id: segmentId, resolution }),
       })
       if (!res.ok) throw new Error(`Room segmentation failed: ${res.status}`)
       rooms = await res.json()
@@ -363,7 +393,25 @@
       const glbData = await new Promise<ArrayBuffer>((resolve, reject) =>
         exporter.parse(navMeshDebugMesh!, resolve as (r: ArrayBuffer | object) => void, reject, { binary: true })
       )
-      await saveNavMesh(buildingId, data, glbData as ArrayBuffer, { ...params } as unknown as Record<string, unknown>)
+
+      const fpParams = { ...params, walkableClimb: 1.0, walkableRadius: 0 }
+      const fpResult = applyFloorPrune(await buildNavMeshFromSpaces(spaces, fpParams))
+      const fpData = exportNavMesh(fpResult.navMesh)
+      const fpGlbData = await new Promise<ArrayBuffer>((resolve, reject) =>
+        new GLTFExporter().parse(fpResult.debugMesh, resolve as (r: ArrayBuffer | object) => void, reject, { binary: true })
+      )
+      ;(fpResult.debugMesh.material as THREE.MeshStandardMaterial).color.set('#ff8c00')
+      floorplanDebugMesh = fpResult.debugMesh
+      fpResult.navMesh.destroy()
+      fpResult.navQuery.destroy()
+
+      await saveNavMesh(
+        buildingId,
+        data,
+        glbData as ArrayBuffer,
+        { ...params } as unknown as Record<string, unknown>,
+        { data: fpData, glbData: fpGlbData as ArrayBuffer, buildSettings: fpParams as unknown as Record<string, unknown> }
+      )
       saveState = 'saved'
       navMeshDirty = false
     } catch (e) {
@@ -422,6 +470,18 @@
         if (key in bs && typeof bs[key] === 'number') (params as Record<string, number>)[key] = bs[key] as number
       }
 
+      if (existingFloorplanNavMesh) {
+        const fpRes = await fetch(existingFloorplanNavMesh.url)
+        if (fpRes.ok) {
+          const fpBuf = await fpRes.arrayBuffer()
+          const fpResult = applyFloorPrune(await loadNavMeshFromBuffer(new Uint8Array(fpBuf)))
+          ;(fpResult.debugMesh.material as THREE.MeshStandardMaterial).color.set('#ff8c00')
+          floorplanDebugMesh = fpResult.debugMesh
+          fpResult.navMesh.destroy()
+          fpResult.navQuery.destroy()
+        }
+      }
+
       phase = 'pickStart'
     } catch (e) {
       error = (e as Error).message
@@ -476,7 +536,13 @@
   <section>
     <Checkbox bind:checked={showScan} label="Show scan" />
     <Checkbox bind:checked={showBoundingBoxes} label="Show bounding boxes" />
+    {#if showBoundingBoxes || tightBoxes.length > 0 || collapsedBoxes.length > 0}
+      <Checkbox bind:checked={shadedBoxes} label="Shade bounding boxes" />
+    {/if}
     <Checkbox bind:checked={showNavMesh} label="Show walkable area" />
+    {#if floorplanDebugMesh}
+      <Checkbox bind:checked={showFloorplanMesh} label="Show floorplan mesh" />
+    {/if}
     <Checkbox bind:checked={showPruned} label="Show pruned only" />
     {#if rooms.length > 0}
       <Checkbox bind:checked={showRooms} label={`Show rooms (${rooms.length})`} />
@@ -519,7 +585,7 @@
   {/if}
 
   <!-- Room Division -->
-  {#if navmeshId}
+  {#if navmeshId || floorplanId}
     <section class="collapsible-header" onclick={() => showRoomSection = !showRoomSection}>
       <label class="section-label" style="cursor:pointer;flex:1">Room Division</label>
       <span class="chevron" class:open={showRoomSection}>›</span>
@@ -527,8 +593,12 @@
     {#if showRoomSection}
       <section class="collapsible-body">
         <div class="param-row">
-          <label>Resolution</label>
+          <label>Resolution<span class="param-hint">higher = more rooms</span></label>
           <input type="number" min="0.01" step="0.05" bind:value={resolution} />
+        </div>
+        <div class="param-row">
+          <label>Concavity<span class="param-hint">lower = tighter</span></label>
+          <input type="number" min="0.1" step="0.5" bind:value={concavity} />
         </div>
         <Button
           variant="primary"
@@ -619,7 +689,7 @@
 </Sidebar>
 
 <div class="canvas-wrap">
-  <Canvas>
+  <Canvas rendererParameters={{ preserveDrawingBuffer: true, alpha: false }}>
     <NavigateSceneInner
       {spaces}
       {showScan}
@@ -628,13 +698,25 @@
       {endPos}
       {pathGeometry}
       {pickingEnabled}
+      {whiteBackground}
+      {shadedBoxes}
+      {exportTrigger}
+      exportScale={2}
+      onexportblob={handleExportBlob}
       navMeshMesh={showNavMesh ? activeNavMeshMesh : null}
+      floorplanMesh={showFloorplanMesh ? floorplanDebugMesh : null}
       rooms={showRooms ? rooms : []}
       tightBoxes={showTightBoxes ? tightBoxes : []}
       collapsedBoxes={showCollapsedBoxes ? collapsedBoxes : []}
       onplace={handlePlace}
     />
   </Canvas>
+  <!-- <button class="bg-toggle" onclick={() => whiteBackground = !whiteBackground}>
+    {whiteBackground ? 'Dark' : 'White'} bg
+  </button> -->
+  <button class="bg-toggle" style="bottom: 44px" onclick={exportPng}>
+    Export PNG
+  </button>
 </div>
 
 <style>
@@ -642,6 +724,24 @@
     flex: 1;
     height: 100vh;
     overflow: hidden;
+    position: relative;
+  }
+
+  .bg-toggle {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: rgba(0,0,0,0.4);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .bg-toggle:hover {
+    background: rgba(0,0,0,0.6);
   }
 
   .hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0; }
@@ -711,6 +811,15 @@
     padding: 3px 5px;
     font-size: 11px;
     text-align: right;
+    background: var(--surface-raised, var(--surface));
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text);
+    flex-shrink: 0;
+  }
+  .param-select {
+    padding: 3px 5px;
+    font-size: 11px;
     background: var(--surface-raised, var(--surface));
     border: 1px solid var(--border);
     border-radius: 3px;

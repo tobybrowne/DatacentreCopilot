@@ -3,10 +3,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 
-from common import get_supabase
+from common import get_supabase, require_webhook_auth
 
 router = APIRouter(prefix='/video')
 
@@ -44,7 +44,7 @@ def _convert(log_id: str) -> None:
         subprocess.run(
             [
                 FFMPEG, '-y', '-i', str(mp4_path),
-                '-vf', 'scale=-2:720',
+                '-vf', 'scale=-2:360',
                 '-codec:v', 'libtheora', '-qscale:v', '7',
                 '-codec:a', 'libvorbis', '-qscale:a', '5',
                 str(ogv_path),
@@ -60,7 +60,7 @@ def _convert(log_id: str) -> None:
 
 
 @router.post('/convert')
-async def convert(req: ConvertRequest, background_tasks: BackgroundTasks) -> dict:
+async def convert(req: ConvertRequest, background_tasks: BackgroundTasks, _: None = Depends(require_webhook_auth)) -> dict:
     """Trigger .mp4 → .ogv conversion for a log row. Runs in the background."""
     background_tasks.add_task(_convert, req.log_id)
     return {'status': 'converting', 'log_id': req.log_id}

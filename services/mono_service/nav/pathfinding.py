@@ -1,6 +1,10 @@
 import json
-import subprocess
-from pathlib import Path
+import os
+import urllib.error
+import urllib.request
+
+DETOUR_PORT = int(os.environ.get('DETOUR_PORT', '7654'))
+_BASE = f'http://127.0.0.1:{DETOUR_PORT}'
 
 
 def apply_transform(glb_pos: dict, transform: dict | None) -> dict:
@@ -18,17 +22,24 @@ def apply_transform(glb_pos: dict, transform: dict | None) -> dict:
 
 
 def query_navmesh(navmesh_data: bytes, pos_a: dict, pos_b: dict) -> dict:
-    """Run the Recast navmesh pathfinding via the Node.js subprocess."""
-    proc = subprocess.run(
-        [
-            'node', 'navmesh_query.mjs',
-            str(pos_a['x']), str(pos_a['y']), str(pos_a['z']),
-            str(pos_b['x']), str(pos_b['y']), str(pos_b['z']),
-        ],
-        input=navmesh_data,
-        capture_output=True,
-        cwd=Path(__file__).parent / 'detour_js',
+    """Query the persistent Detour HTTP server for a path between two points."""
+    url = (
+        f'{_BASE}/query'
+        f'?x1={pos_a["x"]}&y1={pos_a["y"]}&z1={pos_a["z"]}'
+        f'&x2={pos_b["x"]}&y2={pos_b["y"]}&z2={pos_b["z"]}'
     )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.decode().strip())
-    return json.loads(proc.stdout)
+    req = urllib.request.Request(
+        url,
+        data=navmesh_data,
+        method='POST',
+        headers={'Content-Type': 'application/octet-stream'},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = json.loads(e.read())
+        raise RuntimeError(body.get('error', str(e)))
+    if 'error' in result:
+        raise RuntimeError(result['error'])
+    return result

@@ -243,6 +243,7 @@ func spawn_note_marker(anchor: Anchor, text: String, world_pos: Vector3) -> void
 	marker.note_text = text
 	get_parent().add_child(marker)
 	marker.global_position = world_pos
+	marker.basis = _calibration.basis * Basis(anchor.glb_rotation)
 	_virtual_markers.append({ "marker": marker, "anchor": anchor })
 
 
@@ -401,6 +402,8 @@ func _reposition_virtual_markers() -> void:
 	for entry in _virtual_markers:
 		if is_instance_valid(entry.marker):
 			entry.marker.position = _to_local(entry.anchor.glb_position, entry.anchor.space_id)
+			if entry.anchor.anchor_type == Anchor.TYPE_NOTE:
+				entry.marker.basis = _to_local_basis(entry.anchor.glb_rotation, entry.anchor.space_id)
 
 
 func _to_local(glb_pos: Vector3, space_id: String) -> Vector3:
@@ -411,6 +414,15 @@ func _to_local(glb_pos: Vector3, space_id: String) -> Vector3:
 	return _calibration * (current_offset.affine_inverse() * (other_offset * glb_pos))
 
 
+func _to_local_basis(glb_rot: Quaternion, space_id: String) -> Basis:
+	var glb_basis := Basis(glb_rot)
+	if space_id == _current_space_id or _space_offsets.is_empty():
+		return _calibration.basis * glb_basis
+	var other_offset: Transform3D = _space_offsets.get(space_id, Transform3D.IDENTITY)
+	var current_offset: Transform3D = _space_offsets.get(_current_space_id, Transform3D.IDENTITY)
+	return (_calibration * current_offset.affine_inverse() * other_offset).basis * glb_basis
+
+
 func _write_glb_position(uuid: String, local_pos: Vector3) -> void:
 	SupabaseManager.update_anchor_glb_position(uuid, _calibration.affine_inverse() * local_pos)
 
@@ -418,6 +430,8 @@ func _write_glb_position(uuid: String, local_pos: Vector3) -> void:
 func _place_virtual_marker(anchor: Anchor, other_space: bool) -> void:
 	var marker := _create_virtual_marker(anchor, other_space)
 	marker.position = _to_local(anchor.glb_position, anchor.space_id)
+	if anchor.anchor_type == Anchor.TYPE_NOTE:
+		marker.basis = _to_local_basis(anchor.glb_rotation, anchor.space_id)
 	get_parent().add_child(marker)
 	_virtual_markers.append({ "marker": marker, "anchor": anchor })
 

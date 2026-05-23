@@ -18,6 +18,16 @@
   let showScanBounds = $state(false)
   let showLocBounds = $state(false)
   let loading = $state(true)
+  let exportTrigger = $state(0)
+
+  function handleExportBlob(blob: Blob): void {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${building?.name ?? 'building'}.png`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
   let downloading = $state(false)
 
   let locBoundingBoxes = $derived(
@@ -117,13 +127,17 @@
     {#if loading}
       <div class="placeholder">Loading building…</div>
     {:else if mergedSpaces.length > 0}
-      <Canvas>
+      <Canvas rendererParameters={{ preserveDrawingBuffer: true, alpha: false }}>
         <NavigateSceneInner
           spaces={mergedSpaces}
           showBoundingBoxes={showScanBounds}
           collapsedBoxes={showLocBounds ? locBoundingBoxes : []}
+          {exportTrigger}
+          exportScale={2}
+          onexportblob={handleExportBlob}
         />
       </Canvas>
+      <button class="export-btn" onclick={() => exportTrigger++}>Export PNG</button>
     {:else}
       <div class="placeholder">No stitched spaces yet.</div>
     {/if}
@@ -137,6 +151,20 @@
     height: 100vh;
     overflow: hidden;
   }
+
+  .export-btn {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: rgba(0,0,0,0.4);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .export-btn:hover { background: rgba(0,0,0,0.6); }
 
   .muted { color: var(--text-muted); font-size: 12px; font-style: italic; }
 
@@ -172,6 +200,7 @@
   .space-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .scene-wrap {
+    position: relative;
     flex: 1;
     height: 100vh;
     overflow: hidden;

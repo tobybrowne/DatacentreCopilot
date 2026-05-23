@@ -237,11 +237,53 @@ export async function finalizeDraftBuilding(buildingId: string): Promise<void> {
   if (error) throw error;
 }
 
+async function _upsertNavmeshRow(
+  buildingId: string,
+  columnId: "navmesh_id" | "floorplan_id",
+  binPath: string,
+  glbPath: string,
+  buildSettings: Record<string, unknown>
+): Promise<void> {
+  const { data: building, error: buildingError } = await supabase
+    .from("buildings")
+    .select(columnId)
+    .eq("id", buildingId)
+    .single();
+  if (buildingError) throw buildingError;
+
+  const existingId = building[columnId] as string | null;
+  if (existingId) {
+    const { error } = await supabase
+      .from("navmeshes")
+      .update({
+        navmesh_path: binPath,
+        glb_path: glbPath,
+        build_settings: buildSettings,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existingId);
+    if (error) throw error;
+  } else {
+    const navmeshId = crypto.randomUUID();
+    const { error: insertError } = await supabase
+      .from("navmeshes")
+      .insert({ id: navmeshId, navmesh_path: binPath, glb_path: glbPath, build_settings: buildSettings });
+    if (insertError) throw insertError;
+
+    const { error: updateError } = await supabase
+      .from("buildings")
+      .update({ [columnId]: navmeshId })
+      .eq("id", buildingId);
+    if (updateError) throw updateError;
+  }
+}
+
 export async function saveNavMesh(
   buildingId: string,
   data: Uint8Array,
   glbData: ArrayBuffer,
-  buildSettings: Record<string, unknown>
+  buildSettings: Record<string, unknown>,
+  floorplan?: { data: Uint8Array; glbData: ArrayBuffer; buildSettings: Record<string, unknown> }
 ): Promise<void> {
   const binPath = `navmeshes/${buildingId}.bin`;
   const glbPath = `navmeshes/${buildingId}.glb`;
@@ -264,42 +306,7 @@ export async function saveNavMesh(
     userSiteId: userData?.site_id ?? null,
   });
 
-  const { data: building, error: buildingError } = await supabase
-    .from("buildings")
-    .select("navmesh_id")
-    .eq("id", buildingId)
-    .single();
-  if (buildingError) throw buildingError;
-
-  if (building.navmesh_id) {
-    const { error } = await supabase
-      .from("navmeshes")
-      .update({
-        navmesh_path: binPath,
-        glb_path: glbPath,
-        build_settings: buildSettings,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", building.navmesh_id);
-    if (error) throw error;
-  } else {
-    const navmeshId = crypto.randomUUID();
-    const { error: insertError } = await supabase
-      .from("navmeshes")
-      .insert({
-        id: navmeshId,
-        navmesh_path: binPath,
-        glb_path: glbPath,
-        build_settings: buildSettings,
-      });
-    if (insertError) throw insertError;
-
-    const { error: updateError } = await supabase
-      .from("buildings")
-      .update({ navmesh_id: navmeshId })
-      .eq("id", buildingId);
-    if (updateError) throw updateError;
-  }
+  await _upsertNavmeshRow(buildingId, "navmesh_id", binPath, glbPath, buildSettings);
 
   const { error: binUploadError } = await supabase.storage
     .from("spaces_bucket")
@@ -308,10 +315,7 @@ export async function saveNavMesh(
       contentType: "application/octet-stream",
     });
   if (binUploadError) {
-    console.error(
-      "saveNavMesh bin upload error:",
-      JSON.stringify(binUploadError, null, 2)
-    );
+    console.error("saveNavMesh bin upload error:", JSON.stringify(binUploadError, null, 2));
     throw binUploadError;
   }
 
@@ -322,11 +326,25 @@ export async function saveNavMesh(
       contentType: "model/gltf-binary",
     });
   if (glbUploadError) {
-    console.error(
-      "saveNavMesh glb upload error:",
-      JSON.stringify(glbUploadError, null, 2)
-    );
+    console.error("saveNavMesh glb upload error:", JSON.stringify(glbUploadError, null, 2));
     throw glbUploadError;
+  }
+
+  if (floorplan) {
+    const fpBinPath = `navmeshes/${buildingId}_floorplan.bin`;
+    const fpGlbPath = `navmeshes/${buildingId}_floorplan.glb`;
+
+    await _upsertNavmeshRow(buildingId, "floorplan_id", fpBinPath, fpGlbPath, floorplan.buildSettings);
+
+    const { error: fpBinErr } = await supabase.storage
+      .from("spaces_bucket")
+      .upload(fpBinPath, floorplan.data, { upsert: true, contentType: "application/octet-stream" });
+    if (fpBinErr) throw fpBinErr;
+
+    const { error: fpGlbErr } = await supabase.storage
+      .from("spaces_bucket")
+      .upload(fpGlbPath, floorplan.glbData, { upsert: true, contentType: "model/gltf-binary" });
+    if (fpGlbErr) throw fpGlbErr;
   }
 }
 

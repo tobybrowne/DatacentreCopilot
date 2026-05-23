@@ -62,7 +62,7 @@ async def run() -> None:
 
     sb = create_client(url, key)
 
-    assets = sb.table("assets").select("id, asset_type").execute().data
+    assets = sb.table("assets").select("id, asset_type, anchors(space_id)").execute().data
     live_assets = [a for a in assets if a["asset_type"] in POWER_TYPES | COOLING_TYPES]
 
     if not live_assets:
@@ -79,6 +79,7 @@ async def run() -> None:
             data = _make_power_data(t) if asset_type in POWER_TYPES else _make_cooling_data(t)
             rows.append({
                 "asset_id": asset["id"],
+                "space_id": (asset.get("anchors") or {}).get("space_id"),
                 "data":     data,
                 "alarm":    _should_alarm(data, asset_type),
             })

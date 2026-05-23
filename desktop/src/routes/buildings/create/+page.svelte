@@ -28,6 +28,16 @@
   }
 
   let showBoundingBoxes = $state(false)
+  let exportTrigger = $state(0)
+
+  function handleExportBlob(blob: Blob): void {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'building-stitch.png'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   let allSpaces: Space[] = $state([])
   let buildingName = $state('')
@@ -475,7 +485,7 @@
 
   <div class="scene-wrap">
     {#if phase === 'align' && currentSpaceGlbUrl}
-      <Canvas>
+      <Canvas rendererParameters={{ preserveDrawingBuffer: true, alpha: false }}>
         <BuildingStitchScene
           builtSpaces={builtSpacesForScene}
           newSpaceUrl={currentSpaceGlbUrl}
@@ -486,6 +496,8 @@
           {mode}
           {showBoundingBoxes}
           {bestReferenceIndex}
+          {exportTrigger}
+          onexportblob={handleExportBlob}
           ontransform={(x, z, yRot) => {
             bX = x
             bZ = z
@@ -493,10 +505,12 @@
           }}
         />
       </Canvas>
+      <button class="export-btn" onclick={() => exportTrigger++}>Export PNG</button>
     {:else if phase === 'complete'}
-      <Canvas>
-        <NavigateSceneInner spaces={builtSpacesForScene} {showBoundingBoxes} />
+      <Canvas rendererParameters={{ preserveDrawingBuffer: true, alpha: false }}>
+        <NavigateSceneInner spaces={builtSpacesForScene} {showBoundingBoxes} {exportTrigger} exportScale={2} onexportblob={handleExportBlob} />
       </Canvas>
+      <button class="export-btn" onclick={() => exportTrigger++}>Export PNG</button>
     {:else}
       <div class="placeholder">
         {phase === 'setup' ? 'Configure your building to begin' : 'Loading scan…'}
@@ -514,10 +528,25 @@
   }
 
   .scene-wrap {
+    position: relative;
     flex: 1;
     height: 100vh;
     overflow: hidden;
   }
+
+  .export-btn {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: rgba(0,0,0,0.4);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .export-btn:hover { background: rgba(0,0,0,0.6); }
 
 
   .row-section { flex-direction: row; }

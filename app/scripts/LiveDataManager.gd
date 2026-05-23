@@ -7,14 +7,24 @@ var _channel: RealtimeChannel = null
 
 func _ready() -> void:
 	_rt_client = Supabase.realtime.client()
-	_channel = _rt_client.channel("public", "asset_live_data")
-	_channel.on("insert", _on_insert)
 	_rt_client.connected.connect(_on_connected)
 	_rt_client.connect_client()
 
 
 func _on_connected() -> void:
-	_channel.subscribe()
+	if _channel:
+		_channel.subscribe()
+
+
+func set_space(space_id: String) -> void:
+	if _channel:
+		if _channel.subscribed:
+			_channel.unsubscribe()
+		_channel.close()
+	_channel = _rt_client.channel("public", "asset_live_data", "space_id=eq." + space_id)
+	_channel.on("insert", _on_insert)
+	if _rt_client.last_state == WebSocketPeer.STATE_OPEN:
+		_channel.subscribe()
 
 
 func register(asset_id: String, marker: Node) -> void:

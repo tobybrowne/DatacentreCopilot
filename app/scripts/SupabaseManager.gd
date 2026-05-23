@@ -138,6 +138,13 @@ func insert_anchor(anchor: Anchor) -> Anchor:
 			"y": anchor.glb_position.y,
 			"z": anchor.glb_position.z,
 		}
+	if anchor.anchor_type == Anchor.TYPE_NOTE:
+		row["glb_rotation"] = {
+			"x": anchor.glb_rotation.x,
+			"y": anchor.glb_rotation.y,
+			"z": anchor.glb_rotation.z,
+			"w": anchor.glb_rotation.w,
+		}
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("anchors").insert([row])
 	).completed

@@ -29,3 +29,12 @@ async def require_auth(authorization: str = Header(default="")) -> None:
     token = authorization.removeprefix("Bearer ").strip()
     if not await verify_token(token):
         raise HTTPException(401, "Unauthorized")
+
+
+def require_webhook_auth(authorization: str = Header(default="")) -> None:
+    secret = os.environ.get("WEBHOOK_SECRET")
+    if not secret:
+        raise HTTPException(500, "WEBHOOK_SECRET not configured")
+    token = authorization.removeprefix("Bearer ").strip()
+    if token != secret:
+        raise HTTPException(401, "Unauthorized")

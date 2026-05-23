@@ -11,6 +11,7 @@ var name: String
 var ml2_id           # optional ID from ML2 localization map, if applicable
 var anchor_type: String = TYPE_CONTENT
 var glb_position     # null or Vector3 — position in GLB mesh space
+var glb_rotation: Quaternion = Quaternion.IDENTITY
 var space_id: String = ""
 
 static func from_dict(data: Dictionary) -> Anchor:
@@ -33,4 +34,12 @@ static func from_dict(data: Dictionary) -> Anchor:
 		)
 	else:
 		anchor.glb_position = null
+	var rot = data.get("glb_rotation", null)
+	if rot is Dictionary:
+		anchor.glb_rotation = Quaternion(
+			rot.get("x", 0.0),
+			rot.get("y", 0.0),
+			rot.get("z", 0.0),
+			rot.get("w", 1.0)
+		)
 	return anchor
