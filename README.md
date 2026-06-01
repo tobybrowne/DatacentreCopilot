@@ -35,26 +35,6 @@ shared source of truth for all three.
 
 ## How it fits together
 
-```
-                ┌───────────────────────────┐
-                │         Supabase          │
-                │  Postgres · Auth · Storage│
-                │  Realtime                 │
-                └────────────┬──────────────┘
-            db / auth / storage / realtime
-        ┌────────────────────┼────────────────────┐
-        │                    │                     │
- ┌──────┴───────┐    ┌───────┴────────┐    ┌───────┴─────────┐
- │  app/ (ML2)  │    │ desktop/ (web) │    │  mono_service   │
- │ Godot/OpenXR │    │  SvelteKit     │    │ FastAPI backend │
- └──────┬───────┘    └───────┬────────┘    └───────┬─────────┘
-        │   compute (HTTP)    │                     │ spawns
-        └─────────────────────┴────────────────────►│ Node recast
-                 nav · stitch · bbox · rooms         │ navmesh sidecar
-                                                      │
-                                          copilot voice ⇄ OpenAI Realtime
-```
-
 - **`app/`** and **`desktop/`** both read/write Supabase directly (database, auth,
   storage buckets, realtime) and call **`mono_service`** over HTTP for compute that
   doesn't belong on-device: building/space bounding boxes, ICP scan stitching,
