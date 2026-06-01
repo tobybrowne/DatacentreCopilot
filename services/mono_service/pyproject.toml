@@ -1,7 +1,7 @@
 [project]
 name = "mono-service"
 version = "0.1.0"
-description = "Mono service - room inference and navigation"
+description = "Mono service - geometry and navigation backend"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

@@ -14,7 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from nav.router import router as nav_router
-from room_inference import infer
 from spaces.router import router as spaces_router
 from stitch.router import router as stitch_router
 from video.router import router as video_router

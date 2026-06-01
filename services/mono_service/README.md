@@ -1,112 +1,141 @@
-# room-finder-service
+# mono_service
 
-Processing service built on FastAPI. Accepts jobs over HTTP and processes them on a single background worker, keeping the model warm in memory.
+The backend for [entangl-copilot](../../README.md). A single **FastAPI** service that
+handles the compute the headset app and web companion can't do on their own: route
+planning, ICP scan stitching, navmesh room segmentation, video transcoding, and a
+proxy for the in-headset voice copilot. State lives in Supabase; this service is
+mostly stateless request handling plus a couple of background tasks.
+
+## Architecture
+
+- **FastAPI + Uvicorn** ASGI app (`app.py`), title *Mono Service*.
+- On startup (lifespan) it:
+  - spawns a **Node.js recast-navigation sidecar** (`nav/detour_js/navmesh_server.mjs`)
+    on `DETOUR_PORT` and waits for its `/health` to come up — this does the actual
+    navmesh pathfinding;
+  - launches a background task (`live_asset_data`) that publishes simulated
+    power/cooling telemetry to Supabase on an interval.
+- **CORS** is fully open, plus a small middleware that answers Chrome's
+  Private Network Access preflight (so a browser on the LAN can reach a local instance).
+- Auth is **per-endpoint**, not global (see [Auth](#auth)).
 
 ## Setup
 
-```bash
-cd services/room_finder
-uv sync
-```
-
-The service imports directly from `../../room_finder`, so no installation of that package is needed.
-
-## Start
+Requires **Python 3.12+**, [`uv`](../../docs/UV.md), and **Node.js** (for the navmesh sidecar).
 
 ```bash
-OUTPUT_DIR=../../room_finder/run uvicorn app:app --reload
+cd services/mono_service
+cp .env.example .env      # then fill in the values
+uv sync                   # install Python deps
 ```
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OUTPUT_DIR` | required | Path to a `room_finder` training output directory |
-| `METHOD` | `kmeans` | `kmeans` or `nn` |
-
-## Endpoints
-
-### `POST /jobs/room-inference`
-
-Submit an image for room classification. Returns a job ID immediately.
+## Running
 
 ```bash
-curl -X POST http://localhost:8000/jobs/room-inference \
-  -F "file=@photo.jpg"
+./start.sh
 ```
 
-```json
-{"job_id": "abc-123", "status": "pending"}
-```
-
-### `GET /jobs/{job_id}`
-
-Blocks until the job is complete, then returns the result.
+`start.sh` installs the sidecar's npm deps (`npm install --prefix nav/detour_js`),
+runs `uv sync`, and starts Uvicorn with `--reload`:
 
 ```bash
-curl http://localhost:8000/jobs/abc-123
+uv run python -m uvicorn app:app --host "$HOST" --port "$PORT" --reload
 ```
 
-```json
-{
-  "id": "abc-123",
-  "type": "room_inference",
-  "status": "done",
-  "result": {
-    "predicted_room": "kitchen",
-    "confidence": 0.912,
-    "method": "kmeans",
-    "top5": {
-      "kitchen": 0.912,
-      "dining_room": 0.841,
-      "living_room": 0.798,
-      "corridor": 0.761,
-      "bathroom": 0.743
-    },
-    "timing_ms": {
-      "load": 1.2,
-      "embed": 104.3,
-      "search": 0.08,
-      "total": 105.6
-    }
-  },
-  "queued_at": "2026-04-05T14:00:00",
-  "started_at": "2026-04-05T14:00:00",
-  "finished_at": "2026-04-05T14:00:01"
-}
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `HOST` | `0.0.0.0` | Uvicorn bind address |
+| `PORT` | `8000` | Uvicorn bind port |
+| `DETOUR_PORT` | `7654` | Port for the Node navmesh sidecar |
+
+Health check: `curl http://localhost:8000/health` → `{"status": "ok"}`.
+
+## Environment
+
+Set in `.env` (see `.env.example`):
+
+| Variable | Used for |
+|----------|----------|
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_KEY` | Supabase service key (DB, auth verification, storage) |
+| `WEBHOOK_SECRET` | Shared secret authenticating webhook-style endpoints |
+| `OPENAI_KEY` | OpenAI key for the copilot Realtime proxy (falls back to `OPENAI_API_KEY`) |
+| `FFMPEG_PATH` | Path to the `ffmpeg` binary for video conversion |
+| `DETOUR_PORT` | Navmesh sidecar port (also read by `app.py`) |
+
+## API
+
+All routers are mounted under their own prefix. Endpoints marked **auth** require a
+Supabase user token (`Authorization: Bearer <token>`); **webhook** endpoints require
+`Authorization: Bearer <WEBHOOK_SECRET>`.
+
+### `/nav` — pathfinding
+| Method · Path | Auth | Description |
+|---|---|---|
+| `POST /nav/path` | auth | Find a route between two anchors; returns a list of `{x,y,z}` waypoints. |
+| `POST /nav/path-image` | auth | Same route, rendered to a debug PNG (`image/png`). |
+
+### `/spaces` — space geometry
+| Method · Path | Auth | Description |
+|---|---|---|
+| `POST /spaces/compute-bbox` | webhook | Compute and store the footprint (concave n-gon prism) for a space's GLB. Runs in the background. |
+
+### `/stitch` — scan alignment
+| Method · Path | Auth | Description |
+|---|---|---|
+| `POST /stitch/refine` | auth | Coarse-to-fine **ICP** (open3d) alignment between two spaces; returns the refined transform, fitness and inlier RMSE. |
+
+### `/navmesh-rooms` — room segmentation
+| Method · Path | Auth | Description |
+|---|---|---|
+| `POST /navmesh-rooms/segment` | auth | Segment a navmesh into rooms via Louvain community detection (networkx); stores per-room 2D polygons (+ `y_min`/`y_max`) on the navmesh. |
+
+### `/video` — media
+| Method · Path | Auth | Description |
+|---|---|---|
+| `POST /video/convert` | webhook | Transcode an uploaded MP4 to 360p OGV (Theora/Vorbis) via FFmpeg. Runs in the background. |
+
+### `/copilot` — voice assistant
+| Method · Path | Auth | Description |
+|---|---|---|
+| `WS /copilot/ws` | token | Bidirectional proxy to the OpenAI Realtime API (audio, transcripts, tool calls). Token via `Authorization` header or `?token=`. |
+
+### Built-in
+| Method · Path | Description |
+|---|---|
+| `GET /health` | Liveness check. |
+
+## Layout
+
+```
+services/mono_service/
+├── app.py                # FastAPI app, lifespan, router mounting
+├── common.py             # get_supabase(), require_auth(), require_webhook_auth()
+├── start.sh              # install deps + run uvicorn
+├── nav/
+│   ├── router.py         # /nav endpoints
+│   ├── pathfinding.py    # talks to the recast sidecar
+│   └── detour_js/        # Node recast-navigation navmesh server (sidecar)
+├── spaces/router.py      # /spaces endpoints
+├── stitch/router.py      # /stitch endpoints (ICP)
+├── navmesh_rooms/router.py
+├── video/router.py
+├── copilot/              # router + OpenAI Realtime proxy
+└── live_asset_data/      # background telemetry publisher
 ```
 
-### `GET /health`
+> The ICP/stitch evaluation and navmesh benchmark scripts that used to live here
+> have been moved out to the repo's `testing/` directory.
 
-```bash
-curl http://localhost:8000/health
-```
+## Auth (`common.py`)
 
-```json
-{"status": "ok", "handlers": ["room_inference"]}
-```
+- `get_supabase()` — Supabase client from `SUPABASE_URL` / `SUPABASE_KEY`.
+- `require_auth` — FastAPI dependency; validates a Bearer user token via Supabase.
+- `require_webhook_auth` — FastAPI dependency; checks a Bearer token against `WEBHOOK_SECRET`.
 
-## Testing
+## Key dependencies
 
-Run the test script against a directory of images:
-
-```bash
-# single image
-python tests/room_inference/run.py photo.jpg
-
-# whole directory
-python tests/room_inference/run.py ./test_images/
-
-# multiple directories
-python tests/room_inference/run.py ./kitchen/ ./bedroom/
-
-# submit one at a time (shows per-image round-trip time)
-python tests/room_inference/run.py ./test_images/ --sequential
-
-# different host
-python tests/room_inference/run.py ./test_images/ --url http://192.168.1.10:8000
-```
-
-## Adding a new job type
-
-1. Create a handler class in `handlers/` with a `__call__(self, payload)` method
-2. Register it in `_load_handlers()` in `app.py`
-3. Add a `POST /jobs/<type>` endpoint that calls `jobs.submit()`
+`fastapi` / `uvicorn` (server) · `supabase` (DB/auth/storage) · `open3d` (ICP) ·
+`trimesh` + `numpy` + `scipy` (mesh/geometry) · `shapely` + `alphashape` (footprints) ·
+`networkx` (room segmentation) · `matplotlib` (debug renders) · `websockets` (copilot
+proxy) · Node `recast-navigation` (navmesh sidecar) · FFmpeg (video).
