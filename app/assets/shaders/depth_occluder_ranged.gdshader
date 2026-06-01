@@ -8,7 +8,7 @@ render_mode depth_draw_always, unshaded, cull_disabled;
 uniform float tof_range : hint_range(1.0, 10.0) = 4.5;
 
 void fragment() {
-	// VERTEX is in view space — length() gives distance from camera.
+	// VERTEX is in view space - length() gives distance from camera.
 	if (length(VERTEX) < tof_range) {
 		discard;
 	}

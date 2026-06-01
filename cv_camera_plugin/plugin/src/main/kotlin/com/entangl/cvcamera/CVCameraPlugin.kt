@@ -59,7 +59,7 @@ class CVCameraPlugin(godot: Godot) : GodotPlugin(godot) {
         noiseReductionOff = !enabled
     }
 
-    // Prepares the ImageReader but does NOT open the camera device — no privacy indicator.
+    // Prepares the ImageReader but does NOT open the camera device - no privacy indicator.
     // The device is opened lazily on the first captureFrame() or startRecording() call.
     @UsedByGodot
     fun openCamera(width: Int, height: Int) {
@@ -157,7 +157,7 @@ class CVCameraPlugin(godot: Godot) : GodotPlugin(godot) {
         val manager = godot.getActivity()!!
             .getSystemService(android.content.Context.CAMERA_SERVICE) as CameraManager
         try {
-            manager.openCamera("1", object : CameraDevice.StateCallback() {
+            manager.openCamera("0", object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
                     cameraDevice = camera
                     pendingAction?.invoke()
@@ -257,7 +257,7 @@ class CVCameraPlugin(godot: Godot) : GodotPlugin(godot) {
                         return
                     }
 
-                    // Start encoder before the repeating request — frames sent to the
+                    // Start encoder before the repeating request - frames sent to the
                     // MediaRecorder surface before start() are dropped, causing green frames.
                     recorder.start()
                     isRecording = true

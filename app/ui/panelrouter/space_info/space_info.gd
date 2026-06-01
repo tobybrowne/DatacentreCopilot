@@ -25,7 +25,7 @@ func init(data: Dictionary) -> void:
 	var is_local := _check_local(_space.id)
 	_local_label.text = "Local: " + ("Yes" if is_local else "No")
 	_local_label.modulate = Color("#00ff88") if is_local else Color("#ff4444")
-	# delete_space_local disabled — PW_MAP is signature-protected
+	# delete_space_local disabled - PW_MAP is signature-protected
 	_remove_local_button.visible = false
 
 	_update_button.pressed.connect(_on_update_pressed)

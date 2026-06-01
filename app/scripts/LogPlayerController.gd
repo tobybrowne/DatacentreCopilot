@@ -9,7 +9,7 @@ const _FAB_SCENE     := preload("res://ui/standalone/logs_fab/logs_fab_3d.tscn")
 const _BROWSER_SCENE := preload("res://ui/standalone/log_browser/log_browser_panel_3d.tscn")
 const _VIDEO_SCENE   := preload("res://ui/standalone/video_player/video_player_panel_3d.tscn")
 
-## Emitted whenever a replayer stops — natural end or explicit stop.
+## Emitted whenever a replayer stops - natural end or explicit stop.
 ## Connect to reset the step-viewer replay button.
 signal replay_ended
 ## Emitted when play_log_id successfully starts playback (after download).
@@ -105,7 +105,7 @@ func close() -> void:
 	_close_browser()
 
 
-## Open (or close if already open) the log browser — callable externally when show_fab is false.
+## Open (or close if already open) the log browser - callable externally when show_fab is false.
 func open_browser() -> void:
 	_on_fab_pressed()
 
@@ -173,7 +173,7 @@ func _play_paths(geo_path: String, ogv_path: String, loop: bool) -> bool:
 	if geo_task != null:
 		var dl = await geo_task.completed
 		if dl.error != null:
-			push_warning("LogPlayerController: geo download failed — %s" % dl.error.message)
+			push_warning("LogPlayerController: geo download failed - %s" % dl.error.message)
 		else:
 			var frames := PoseRec.frames_from_bytes(dl.data)
 			if not frames.is_empty():
@@ -189,7 +189,7 @@ func _play_paths(geo_path: String, ogv_path: String, loop: bool) -> bool:
 	if vid_task != null:
 		var vdl = await vid_task.completed
 		if vdl.error != null:
-			push_warning("LogPlayerController: video download failed — %s" % vdl.error.message)
+			push_warning("LogPlayerController: video download failed - %s" % vdl.error.message)
 		else:
 			_launch_video(vdl.data)
 			started = true

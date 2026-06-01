@@ -31,7 +31,7 @@
           <li
             class:no-glb={!space.glb_path}
             onclick={() => space.glb_path && goto(`/calibration/${space.id}`)}
-            title={space.glb_path ? space.name : `${space.name} — no GLB exported yet`}
+            title={space.glb_path ? space.name : `${space.name} - no GLB exported yet`}
           >
             <span class="space-name">{space.name || space.id}</span>
           </li>

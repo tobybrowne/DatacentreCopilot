@@ -3,7 +3,7 @@ Publishes live asset data to asset_live_data every INTERVAL seconds.
 Each tick inserts a new row (append-only); the latest_asset_live_data view
 surfaces the most recent row per asset.
 
-Currently generates simulated data — intended to be replaced with a real
+Currently generates simulated data - intended to be replaced with a real
 BMS integration per asset type.
 
 Started automatically as part of the mono service (see app.py lifespan).
@@ -57,7 +57,7 @@ async def run() -> None:
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
     if not url or not key:
-        print("live_asset_data: SUPABASE_URL / SUPABASE_KEY not set — skipping.")
+        print("live_asset_data: SUPABASE_URL / SUPABASE_KEY not set - skipping.")
         return
 
     sb = create_client(url, key)
@@ -66,7 +66,7 @@ async def run() -> None:
     live_assets = [a for a in assets if a["asset_type"] in POWER_TYPES | COOLING_TYPES]
 
     if not live_assets:
-        print("live_asset_data: no power/cooling assets found — skipping.")
+        print("live_asset_data: no power/cooling assets found - skipping.")
         return
 
     print(f"live_asset_data: publishing data for {len(live_assets)} assets every {INTERVAL}s.")

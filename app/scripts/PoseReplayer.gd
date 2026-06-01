@@ -138,7 +138,7 @@ func _init_async() -> void:
 
 			# Zero-scale bones that should never appear: fingers on the body mesh,
 			# and the entire leg chains (no tracking data). Pelvis is left at scale 1
-			# because it is the spine root — zeroing it collapses the whole torso.
+			# because it is the spine root - zeroing it collapses the whole torso.
 			for bone_name in ["hand.l", "hand.r"]:
 				var idx := _body_skeleton.find_bone(bone_name)
 				if idx >= 0:
@@ -207,7 +207,7 @@ void fragment() {
 
 	# Depth prepass: invisible, writes depth only. Runs at priority -1 so all ghost
 	# geometry establishes correct depth before any ghost color pixels draw at priority 0.
-	# depth_draw_always means order among prepass draw calls doesn't matter — the GPU
+	# depth_draw_always means order among prepass draw calls doesn't matter - the GPU
 	# depth test keeps the nearest value regardless of which mesh renders first.
 	var prepass_shader := Shader.new()
 	prepass_shader.code = """

@@ -10,11 +10,9 @@ const PROXIMITY_RADIUS := 0.50
 const DWELL_THRESHOLD  := 10.0
 const INTERACT_HOLD    := 1.5
 
-const SURFACE_PROBE  := 0.12  # ray length to check for nearby surface
-const SURFACE_MARGIN := 0.04  # clearance to maintain from surface
 const WORLD_MESH_LAYER := 1 << 19
 
-const GAZE_RADIUS         := 1.5   # metres — must be within this to show fab
+const GAZE_RADIUS         := 1.5   # metres - must be within this to show fab
 const GAZE_DOT_THRESHOLD  := 0.97  # cos(~14°)
 const GAZE_HIDE_DELAY     := 0.4   # seconds before fab hides after losing gaze
 
@@ -23,8 +21,13 @@ const _TRACKERS := {
 	"right": "/user/hand_tracker/right",
 }
 
-const _FAB_SCENE  := preload("res://ui/standalone/asset_fab/asset_fab_3d.tscn")
 const _INFO_SCENE := preload("res://ui/standalone/asset_info/asset_info_panel_3d.tscn")
+
+const FAB_SIZE   := 0.10
+const FAB_RADIUS := 0.055
+
+static var _s_disc_shader: Shader = null
+static var _s_ring_shader: Shader = null
 
 signal interacted
 
@@ -32,7 +35,11 @@ var _asset: Asset = null
 var _manuals: Array[Dictionary] = []
 var _logs:      LogPlayerController = null
 
-var _fab_3d:  ViewportPanel3D = null
+
+var _fab_3d:       Node3D         = null
+var _fab_disc_mat: ShaderMaterial = null
+var _fab_ring:     MeshInstance3D = null
+var _fab_pressed   := {"left": false, "right": false}
 var _info_3d: ViewportPanel3D = null
 var _beam:    MeshInstance3D  = null
 
@@ -50,55 +57,35 @@ func get_asset_label() -> String:
 
 
 func _ready() -> void:
-	_nudge_clear_of_surface.call_deferred()
 	if anchor.id.is_empty():
 		return
-	var task = await Supabase.database.query(
-		SupabaseQuery.new().from("assets").select(PackedStringArray(["*", "asset_models(name,manufacturer,manual_id)"])).eq("anchor_id", anchor.id).range(0, 0)
-	).completed
-	if task.error != null or task.data == null or task.data.is_empty():
+	var bsm := BuildingSessionManager.instance
+	if not bsm:
+		return
+	var row := bsm.get_asset_row(anchor.id)
+	if row.is_empty():
 		return
 
-	_asset = Asset.from_dict(task.data[0])
-	print("AssetAnchorMarker: raw data=", task.data[0])
-
-	var model = task.data[0].get("asset_models", null)
-	print("AssetAnchorMarker: model=", model)
-	if model is Dictionary:
-		var manual_id: String = model.get("manual_id", "")
-		print("AssetAnchorMarker: manual_id=", manual_id)
-		if not manual_id.is_empty():
-			var manual_task = await Supabase.database.query(
-				SupabaseQuery.new().from("manuals").select(PackedStringArray(["title,url"])).eq("id", manual_id).range(0, 0)
-			).completed
-			print("AssetAnchorMarker: manual query error=", manual_task.error, " data=", manual_task.data)
-			if manual_task.error == null and manual_task.data != null and not manual_task.data.is_empty():
-				var m: Dictionary = manual_task.data[0]
-				var url: String = m.get("url", "")
-				if not url.is_empty():
-					_manuals = [{"title": m.get("title", "Manual"), "url": url}]
-					print("AssetAnchorMarker: loaded manual: ", _manuals)
-
+	_asset = Asset.from_dict(row)
 	add_to_group("asset_markers")
 	interacted.connect(func(): ContextManager.set_interacted(_asset))
-
 	_build_fab()
 
-	if _asset and not _asset.id.is_empty():
-		var check = await Supabase.database.query(
-			SupabaseQuery.new().from("log_assets").select(["log_id"]).eq("asset_id", _asset.id).range(0, 0)
-		).completed
-		if check.error == null and check.data != null and not check.data.is_empty():
+	if not _asset.id.is_empty():
+		if bsm.asset_has_logs(_asset.id):
 			_logs = LogPlayerController.new()
 			_logs.show_fab = false
 			_logs.video_tmp_path = "user://asset_replay_%s.ogv" % _asset.id.left(8)
 			_logs.refresh({"asset_id": _asset.id})
 			_get_xr_origin().add_child(_logs)
 			tree_exiting.connect(func(): if _logs: _logs.queue_free())
-
+		var ld := bsm.get_live_data(_asset.id)
+		if not ld.is_empty():
+			on_live_data(ld)
 		LiveDataManager.register(_asset.id, self)
 		tree_exiting.connect(func(): LiveDataManager.deregister(_asset.id))
-		LiveDataManager.fetch_latest([_asset.id])
+
+
 
 
 func _process(delta: float) -> void:
@@ -125,6 +112,10 @@ func _process(delta: float) -> void:
 	# Gaze tracking for ContextManager (fab is always visible)
 	if _fab_3d and not _info_open:
 		_fab_3d.global_position = global_position
+		var _cam := _get_camera()
+		if _cam and _fab_3d.global_position.distance_squared_to(_cam.global_position) > 0.001:
+			_fab_3d.look_at(_cam.global_position, Vector3.UP)
+			_fab_3d.rotate_object_local(Vector3.UP, PI)
 		if _is_gazed_at():
 			_gaze_hide_timer = GAZE_HIDE_DELAY
 			ContextManager.set_looking_at(_asset)
@@ -133,33 +124,128 @@ func _process(delta: float) -> void:
 			if _gaze_hide_timer <= 0.0 and ContextManager.ctx_looking_at == _asset:
 				ContextManager.set_looking_at(null)
 
+		var gm := _get_gesture_manager()
+		if gm:
+			for hand in ["left", "right"]:
+				var ray_origin: Vector3 = gm.ray_origins[hand]
+				var ray_dir: Vector3 = gm.ray_directions[hand]
+				if not gm.ray_active[hand]:
+					_fab_pressed[hand] = false
+					continue
+				var to_fab: Vector3 = _fab_3d.global_position - ray_origin
+				var t: float = to_fab.dot(ray_dir)
+				var closest: Vector3 = ray_origin + ray_dir * t
+				var perp_dist: float = closest.distance_to(_fab_3d.global_position)
+				if t > 0.0 and perp_dist < FAB_RADIUS:
+					# Actual front-surface intersection point, offset slightly toward camera so reticle renders in front
+					var hit_depth: float = sqrt(max(0.0, FAB_RADIUS * FAB_RADIUS - perp_dist * perp_dist))
+					var hit_point: Vector3 = ray_origin + ray_dir * (t - hit_depth) - ray_dir * 0.002
+					gm.set_hit_point(hand, hit_point)
+					gm.claim_ui(hand)
+					if _fab_disc_mat:
+						_fab_disc_mat.set_shader_parameter("color",
+							Color(0.30, 0.30, 0.42, 0.95) if gm.is_ray_pinching(hand) else Color(0.26, 0.26, 0.36, 0.95))
+					if gm.is_ray_pinching(hand) and not _fab_pressed[hand]:
+						_fab_pressed[hand] = true
+					elif not gm.is_ray_pinching(hand) and _fab_pressed[hand]:
+						_fab_pressed[hand] = false
+						if _fab_disc_mat:
+							_fab_disc_mat.set_shader_parameter("color", Color(0.22, 0.22, 0.30, 0.95))
+						_open_info()
+				else:
+					if _fab_disc_mat and _fab_pressed[hand]:
+						_fab_disc_mat.set_shader_parameter("color", Color(0.22, 0.22, 0.30, 0.95))
+					_fab_pressed[hand] = false
+
 	# Beam
 	if _info_open and _beam and _info_3d:
 		_update_beam()
-
-
 
 
 func _build_fab() -> void:
 	var xr_origin := _get_xr_origin()
 	if not xr_origin:
 		return
-	_fab_3d = _FAB_SCENE.instantiate()
-	_fab_3d.position = xr_origin.to_local(global_position)
-	_fab_3d.visible = true
+
+	_fab_3d = Node3D.new()
 	xr_origin.add_child(_fab_3d)
-	var fab := _fab_3d.get_panel() as AssetFab
-	if fab:
-		fab.info_requested.connect(_open_info)
-		fab.setup(_asset.asset_type if _asset else "")
 	tree_exiting.connect(func(): if _fab_3d: _fab_3d.queue_free())
+
+	if not _s_disc_shader:
+		_s_disc_shader = Shader.new()
+		_s_disc_shader.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled;
+uniform vec4 color : source_color = vec4(0.22, 0.22, 0.30, 0.95);
+void fragment() {
+	vec2 uv = UV * 2.0 - 1.0;
+	if (length(uv) > 1.0) discard;
+	ALBEDO = color.rgb;
+	ALPHA = color.a;
+}
+"""
+	_fab_disc_mat = ShaderMaterial.new()
+	_fab_disc_mat.shader = _s_disc_shader
+	var quad := QuadMesh.new()
+	quad.size = Vector2(FAB_SIZE, FAB_SIZE)
+	var disc_mi := MeshInstance3D.new()
+	disc_mi.mesh = quad
+	disc_mi.material_override = _fab_disc_mat
+	_fab_3d.add_child(disc_mi)
+
+	var icon_path := AssetTypes.icon_path(_asset.asset_type if _asset else "")
+	if not icon_path.is_empty() and ResourceLoader.exists(icon_path):
+		var icon := Sprite3D.new()
+		icon.texture = load(icon_path)
+		icon.pixel_size = 0.00028
+		icon.render_priority = 1
+		_fab_3d.add_child(icon)
+
+	if not _s_ring_shader:
+		_s_ring_shader = Shader.new()
+		_s_ring_shader.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled;
+void fragment() {
+	vec2 uv = UV * 2.0 - 1.0;
+	float d = length(uv);
+	float ring = smoothstep(0.82, 0.86, d) * smoothstep(1.02, 0.98, d);
+	if (ring < 0.01) discard;
+	float pulse = 0.5 + 0.5 * sin(TIME * 7.54);
+	ALBEDO = vec3(1.0, 0.15, 0.15);
+	ALPHA = ring * pulse;
+}
+"""
+	var ring_mat := ShaderMaterial.new()
+	ring_mat.shader = _s_ring_shader
+	var ring_quad := QuadMesh.new()
+	ring_quad.size = Vector2(FAB_SIZE * 1.15, FAB_SIZE * 1.15)
+	_fab_ring = MeshInstance3D.new()
+	_fab_ring.mesh = ring_quad
+	_fab_ring.material_override = ring_mat
+	_fab_ring.visible = false
+	_fab_3d.add_child(_fab_ring)
 
 
 func _open_info() -> void:
 	if _info_open:
 		return
 	_info_open = true
-	_fab_3d.visible = false
+	if _fab_3d:
+		_fab_3d.visible = false
+
+	# Resolve manual lazily from session cache (already loaded by BuildingSessionManager)
+	if _manuals.is_empty() and _asset:
+		var bsm := BuildingSessionManager.instance
+		var row := bsm.get_asset_row(anchor.id) if bsm else {}
+		var model = row.get("asset_models", null)
+		if model is Dictionary:
+			var manual_id: String = model.get("manual_id", "")
+			if not manual_id.is_empty():
+				var manual := bsm.get_manual(manual_id)
+				var url: String = manual.get("url", "")
+				if not url.is_empty():
+					_manuals = [{"title": manual.get("title", "Manual"), "url": url}]
 
 	const MIN_DIST := 0.8
 
@@ -222,9 +308,8 @@ func _close_info() -> void:
 
 func on_live_data(record: Dictionary) -> void:
 	var alarm: bool = record.get("alarm", false)
-	var fab := _fab_3d.get_panel() as AssetFab if _fab_3d else null
-	if fab:
-		fab.set_alarm(alarm)
+	if _fab_ring:
+		_fab_ring.visible = alarm
 
 	var raw = record.get("data", {})
 	var data: Dictionary = raw if raw is Dictionary else {}
@@ -312,28 +397,6 @@ func _is_hand_nearby() -> bool:
 
 
 
-func _nudge_clear_of_surface() -> void:
-	var space := get_world_3d().direct_space_state
-	var query := PhysicsRayQueryParameters3D.new()
-	query.collision_mask = WORLD_MESH_LAYER
-
-	var nearest_dist := INF
-	var push_normal := Vector3.ZERO
-
-	for dir: Vector3 in [Vector3.RIGHT, Vector3.LEFT, Vector3.UP, Vector3.DOWN, Vector3.FORWARD, Vector3.BACK]:
-		query.from = global_position
-		query.to = global_position + dir * SURFACE_PROBE
-		var hit := space.intersect_ray(query)
-		if hit and hit.distance < nearest_dist:
-			nearest_dist = hit.distance
-			push_normal = hit.normal
-
-	if push_normal != Vector3.ZERO:
-		var clearance := SURFACE_PROBE - nearest_dist + SURFACE_MARGIN
-		if clearance > 0.0:
-			global_position += push_normal * clearance
-
-
 func _get_xr_origin() -> Node3D:
 	var node := get_parent()
 	while node:
@@ -350,3 +413,10 @@ func _get_camera() -> Camera3D:
 		if cam:
 			return cam
 	return get_viewport().get_camera_3d()
+
+
+func _get_gesture_manager() -> GestureManager:
+	var xr_origin := _get_xr_origin()
+	if xr_origin:
+		return xr_origin.get_node_or_null("GestureManager") as GestureManager
+	return null

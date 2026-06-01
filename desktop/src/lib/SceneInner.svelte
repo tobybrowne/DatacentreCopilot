@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { T } from '@threlte/core'
+  import { T, useThrelte, useTask } from '@threlte/core'
   import { GLTF, OrbitControls, interactivity, type IntersectionEvent } from '@threlte/extras'
+  import { onDestroy } from 'svelte'
   import * as THREE from 'three'
+  import { TransformControls } from 'three/addons/controls/TransformControls.js'
   import TransformedGltf from './TransformedGltf.svelte'
   import BoundingBoxMesh from './BoundingBoxMesh.svelte'
   import DensityHeatmap from './DensityHeatmap.svelte'
@@ -29,8 +31,13 @@
     mergedSpacesClickable?: boolean;
     showDensity?: boolean;
     whiteBackground?: boolean;
+    draggableAnchorId?: string | null;
+    exportTrigger?: number;
+    exportScale?: number;
     onplace?: (detail: { position: Position; spaceIndex: number | null }) => void;
     onselect?: (id: string) => void;
+    ondraganchor?: (id: string, pos: Position) => void;
+    onexportblob?: (blob: Blob) => void;
   }
 
   let {
@@ -52,11 +59,129 @@
     mergedSpacesClickable = false,
     showDensity = false,
     whiteBackground = false,
+    draggableAnchorId = null,
+    exportTrigger = 0,
+    exportScale = 1,
     onplace,
-    onselect
+    onselect,
+    ondraganchor,
+    onexportblob
   }: Props = $props();
 
   interactivity()
+
+  const { renderer, camera, scene, invalidate } = useThrelte()
+
+  let originGroup: THREE.Group | undefined = $state()
+
+  // Render the current view to a PNG blob at exportScale resolution whenever
+  // exportTrigger changes (mirrors NavigateSceneInner's export).
+  $effect(() => {
+    if (exportTrigger === 0) return
+    invalidate()
+    requestAnimationFrame(() => {
+      const vp = renderer.getSize(new THREE.Vector2())
+      const w = vp.x * exportScale
+      const h = vp.y * exportScale
+
+      renderer.setSize(w, h, false)
+
+      const cam = camera.current
+      if (cam instanceof THREE.PerspectiveCamera) {
+        cam.aspect = w / h
+        cam.updateProjectionMatrix()
+      }
+
+      // Hide the origin marker/axes helper so they don't appear in the export.
+      if (originGroup) originGroup.visible = false
+      renderer.render(scene, cam)
+
+      renderer.domElement.toBlob(blob => {
+        if (originGroup) originGroup.visible = true
+        if (blob) onexportblob?.(blob)
+        renderer.setSize(vp.x, vp.y, false)
+        if (cam instanceof THREE.PerspectiveCamera) {
+          cam.aspect = vp.x / vp.y
+          cam.updateProjectionMatrix()
+        }
+        invalidate()
+      })
+    })
+  })
+
+  let tc: TransformControls | null = null
+  let tcGroup: THREE.Group | null = null
+  let tcAnchorId: string | null = null
+  let orbitEnabled = $state(true)
+  let dragPos: Position | null = $state(null)
+
+  const onDragChange = () => {
+    if (!tcGroup || !tcAnchorId) return
+    const p = tcGroup.position
+    dragPos = { x: p.x, y: p.y, z: p.z }
+    ondraganchor?.(tcAnchorId, { x: p.x, y: p.y, z: p.z })
+    invalidate()
+  }
+
+  const onDraggingChanged = (e: any) => {
+    orbitEnabled = !e.value
+    invalidate()
+  }
+
+  function destroyTc(): void {
+    if (tc) {
+      tc.removeEventListener('change', onDragChange)
+      tc.removeEventListener('dragging-changed', onDraggingChanged)
+      tc.detach()
+      scene.remove(tc.getHelper())
+      tc.dispose()
+      tc = null
+    }
+    if (tcGroup) {
+      scene.remove(tcGroup)
+      tcGroup = null
+    }
+    tcAnchorId = null
+    dragPos = null
+    orbitEnabled = true
+  }
+
+  // Trigger a canvas render whenever draggableAnchorId changes so useTask picks it up
+  $effect(() => {
+    draggableAnchorId
+    invalidate()
+  })
+
+  useTask(() => {
+    const wantedId = draggableAnchorId
+    if (!wantedId) {
+      if (tcAnchorId) destroyTc()
+      return
+    }
+    if (wantedId === tcAnchorId) return
+
+    destroyTc()
+    const cam = camera.current
+    if (!cam) return
+    const anchor = anchors.find(a => a.id === wantedId)
+    if (!anchor?.glb_position) return
+
+    tcGroup = new THREE.Group()
+    tcGroup.position.set(anchor.glb_position.x, anchor.glb_position.y, anchor.glb_position.z)
+    scene.add(tcGroup)
+
+    tc = new TransformControls(cam, renderer.domElement)
+    tc.attach(tcGroup)
+    tc.size = 0.75
+    scene.add(tc.getHelper())
+    tc.addEventListener('change', onDragChange)
+    tc.addEventListener('dragging-changed', onDraggingChanged)
+    tcAnchorId = wantedId
+    dragPos = anchor.glb_position
+    invalidate()
+  })
+
+  onDestroy(destroyTc)
 
   // Source group ref for applying transform in preview
   let sourceGroup: THREE.Group | undefined = $state()
@@ -111,14 +236,16 @@
 <T.DirectionalLight position={[5, 10, 5]} intensity={1} castShadow />
 
 <T.PerspectiveCamera makeDefault position={[0, 2, 5]} fov={60}>
-  <OrbitControls minDistance={0.5} screenSpacePanning={true} />
+  <OrbitControls enabled={orbitEnabled} zoomToCursor={true} screenSpacePanning={true} />
 </T.PerspectiveCamera>
 
-<T.Mesh position={[0, 0, 0]}>
-  <T.SphereGeometry args={[0.04, 12, 12]} />
-  <T.MeshStandardMaterial color={0xff0066} emissive={0xff0066} emissiveIntensity={0.8} />
-</T.Mesh>
-<T.AxesHelper args={[0.4]} />
+<T.Group bind:ref={originGroup}>
+  <T.Mesh position={[0, 0, 0]}>
+    <T.SphereGeometry args={[0.04, 12, 12]} />
+    <T.MeshStandardMaterial color={0xff0066} emissive={0xff0066} emissiveIntensity={0.8} />
+  </T.Mesh>
+  <T.AxesHelper args={[0.4]} />
+</T.Group>
 
 <!-- ── Normal viewing mode ── -->
 {#if stitchPhase === 'idle'}
@@ -145,10 +272,11 @@
 
   {#each anchors.filter(a => a.glb_position) as anchor (anchor.id)}
     {#if anchor.glb_position}
-    <T.Mesh position={[anchor.glb_position.x, anchor.glb_position.y, anchor.glb_position.z]} onclick={(e: IntersectionEvent<MouseEvent>) => handleAnchorClick(anchor.id)}>
-      <T.SphereGeometry args={[0.06, 16, 16]} />
-      <T.MeshStandardMaterial color={sphereColor(anchor)} emissiveIntensity={0.3} />
-    </T.Mesh>
+      {@const displayPos = (anchor.id === draggableAnchorId && dragPos) ? dragPos : anchor.glb_position}
+      <T.Mesh position={[displayPos.x, displayPos.y, displayPos.z]} onclick={(e: IntersectionEvent<MouseEvent>) => handleAnchorClick(anchor.id)}>
+        <T.SphereGeometry args={[0.06, 16, 16]} />
+        <T.MeshStandardMaterial color={sphereColor(anchor)} emissiveIntensity={0.3} />
+      </T.Mesh>
     {/if}
   {/each}
 

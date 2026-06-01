@@ -51,6 +51,85 @@ func get_anchors() -> Array[Anchor]:
 			print("get_anchors error: null response (check Supabase connection)")
 		return []
 
+
+# Returns anchor_id → raw asset row (with asset_models nested)
+func get_assets_for_anchors(anchor_ids: Array[String]) -> Dictionary:
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("assets")
+			.select(PackedStringArray(["*", "asset_models(name,manufacturer,manual_id)"]))
+			.In("anchor_id", PackedStringArray(anchor_ids))
+	).completed
+	if task.error != null or task.data == null:
+		if task.error != null: print("get_assets_for_anchors error: ", task.error.message)
+		return {}
+	var result := {}
+	for row in task.data:
+		result[row.get("anchor_id", "")] = row
+	return result
+
+
+# Returns manual_id → {title, url}
+func get_manuals_for_ids(manual_ids: Array[String]) -> Dictionary:
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("manuals").select(PackedStringArray(["id", "title", "url"]))
+			.In("id", PackedStringArray(manual_ids))
+	).completed
+	if task.error != null or task.data == null:
+		if task.error != null: print("get_manuals_for_ids error: ", task.error.message)
+		return {}
+	var result := {}
+	for row in task.data:
+		result[row.get("id", "")] = row
+	return result
+
+
+# Returns Set of asset_ids that have at least one log entry
+func get_logged_asset_ids(asset_ids: Array[String]) -> Dictionary:
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("log_assets").select(PackedStringArray(["asset_id"]))
+			.In("asset_id", PackedStringArray(asset_ids))
+	).completed
+	if task.error != null or task.data == null:
+		if task.error != null: print("get_logged_asset_ids error: ", task.error.message)
+		return {}
+	var result := {}
+	for row in task.data:
+		result[row.get("asset_id", "")] = true
+	return result
+
+
+# Returns asset_id → latest live data row
+func get_latest_live_data(asset_ids: Array[String]) -> Dictionary:
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("latest_asset_live_data").select()
+			.In("asset_id", PackedStringArray(asset_ids))
+	).completed
+	if task.error != null or task.data == null:
+		if task.error != null: print("get_latest_live_data error: ", task.error.message)
+		return {}
+	var result := {}
+	for row in task.data:
+		result[row.get("asset_id", "")] = row
+	return result
+
+
+func get_anchors_for_spaces(space_ids: Array[String]) -> Array[Anchor]:
+	var task = await Supabase.database.query(
+		SupabaseQuery.new().from("anchors").select().In("space_id", PackedStringArray(space_ids))
+	).completed
+
+	if task.error == null and task.data != null:
+		var result: Array[Anchor] = []
+		for row in task.data:
+			result.append(Anchor.from_dict(row))
+		return result
+	else:
+		if task.error != null:
+			print("get_anchors_for_spaces error: ", task.error.message)
+		else:
+			print("get_anchors_for_spaces error: null response")
+		return []
+
 func get_spaces() -> Array[Space]:
 	var task = await Supabase.database.query(
 		SupabaseQuery.new().from("spaces").select()
@@ -175,6 +254,35 @@ func update_anchor_glb_position(anchor_id: String, glb_position: Vector3) -> boo
 		print("Error updating glb_position: ", task.error.message)
 		return false
 
+## Uploads a reference photo for an anchor and records its path on the row.
+## Keyed by ml2_id so it works before the DB id has round-tripped back from insert.
+## Returns the remote storage path, or "" on failure.
+func upload_anchor_image(ml2_id: String, image: Image) -> String:
+	if image == null:
+		return ""
+
+	var tmp_path := "user://anchor_img_%s.jpg" % ml2_id
+	if image.save_jpg(tmp_path) != OK:
+		push_warning("SupabaseManager: failed to encode anchor image")
+		return ""
+
+	var remote_path := "anchors/%s.jpg" % ml2_id
+	var task = await Supabase.storage.from("anchor_img_bucket").upload(remote_path, tmp_path, false).completed
+	DirAccess.remove_absolute(tmp_path)
+
+	if task.error != null:
+		push_warning("SupabaseManager: anchor image upload failed - %s" % task.error.message)
+		return ""
+
+	var upd = await Supabase.database.query(
+		SupabaseQuery.new().from("anchors").update({"img_path": remote_path}).eq("ml2_id", ml2_id)
+	).completed
+	if upd.error != null:
+		push_warning("SupabaseManager: failed to set anchor img_path - %s" % upd.error.message)
+
+	print("SupabaseManager: anchor image uploaded for ml2_id ", ml2_id, " → ", remote_path)
+	return remote_path
+
 func update_user_glb_position(glb_position: Vector3) -> bool:
 	# temp dummy user id
 	var auth_user_id := '00000000-0000-0000-0000-000000000000'
@@ -248,24 +356,6 @@ func get_spaces_for_building(building_id: String) -> Array[Space]:
 	if task.error != null:
 		print("get_spaces_for_building error: ", task.error.message)
 	return []
-
-
-func get_routes() -> Array[Route]:
-	var task = await Supabase.database.query(
-		SupabaseQuery.new().from("routes").select()
-	).completed
-
-	if task.error == null and task.data != null:
-		var result: Array[Route] = []
-		for row in task.data:
-			result.append(Route.from_dict(row))
-		return result
-	else:
-		if task.error != null:
-			print("get_routes error: ", task.error.message)
-		else:
-			print("get_routes error: null response (check Supabase connection)")
-		return []
 
 
 func insert_note(note: StickyNote) -> StickyNote:

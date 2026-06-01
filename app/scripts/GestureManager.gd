@@ -54,7 +54,7 @@ var _last_record_msec: int = 0
 
 const _RECORD_INTERVAL_MSEC := 33  # ~30fps
 
-# Ray state — read by consumers each frame (keyed by "left"/"right")
+# Ray state - read by consumers each frame (keyed by "left"/"right")
 var ray_origins := {"left": Vector3.ZERO, "right": Vector3.ZERO}
 var ray_directions := {"left": Vector3.ZERO, "right": Vector3.ZERO}
 var ray_active := {"left": false, "right": false}

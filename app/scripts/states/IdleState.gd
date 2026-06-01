@@ -22,7 +22,7 @@ func _on_action(action: String, data: Dictionary) -> void:
 			# anchor editing "on_enter" will handle loading the space and anchors
 			_machine().transition_to(AppState.States.ANCHOR_EDITING, {"space": data.get("space")})
 
-		# "delete_space_local" disabled — PW_MAP is signature-protected
+		# "delete_space_local" disabled - PW_MAP is signature-protected
 
 		"open_space_manager":
 			PanelRouter.push("space_manager", {"space_manager": space_manager})

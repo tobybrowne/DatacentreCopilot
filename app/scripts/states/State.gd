@@ -41,7 +41,7 @@ func on_pinch_ended(_hand: String) -> void:
 # ── Context menu helpers (shared by nav-like states) ──────────────────────────
 #
 # Right-pinch-hold opens a radial context menu, pinch-end selects the hovered
-# item. Helpers are opt-in — states call them from their own pinch handlers.
+# item. Helpers are opt-in - states call them from their own pinch handlers.
 
 const _CONTEXT_HOLD_TIME := 2.0
 const _CONTEXT_COLOR     := Color(0.2, 0.8, 1.0)

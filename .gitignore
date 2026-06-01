@@ -55,3 +55,12 @@ export_presets.cfg
 
 # just some tester code
 recastnavigation-1.6.0/
+
+# test dirs
+experiment_viz/
+testing/
+services/mono_service/reports/
+kabsch_sweep/
+dbdoc/
+scan-fixes/
+docs/

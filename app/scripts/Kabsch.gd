@@ -80,6 +80,7 @@ static func compute_yaw_locked(src: Array[Vector3], dst: Array[Vector3]) -> Tran
 	return Transform3D(basis, origin)
 
 
+
 static func _horn_quaternion(H: Array) -> Quaternion:
 	var Sxx: float = H[0].x; var Sxy: float = H[0].y; var Sxz: float = H[0].z
 	var Syx: float = H[1].x; var Syy: float = H[1].y; var Syz: float = H[1].z
@@ -103,7 +104,7 @@ static func _horn_quaternion(H: Array) -> Quaternion:
 		0.0, 0.0, 0.0, 1.0,
 	]
 
-	# Jacobi sweeps — robust for any rotation, including near-180°.
+	# Jacobi sweeps - robust for any rotation, including near-180°.
 	for _sweep in 50:
 		# Find the off-diagonal element with the largest absolute value.
 		var max_val := 0.0

@@ -95,7 +95,7 @@ func _ready() -> void:
 func _connect_when_ready() -> void:
 	var authed: bool = await AuthManager.wait_for_auth()
 	if not authed:
-		push_warning("CopilotManager: skipping connection — not authenticated")
+		push_warning("CopilotManager: skipping connection - not authenticated")
 		return
 	var url := service_url
 	if SupabaseManager.auth_user:
@@ -155,7 +155,7 @@ func _on_ws_connected() -> void:
 	print("CopilotManager: connected")
 	connected.emit()
 	_send_session_update()
-	_mic_player.play()  # Always claimed — pre-roll buffer runs continuously
+	_mic_player.play()  # Always claimed - pre-roll buffer runs continuously
 
 
 func _send_session_update() -> void:
@@ -348,7 +348,7 @@ func _on_wake_word() -> void:
 	_mic_buffer = _preroll_buffer  # include audio captured right after "copilot"
 	_preroll_buffer = PackedByteArray()
 	if _listen_dot: _listen_dot.visible = true
-	print("CopilotManager: wake word — listening")
+	print("CopilotManager: wake word - listening")
 
 
 func inject_context(text: String) -> void:

@@ -9,16 +9,16 @@ extends Node3D
 @export var lod: int = 0  # 0 = minimum, 1 = medium, 2 = maximum
 # true = depth-only occluder (production); false = visible blue mesh (debug)
 @export var depth_occlude := true
-# When false, collision shapes are never rebuilt — saves significant CPU when only occlusion is needed.
+# When false, collision shapes are never rebuilt - saves significant CPU when only occlusion is needed.
 # Enable only when raycasting against the world mesh (e.g. panel placement).
 @export var collision_enabled: bool = true
 # How many mesh block updates to skip between collision shape rebuilds (only used when collision_enabled).
 @export var collision_update_stride: int = 10
-# Minimum area (m²) of disconnected mesh fragments to keep — raise to cull noisy floating geometry.
+# Minimum area (m²) of disconnected mesh fragments to keep - raise to cull noisy floating geometry.
 @export var disconnected_component_area: float = 0.5
-# Maximum hole perimeter (m) to fill — larger values close more gaps in the mesh surface.
+# Maximum hole perimeter (m) to fill - larger values close more gaps in the mesh surface.
 @export var fill_hole_length: float = 1.0
-# Minimum time between mesh query cycles in milliseconds — reduces ML2 meshing load.
+# Minimum time between mesh query cycles in milliseconds - reduces ML2 meshing load.
 @export var min_query_interval_ms: int = 500
 @export var mesh_material: Material
 @export var enabled: bool = true:
@@ -46,6 +46,9 @@ func _ready() -> void:
 
 
 func _initialize() -> void:
+	if not enabled:
+		return
+
 	if not Engine.has_singleton("OpenXRMlWorldMeshDetectionExtension"):
 		push_warning("WorldMeshManager: singleton not registered")
 		return
@@ -62,7 +65,7 @@ func _initialize() -> void:
 		return
 
 	# FLAG_PLANARIZE (8)
-	# COMPUTE_NORMALS and REMOVE_MESH_SKIRT omitted — skirt kept to cover block seams for occlusion
+	# COMPUTE_NORMALS and REMOVE_MESH_SKIRT omitted - skirt kept to cover block seams for occlusion
 	_mesh_flags = 8
 	_ext.set_disconnected_component_area(disconnected_component_area)
 	_ext.set_fill_hole_length(fill_hole_length)
@@ -127,7 +130,7 @@ func _on_block_deleted(block_id: String) -> void:
 func _on_meshing_error(err: String) -> void:
 	if _restarting:
 		return
-	push_warning("WorldMeshManager: %s — restarting" % err)
+	push_warning("WorldMeshManager: %s - restarting" % err)
 	_restarting = true
 	if _ext.is_running():
 		_ext.stop()
@@ -136,7 +139,7 @@ func _on_meshing_error(err: String) -> void:
 	if _ext.is_available():
 		_ext.start(bounding_extents, lod, _mesh_flags)
 	else:
-		push_warning("WorldMeshManager: ext not available after error — not restarting")
+		push_warning("WorldMeshManager: ext not available after error - not restarting")
 	_restarting = false
 
 

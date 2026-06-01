@@ -1,7 +1,7 @@
 class_name VideoPlayerPanel
 extends BasePanel
 
-# _PIN_STRIP_PX in ViewportPanel3D is 80 — controls must sit above that zone.
+# _PIN_STRIP_PX in ViewportPanel3D is 80 - controls must sit above that zone.
 const PIN_STRIP_PX := 80.0
 const CONTROLS_HEIGHT := 112.0
 

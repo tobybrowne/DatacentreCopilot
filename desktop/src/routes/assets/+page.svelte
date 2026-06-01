@@ -240,9 +240,9 @@
                 <span class="asset-status" class:placed={!!asset.anchor?.glb_position} title={asset.anchor?.glb_position ? 'Placed on map' : 'Not placed'}>●</span>
                 <div class="asset-info">
                   <span class="asset-name">{asset.name ?? 'Unnamed'}</span>
-                  <span class="asset-type">{ASSET_TYPE_LABELS[asset.asset_type ?? ''] ?? asset.asset_type ?? '—'}</span>
+                  <span class="asset-type">{ASSET_TYPE_LABELS[asset.asset_type ?? ''] ?? asset.asset_type ?? '-'}</span>
                   {#if asset.anchor?.space_id}
-                    <span class="asset-space">{selectedBuilding?.spaces.find(s => s.id === asset.anchor!.space_id)?.name ?? '—'}</span>
+                    <span class="asset-space">{selectedBuilding?.spaces.find(s => s.id === asset.anchor!.space_id)?.name ?? '-'}</span>
                   {/if}
                 </div>
               </div>

@@ -46,12 +46,13 @@ Main (Node3D)
 
 Magic Leap 2 runs OpenXR with a **LOCAL reference space**. The LOCAL space places its origin at the device's position/orientation at session start. This means:
 
-- `XROrigin3D` maps to the LOCAL space origin — wherever your head was when the app launched.
+- `XROrigin3D` maps to the LOCAL space origin - wherever your head was when the app launched.
 - All Godot world coordinates are relative to that starting position.
 - A `MeshInstance3D` placed at `(0, 0, -5)` in the scene always appears 5 m in front of your starting head position, **not** at a fixed physical location in the room.
 
 Spatial anchors bypass this entirely. When you create an anchor, ML2's OpenXR runtime:
-1. Records the anchor's position in its internal **spatial map** — a persistent, device-wide coordinate system tied to the physical environment (like ARKit/ARCore world anchors).
+
+1. Records the anchor's position in its internal **spatial map** - a persistent, device-wide coordinate system tied to the physical environment (like ARKit/ARCore world anchors).
 2. Assigns it a UUID.
 3. On subsequent sessions, when you call `load_anchor(uuid)`, the runtime relocates the anchor in the spatial map and reports its pose relative to the current LOCAL space origin each frame.
 
@@ -92,7 +93,7 @@ The C++ node stores a pointer to its `XROrigin3D` parent on `NOTIFICATION_ENTER_
 
 ### Anchor persistence
 
-UUIDs are stored in `user://spatial_anchors.json` on the device. ML2's spatial map persists anchor data between sessions at the system level — the UUID is the key into that system store. If you uninstall the app the JSON file is deleted, but the anchor data in the ML2 spatial map may remain (it can be cleared from the ML2 system settings).
+UUIDs are stored in `user://spatial_anchors.json` on the device. ML2's spatial map persists anchor data between sessions at the system level - the UUID is the key into that system store. If you uninstall the app the JSON file is deleted, but the anchor data in the ML2 spatial map may remain (it can be cleared from the ML2 system settings).
 
 ---
 
@@ -102,7 +103,7 @@ To attach content to a specific physical location:
 
 1. Place a spatial anchor there (right-hand pinch, hold 1 second).
 2. The `openxr_ml_spatial_anchor_tracked` signal fires with the `XRAnchor3D` node.
-3. Add your content as a child of that `XRAnchor3D` node — it will track the physical location each session.
+3. Add your content as a child of that `XRAnchor3D` node - it will track the physical location each session.
 
 **Do not** place world-locked content as a static scene node with a fixed `Transform3D`. That transform is relative to the LOCAL space origin (head position at startup) and will drift between sessions.
 
@@ -117,27 +118,31 @@ To attach content to a specific physical location:
 
 `launch.sh` runs a Gradle one-click deploy via ADB, force-stops the previous instance, starts the app in OpenXR immersive mode, and streams `logcat -s godot`.
 
-The Godot project uses a custom-built `godotopenxrvendors` plugin (see `app/addons/godotopenxrvendors/`). The AAR files there must be rebuilt after any C++ changes to the plugin — see the plugin repo README.
+The Godot project uses a custom-built `godotopenxrvendors` plugin (see `app/addons/godotopenxrvendors/`). The AAR files there must be rebuilt after any C++ changes to the plugin - see the plugin repo README.
 
 ---
 
 ## What was changed (commit guide)
 
 ### `launch.sh`
+
 Added `$ADB logcat -s godot` so Godot output is visible in the terminal during development.
 
 ### `app/SupabaseManager.gd`
+
 Added a null guard before iterating `task.data`. When the Supabase host is unreachable, the HTTP response can fail JSON parsing and leave `task.data = null` without setting `task.error`, which previously crashed.
 
 ### `app/android/build/src/main/AndroidManifest.xml`
+
 Added `com.magicleap.permission.SPATIAL_ANCHOR` permission. Without this the ML2 runtime denies all anchor API calls at runtime even if the extension is loaded.
 
 ### `app/anchor_manager.gd`
+
 Two timing fixes were needed to get `OpenXRMlSpatialAnchorManager` properly into the scene tree before being used:
 
-1. **`add_child.call_deferred`** — `_ready()` is called while the parent node is still setting up its children. Calling `add_child` synchronously during `_ready` fails ("parent node busy"). Deferring it to the next frame resolves this.
+1. **`add_child.call_deferred`** - `_ready()` is called while the parent node is still setting up its children. Calling `add_child` synchronously during `_ready` fails ("parent node busy"). Deferring it to the next frame resolves this.
 
-2. **`tree_entered` gate** — The OpenXR `session_begun` signal (and the `xr.is_initialized()` fast-path) must not be connected until after `_ml_mgr` is confirmed to be in the scene tree. The signal can fire in the same frame as `_ready`, before the deferred `add_child` runs, causing `load_anchor` to fail because `xr_origin` is still null inside the C++ node. Gating all XR session setup on `_ml_mgr.tree_entered` fixes this completely.
+2. **`tree_entered` gate** - The OpenXR `session_begun` signal (and the `xr.is_initialized()` fast-path) must not be connected until after `_ml_mgr` is confirmed to be in the scene tree. The signal can fire in the same frame as `_ready`, before the deferred `add_child` runs, causing `load_anchor` to fail because `xr_origin` is still null inside the C++ node. Gating all XR session setup on `_ml_mgr.tree_entered` fixes this completely.
 
 ### Files to commit (entangl-copilot repo)
 
@@ -150,7 +155,7 @@ app/addons/godotopenxrvendors/.bin/android/debug/godotopenxr-magicleap-debug.aar
 app/addons/godotopenxrvendors/.bin/android/release/godotopenxr-magicleap-release.aar
 ```
 
-The AAR files contain the rebuilt plugin with ML2 spatial anchor support (x86_64 + arm64) and the `register_types.cpp` bug fix (see plugin repo). They are binary build artefacts — if you prefer not to commit them, document the rebuild steps instead and `.gitignore` them.
+The AAR files contain the rebuilt plugin with ML2 spatial anchor support (x86_64 + arm64) and the `register_types.cpp` bug fix (see plugin repo). They are binary build artefacts - if you prefer not to commit them, document the rebuild steps instead and `.gitignore` them.
 
 ---
 

@@ -3,7 +3,7 @@ class_name StickyNote
 var id: String = ""
 var text: String = ""
 var anchor_id: String = ""
-var glb_position: Vector3  # runtime only — populated from anchor on load, not stored in notes table
+var glb_position: Vector3  # runtime only - populated from anchor on load, not stored in notes table
 
 
 static func from_dict(data: Dictionary) -> StickyNote:

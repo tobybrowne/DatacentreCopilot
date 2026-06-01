@@ -2,10 +2,10 @@ class_name ContentAnchorMarker
 extends Node3D
 
 var anchor: Anchor       # set before add_child
-var other_space := false # set before add_child — true for anchors in a different space
+var other_space := false # set before add_child - true for anchors in a different space
 
-const COLOR_SAME  := Color(1.0, 0.55, 0.0)   # orange — current space
-const COLOR_OTHER := Color(0.5, 0.3,  1.0)   # purple — other space
+const COLOR_SAME  := Color(1.0, 0.55, 0.0)   # orange - current space
+const COLOR_OTHER := Color(0.5, 0.3,  1.0)   # purple - other space
 
 
 func _ready() -> void:

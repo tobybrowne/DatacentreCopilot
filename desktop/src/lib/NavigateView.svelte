@@ -13,7 +13,7 @@
   import Checkbox from './Checkbox.svelte'
   import Button from './Button.svelte'
   import type { BoundingBox, Position, RigidTransform, RoomSegment } from './types'
-  import { saveNavMesh, saveLocBoundingBox, supabase } from './supabase'
+  import { saveNavMesh, saveLocBoundingBox, saveTightBoundingBox, supabase } from './supabase'
   import { buildNavMeshFromSpaces, loadNavMeshFromBuffer, computePath, pruneToLargestComponent, makeNavMeshResult, type NavMeshParams } from './navmesh'
   import { toast } from './toast'
   import { session } from './auth'
@@ -25,9 +25,9 @@
     buildingId?: string | null;
     navmeshId?: string | null;
     buildingName: string;
-    spaces: Array<{ id: string; url: string; transform: RigidTransform | null }>;
+    spaces: Array<{ id: string; url: string; transform: RigidTransform | null; tightBoundingBox?: BoundingBox | null }>;
     existingNavMesh?: { url: string; buildSettings: Record<string, unknown> } | null;
-    existingFloorplanNavMesh?: { url: string } | null;
+    existingFloorplanNavMesh?: { url: string; buildSettings: Record<string, unknown> } | null;
     floorplanId?: string | null;
     onback?: () => void;
   }
@@ -66,12 +66,20 @@
   let showScan = $state(true)
   let showBoundingBoxes = $state(false)
   let shadedBoxes = $state(false)
+  let shadedBoxesCaps = $state(false)
   let collapsedBoxesBySpace: (BoundingBox | null)[] = $state([])
   let collapsedBoxes = $derived(collapsedBoxesBySpace.filter((b): b is BoundingBox => b !== null))
   let showCollapsedBoxes = $state(false)
   let tightBoxesBySpace: (BoundingBox | null)[] = $state([])
   let showTightBoxes = $state(false)
   let tightBoxes = $derived(tightBoxesBySpace.filter((b): b is BoundingBox => b !== null))
+
+  function glbYToWorld(y: number, transform: RigidTransform | null): number {
+    if (!transform) return y
+    const { position: p, quaternion: q } = transform
+    const Ryy = 1 - 2 * (q.x * q.x + q.z * q.z)
+    return Ryy * y + p.y
+  }
 
   function worldBB(bb: BoundingBox, transform: RigidTransform | null): [number, number][] {
     if (!transform) return bb.vertices_2d
@@ -131,7 +139,7 @@
     return buckets
   }
 
-  function computeTightBoxes(): void {
+  async function computeTightBoxes(): Promise<void> {
     const buckets = assignRoomsToBuckets()
     const closeRing = (v: [number, number][]): [number, number][] => [...v, v[0]]
     const polyArea = (v: [number, number][]) => Math.abs(
@@ -146,7 +154,11 @@
       const hull = concaveman(allVerts, concavity)
       hull.pop() // concaveman closes the ring; drop the repeated first point
       if (hull.length < 3) return null
-      return { vertices_2d: hull as [number, number][], y_min: bbOrig.y_min, y_max: bbOrig.y_max }
+      return {
+        vertices_2d: hull as [number, number][],
+        y_min: glbYToWorld(bbOrig.y_min, space.transform),
+        y_max: glbYToWorld(bbOrig.y_max, space.transform),
+      }
     })
 
     const order = hulls
@@ -184,6 +196,10 @@
 
     tightBoxesBySpace = result
     showTightBoxes = true
+
+    await Promise.all(spaces.map((space, i) =>
+      saveTightBoundingBox(space.id, result[i])
+    ))
   }
 
   async function computeCollapsedBoxes(): Promise<void> {
@@ -243,7 +259,7 @@
         try {
           const overlapZone = polygonClipping.intersection([[closeRing(bigPoly)]], [[closeRing(bigPolyJ)]])
           if (overlapZone.length > 0) {
-            // Subtract tight box j from space i's area — use intersection test rather than
+            // Subtract tight box j from space i's area - use intersection test rather than
             // vertex-in-polygon which fails when tbJ straddles the boundary
             if (tbJ && tbJ.vertices_2d.length >= 3) {
               const tbJOverlap = polygonClipping.intersection([[closeRing(tbJ.vertices_2d)]], [[closeRing(bigPoly)]])
@@ -270,9 +286,12 @@
         }
       }
 
+      const yMin = glbYToWorld(bbOrig.y_min, spaces[i].transform)
+      const yMax = glbYToWorld(bbOrig.y_max, spaces[i].transform)
+
       let fragments: BoundingBox[]
       if (clips.length === 0) {
-        fragments = [{ vertices_2d: bigPoly, y_min: bbOrig.y_min, y_max: bbOrig.y_max }]
+        fragments = [{ vertices_2d: bigPoly, y_min: yMin, y_max: yMax }]
       } else {
         let result: MultiPolygon
         try {
@@ -283,7 +302,7 @@
         fragments = result.flatMap(poly => {
           const verts = poly[0].slice(0, -1) as [number, number][]
           if (verts.length < 3) return []
-          return [{ vertices_2d: verts, y_min: bbOrig.y_min, y_max: bbOrig.y_max }]
+          return [{ vertices_2d: verts, y_min: yMin, y_max: yMax }]
         })
       }
 
@@ -335,7 +354,8 @@
       if (!res.ok) throw new Error(`Room segmentation failed: ${res.status}`)
       rooms = await res.json()
       console.log(rooms.length, 'rooms fetched')
-      computeTightBoxes()
+      await computeTightBoxes()
+      await computeCollapsedBoxes()
     } catch (e) {
       toast((e as Error).message)
     } finally {
@@ -360,11 +380,29 @@
     detailSampleMaxError: 1,
   })
 
+  let fpParams: NavMeshParams = $state({
+    boundsYMax: 3,
+    cs: 0.1,
+    ch: 0.1,
+    walkableSlopeAngle: 35,
+    walkableHeight: 2.0,
+    walkableClimb: 1.0,
+    walkableRadius: 0,
+    maxEdgeLen: 4.0,
+    maxSimplificationError: 1.3,
+    minRegionArea: 0.08,
+    mergeRegionArea: 0.2,
+    maxVertsPerPoly: 6,
+    detailSampleDist: 6,
+    detailSampleMaxError: 1,
+  })
+  let showFloorplanParams = $state(false)
+
   let prunedNavMeshMesh = $derived(navMeshDebugMesh ? pruneToLargestComponent(navMeshDebugMesh) : null)
   let activeNavMeshMesh = $derived(showPruned ? prunedNavMeshMesh : navMeshDebugMesh)
   let pickingEnabled = $derived(phase === 'pickStart' || phase === 'pickEnd')
 
-  // Returns the centroid of the lowest-Y vertices in the debug mesh — reliably on
+  // Returns the centroid of the lowest-Y vertices in the debug mesh - reliably on
   // the floor rather than a table top or ceiling fragment.
   function floorSeedPoint(mesh: THREE.Mesh): { x: number; y: number; z: number } {
     const pos = mesh.geometry.attributes.position
@@ -394,13 +432,12 @@
         exporter.parse(navMeshDebugMesh!, resolve as (r: ArrayBuffer | object) => void, reject, { binary: true })
       )
 
-      const fpParams = { ...params, walkableClimb: 1.0, walkableRadius: 0 }
-      const fpResult = applyFloorPrune(await buildNavMeshFromSpaces(spaces, fpParams))
+      const fpResult = await buildNavMeshFromSpaces(spaces, fpParams)
       const fpData = exportNavMesh(fpResult.navMesh)
       const fpGlbData = await new Promise<ArrayBuffer>((resolve, reject) =>
         new GLTFExporter().parse(fpResult.debugMesh, resolve as (r: ArrayBuffer | object) => void, reject, { binary: true })
       )
-      ;(fpResult.debugMesh.material as THREE.MeshStandardMaterial).color.set('#ff8c00')
+      ;(fpResult.debugMesh.material as THREE.MeshStandardMaterial).color.set('#7b2fbe')
       floorplanDebugMesh = fpResult.debugMesh
       fpResult.navMesh.destroy()
       fpResult.navQuery.destroy()
@@ -410,7 +447,7 @@
         data,
         glbData as ArrayBuffer,
         { ...params } as unknown as Record<string, unknown>,
-        { data: fpData, glbData: fpGlbData as ArrayBuffer, buildSettings: fpParams as unknown as Record<string, unknown> }
+        { data: fpData, glbData: fpGlbData as ArrayBuffer, buildSettings: { ...fpParams } as unknown as Record<string, unknown> }
       )
       saveState = 'saved'
       navMeshDirty = false
@@ -475,10 +512,17 @@
         if (fpRes.ok) {
           const fpBuf = await fpRes.arrayBuffer()
           const fpResult = applyFloorPrune(await loadNavMeshFromBuffer(new Uint8Array(fpBuf)))
-          ;(fpResult.debugMesh.material as THREE.MeshStandardMaterial).color.set('#ff8c00')
+          ;(fpResult.debugMesh.material as THREE.MeshStandardMaterial).color.set('#7b2fbe')
           floorplanDebugMesh = fpResult.debugMesh
           fpResult.navMesh.destroy()
           fpResult.navQuery.destroy()
+
+          const fpBs = existingFloorplanNavMesh.buildSettings
+          if (fpBs) {
+            for (const key of Object.keys(fpParams) as (keyof typeof fpParams)[]) {
+              if (key in fpBs && typeof fpBs[key] === 'number') (fpParams as Record<string, number>)[key] = fpBs[key] as number
+            }
+          }
         }
       }
 
@@ -490,6 +534,9 @@
   }
 
   onMount(async () => {
+    tightBoxesBySpace = spaces.map(s => (s as any).tightBoundingBox ?? null)
+    if (tightBoxesBySpace.some(b => b !== null)) showTightBoxes = true
+
     if (existingNavMesh) {
       await loadExistingNavMesh()
     } else {
@@ -532,12 +579,15 @@
 
 <Sidebar title={buildingName} {onback}>
 
-  <!-- Visualisation toggles — always visible -->
+  <!-- Visualisation toggles - always visible -->
   <section>
     <Checkbox bind:checked={showScan} label="Show scan" />
     <Checkbox bind:checked={showBoundingBoxes} label="Show bounding boxes" />
     {#if showBoundingBoxes || tightBoxes.length > 0 || collapsedBoxes.length > 0}
       <Checkbox bind:checked={shadedBoxes} label="Shade bounding boxes" />
+      {#if shadedBoxes}
+        <Checkbox bind:checked={shadedBoxesCaps} label="Shade caps" />
+      {/if}
     {/if}
     <Checkbox bind:checked={showNavMesh} label="Show walkable area" />
     {#if floorplanDebugMesh}
@@ -553,6 +603,7 @@
     {#if collapsedBoxes.length > 0}
       <Checkbox bind:checked={showCollapsedBoxes} label={`Show collapsed boxes (${collapsedBoxes.length})`} />
     {/if}
+    <Checkbox bind:checked={whiteBackground} label="White background" />
   </section>
 
   <!-- Route -->
@@ -608,11 +659,6 @@
         >
           {roomsState === 'computing' ? 'Computing…' : rooms.length > 0 ? 'Recompute rooms' : 'Compute rooms'}
         </Button>
-        {#if tightBoxes.length > 0}
-          <Button style="width:100%" onclick={computeCollapsedBoxes}>
-            {collapsedBoxes.length > 0 ? 'Recompute collapsed boxes' : 'Compute collapsed boxes'}
-          </Button>
-        {/if}
       </section>
     {/if}
   {/if}
@@ -686,6 +732,75 @@
     </section>
   {/if}
 
+  <!-- Floorplan Params -->
+  <section class="collapsible-header" onclick={() => showFloorplanParams = !showFloorplanParams}>
+    <label class="section-label" style="cursor:pointer;flex:1">Floorplan Params</label>
+    <span class="chevron" class:open={showFloorplanParams}>›</span>
+  </section>
+  {#if showFloorplanParams}
+    <section class="collapsible-body">
+      <div class="param-row">
+        <label>Bounds Y max<span class="param-hint">m above floor</span></label>
+        <input type="number" step="0.5" min="0.5" bind:value={fpParams.boundsYMax} />
+      </div>
+      <div class="param-row">
+        <label>Cell size (cs)<span class="param-hint">voxel XZ res</span></label>
+        <input type="number" step="0.01" min="0.01" bind:value={fpParams.cs} />
+      </div>
+      <div class="param-row">
+        <label>Cell height (ch)<span class="param-hint">voxel Y res</span></label>
+        <input type="number" step="0.01" min="0.01" bind:value={fpParams.ch} />
+      </div>
+      <div class="param-row">
+        <label>Walkable slope<span class="param-hint">degrees</span></label>
+        <input type="number" step="1" min="0" max="90" bind:value={fpParams.walkableSlopeAngle} />
+      </div>
+      <div class="param-row">
+        <label>Walkable height<span class="param-hint">m</span></label>
+        <input type="number" step="0.1" min="0.1" bind:value={fpParams.walkableHeight} />
+      </div>
+      <div class="param-row">
+        <label>Walkable climb<span class="param-hint">m</span></label>
+        <input type="number" step="0.05" min="0" bind:value={fpParams.walkableClimb} />
+      </div>
+      <div class="param-row">
+        <label>Walkable radius<span class="param-hint">m</span></label>
+        <input type="number" step="0.05" min="0" bind:value={fpParams.walkableRadius} />
+      </div>
+      <div class="param-row">
+        <label>Max edge len<span class="param-hint">m</span></label>
+        <input type="number" step="0.5" min="0" bind:value={fpParams.maxEdgeLen} />
+      </div>
+      <div class="param-row">
+        <label>Max simplification err<span class="param-hint">m</span></label>
+        <input type="number" step="0.1" min="0" bind:value={fpParams.maxSimplificationError} />
+      </div>
+      <div class="param-row">
+        <label>Min region area<span class="param-hint">m²</span></label>
+        <input type="number" step="0.01" min="0" bind:value={fpParams.minRegionArea} />
+      </div>
+      <div class="param-row">
+        <label>Merge region area<span class="param-hint">m²</span></label>
+        <input type="number" step="0.01" min="0" bind:value={fpParams.mergeRegionArea} />
+      </div>
+      <div class="param-row">
+        <label>Max verts/poly<span class="param-hint">3–6</span></label>
+        <input type="number" step="1" min="3" max="6" bind:value={fpParams.maxVertsPerPoly} />
+      </div>
+      <div class="param-row">
+        <label>Detail sample dist<span class="param-hint">world units</span></label>
+        <input type="number" step="1" min="0" bind:value={fpParams.detailSampleDist} />
+      </div>
+      <div class="param-row">
+        <label>Detail sample max err<span class="param-hint">world units</span></label>
+        <input type="number" step="0.1" min="0" bind:value={fpParams.detailSampleMaxError} />
+      </div>
+      <Button variant="primary" style="width:100%" onclick={handleSaveNavMesh} disabled={saveState === 'saving' || !navMesh}>
+        {saveState === 'saving' ? 'Saving…' : 'Rebuild floorplan'}
+      </Button>
+    </section>
+  {/if}
+
 </Sidebar>
 
 <div class="canvas-wrap">
@@ -700,6 +815,7 @@
       {pickingEnabled}
       {whiteBackground}
       {shadedBoxes}
+      {shadedBoxesCaps}
       {exportTrigger}
       exportScale={2}
       onexportblob={handleExportBlob}

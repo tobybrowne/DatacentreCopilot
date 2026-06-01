@@ -1,3 +1,4 @@
+import hashlib
 import os
 import tempfile
 import time
@@ -44,7 +45,7 @@ class StitchRequest(BaseModel):
     initial_transform: RigidTransform  # aligns space_b onto space_a
 
 
-def _to_matrix(rt: RigidTransform) -> np.ndarray:
+def to_matrix(rt: RigidTransform) -> np.ndarray:
     q = rt.quaternion
     R = Rotation.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
     T = np.eye(4)
@@ -53,7 +54,7 @@ def _to_matrix(rt: RigidTransform) -> np.ndarray:
     return T
 
 
-def _from_matrix(T: np.ndarray) -> dict:
+def from_matrix(T: np.ndarray) -> dict:
     q = Rotation.from_matrix(T[:3, :3]).as_quat()
     return {
         'position': {'x': float(T[0, 3]), 'y': float(T[1, 3]), 'z': float(T[2, 3])},
@@ -61,7 +62,37 @@ def _from_matrix(T: np.ndarray) -> dict:
     }
 
 
-def _glb_bytes_to_pcd(data: bytes, label: str) -> tuple[o3d.geometry.PointCloud, dict]:
+def run_icp(
+    pcd_b: o3d.geometry.PointCloud,
+    pcd_a: o3d.geometry.PointCloud,
+    T_b_local_init: np.ndarray,
+    max_corr: float = 0.1,
+    coarse_max_corr: float | None = 0.3,
+    max_iter: int = 200,
+) -> o3d.pipelines.registration.RegistrationResult:
+    """Coarse-to-fine ICP. Coarse pass widens the convergence basin (catches
+    larger initial misalignments); fine pass tightens for precision. Pass
+    coarse_max_corr=None for a single-pass refinement.
+    Returned RegistrationResult carries the fine-pass fitness/RMSE.
+    """
+    estimation = (
+        o3d.pipelines.registration.TransformationEstimationPointToPlane()
+        if USE_POINT_TO_PLANE else
+        o3d.pipelines.registration.TransformationEstimationPointToPoint()
+    )
+    criteria = o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=max_iter)
+    T = T_b_local_init
+    if coarse_max_corr is not None and coarse_max_corr > max_corr:
+        coarse = o3d.pipelines.registration.registration_icp(
+            pcd_b, pcd_a, coarse_max_corr, T, estimation, criteria,
+        )
+        T = coarse.transformation
+    return o3d.pipelines.registration.registration_icp(
+        pcd_b, pcd_a, max_corr, T, estimation, criteria,
+    )
+
+
+def glb_bytes_to_pcd(data: bytes, label: str) -> tuple[o3d.geometry.PointCloud, dict]:
     with tempfile.NamedTemporaryFile(suffix='.glb', delete=False) as f:
         f.write(data)
         tmp = f.name
@@ -74,6 +105,11 @@ def _glb_bytes_to_pcd(data: bytes, label: str) -> tuple[o3d.geometry.PointCloud,
 
         t0 = time.perf_counter()
         n_sample = max(10_000, min(int(mesh.area * SAMPLES_PER_M2), 500_000))
+        # Seed from GLB bytes so each mesh samples deterministically but
+        # different meshes get independent samples. Keeps pairwise ICP runs
+        # reproducible across invocations.
+        seed = int(hashlib.md5(data).hexdigest()[:8], 16)
+        np.random.seed(seed)
         samples, _ = trimesh.sample.sample_surface(mesh, n_sample)
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(samples)
@@ -125,8 +161,8 @@ async def refine(req: StitchRequest, _: None = Depends(require_auth)) -> dict:
     print(f'[stitch] download: {time.perf_counter() - t0:.2f}s')
 
     with ThreadPoolExecutor(max_workers=2) as ex:
-        fut_a = ex.submit(_glb_bytes_to_pcd, glb_a, 'pcd_a')
-        fut_b = ex.submit(_glb_bytes_to_pcd, glb_b, 'pcd_b')
+        fut_a = ex.submit(glb_bytes_to_pcd, glb_a, 'pcd_a')
+        fut_b = ex.submit(glb_bytes_to_pcd, glb_b, 'pcd_b')
         pcd_a, times_a = fut_a.result()
         pcd_b, times_b = fut_b.result()
 
@@ -135,7 +171,7 @@ async def refine(req: StitchRequest, _: None = Depends(require_auth)) -> dict:
     # has no offset_transformation, so we use identity for it.
     a_offset = space_a.get('offset_transformation')
     T_a_world = (
-        _to_matrix(RigidTransform.model_validate(a_offset))
+        to_matrix(RigidTransform.model_validate(a_offset))
         if a_offset
         else np.eye(4)
     )
@@ -145,23 +181,11 @@ async def refine(req: StitchRequest, _: None = Depends(require_auth)) -> dict:
     # clouds in their own local frames, so we have to express the initial
     # guess in space_a's local frame:
     #   T_b_local = T_a_world^-1 @ T_b_world
-    T_b_world_init = _to_matrix(req.initial_transform)
+    T_b_world_init = to_matrix(req.initial_transform)
     T_b_local = np.linalg.inv(T_a_world) @ T_b_world_init
 
-    estimation = (
-        o3d.pipelines.registration.TransformationEstimationPointToPlane()
-        if USE_POINT_TO_PLANE else
-        o3d.pipelines.registration.TransformationEstimationPointToPoint()
-    )
-
     t_icp = time.perf_counter()
-    result = o3d.pipelines.registration.registration_icp(
-        pcd_b, pcd_a,
-        0.1,
-        T_b_local,
-        estimation,
-        o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=200),
-    )
+    result = run_icp(pcd_b, pcd_a, T_b_local)
     t_icp_elapsed = time.perf_counter() - t_icp
 
     print(f'[stitch] --- summary ---')
@@ -181,7 +205,7 @@ async def refine(req: StitchRequest, _: None = Depends(require_auth)) -> dict:
     print(f'[stitch] moved: {delta:.3f}m')
 
     return {
-        'transform': _from_matrix(T_b_world),
+        'transform': from_matrix(T_b_world),
         'fitness': float(result.fitness),
         'inlier_rmse': float(result.inlier_rmse),
     }

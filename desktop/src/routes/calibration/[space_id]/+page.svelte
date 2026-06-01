@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation'
   import { page } from '$app/stores'
   import { onMount } from 'svelte'
-  import { fetchAnchors, fetchSpaceById, deleteAnchor, unmapAnchor, setGlbPosition, getSpaceGlbUrl, computeBoundingBox } from '$lib/supabase'
+  import { fetchAnchors, fetchSpaceById, deleteAnchor, unmapAnchor, setGlbPosition, getSpaceGlbUrl, getAnchorImageUrl, computeBoundingBox } from '$lib/supabase'
   import Scene from '$lib/Scene.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
   import Button from '$lib/Button.svelte'
@@ -14,22 +14,41 @@
 
   let glbUrl: string | null = $state(null)
   let glbPath: string | null = $state(null)
+  let spaceName = $state('')
   let boundingBox: BoundingBox | null = $state(null)
   let showBoundingBoxes = $state(false)
   let showDensity = $state(false)
   let anchors: Anchor[] = $state([])
   let selectedId: string | null = $state(null)
   let mappingAnchor: Anchor | null = $state(null)
+  let mappingImgUrl: string | null = $state(null)
   let saving = $state(false)
+
+  // Fetch the reference photo (if any) for the anchor currently being mapped.
+  $effect(() => {
+    const a = mappingAnchor
+    mappingImgUrl = null
+    if (a?.img_path) {
+      getAnchorImageUrl(a.img_path)
+        .then(url => { if (mappingAnchor?.id === a.id) mappingImgUrl = url })
+        .catch(() => {})
+    }
+  })
   let recomputingBbox = $state(false)
 
   let unmappedRefs = $derived(anchors.filter(a => a.anchor_type === 'reference' && !a.glb_position))
   let mappedRefs   = $derived(anchors.filter(a => a.anchor_type === 'reference' && !!a.glb_position))
   let content      = $derived(anchors.filter(a => a.anchor_type !== 'reference'))
+  let draggableAnchorId = $derived(
+    (!mappingAnchor && selectedId && anchors.find(a => a.id === selectedId)?.glb_position)
+      ? selectedId
+      : null
+  )
 
   onMount(async () => {
     try {
       const space = await fetchSpaceById(spaceId)
+      spaceName = space.name || spaceId
       if (!space.glb_path) { toast('Space has no GLB export yet', 'info'); return }
       glbPath = space.glb_path
       glbUrl = await getSpaceGlbUrl(space.glb_path)
@@ -86,6 +105,20 @@
     } catch (e) {
       toast((e as Error).message)
     }
+  }
+
+  let dragSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+  function handleDragAnchor(id: string, pos: Position): void {
+    anchors = anchors.map(a => a.id === id ? { ...a, glb_position: pos } : a)
+    if (dragSaveTimer) clearTimeout(dragSaveTimer)
+    dragSaveTimer = setTimeout(async () => {
+      try {
+        await setGlbPosition(id, pos)
+      } catch (e) {
+        toast((e as Error).message)
+      }
+    }, 600)
   }
 
   async function handleRecomputeBbox(): Promise<void> {
@@ -239,12 +272,21 @@
   {boundingBox}
   {showBoundingBoxes}
   {showDensity}
+  {draggableAnchorId}
+  canExport
+  exportName={`${spaceName || spaceId}-calibration`}
   onplace={handleMeshClick}
   onselect={(id) => selectedId = id}
+  ondraganchor={handleDragAnchor}
 />
 
 {#if mappingAnchor}
   <ActionBanner prompt="Click the mesh to map:" name={mappingAnchor.name || 'Unnamed'} oncancel={cancel} />
+  {#if mappingImgUrl}
+    <div class="map-photo">
+      <img src={mappingImgUrl} alt="Reference photo for {mappingAnchor.name || 'anchor'}" />
+    </div>
+  {/if}
 {/if}
 
 {#if unmappedRefs.length > 0 && !mappingAnchor && glbUrl}
@@ -254,6 +296,25 @@
 {/if}
 
 <style>
+  .map-photo {
+    position: fixed;
+    right: 16px;
+    top: 16px;
+    width: 400px;
+    background: var(--panel, #1a1a1a);
+    border: 1px solid var(--accent, #00d4ff);
+    border-radius: 6px;
+    padding: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    z-index: 20;
+  }
+  .map-photo img {
+    width: 100%;
+    height: auto;
+    border-radius: 4px;
+    display: block;
+  }
+
   .unmapped-section {
     background: #ffcc0009;
     border-bottom: 1px solid #ffcc0044 !important;

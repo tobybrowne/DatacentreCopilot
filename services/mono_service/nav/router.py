@@ -71,13 +71,6 @@ def _resolve_path(sb: Client, req: PathRequest) -> tuple[dict, dict, list[dict]]
 
     waypoints = result.get('path', [])
 
-    if waypoints:
-        sb.table('routes').insert({
-            'start_anchor_id': req.anchor_a_id,
-            'end_anchor_id': req.anchor_b_id,
-            'waypoints': waypoints,
-        }).execute()
-
     return pos_a, pos_b, waypoints, result
 
 

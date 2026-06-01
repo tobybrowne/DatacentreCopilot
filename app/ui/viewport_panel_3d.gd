@@ -731,7 +731,7 @@ func _check_ray() -> void:
 		var expand := _RAY_HYSTERESIS_M if _ray_pressing[hand] else 0.0
 		var uv := _world_hit_to_panel_uv(hw, expand)
 		if uv.x < 0.0:
-			# Outside panel — show beam if within the wider beam margin, but don't claim input
+			# Outside panel - show beam if within the wider beam margin, but don't claim input
 			if _world_hit_to_panel_uv(hw, _RAY_BEAM_MARGIN_M).x >= 0.0:
 				gm.set_hit_point(hand, hw)
 			_release_ray(hand)

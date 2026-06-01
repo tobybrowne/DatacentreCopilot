@@ -8,7 +8,7 @@ const _SPIN_SPEED := 2.2  # radians per second
 var _dot:     MeshInstance3D
 var _dot_mat: StandardMaterial3D
 
-# spinner — a static arc mesh inside a rotating parent
+# spinner - a static arc mesh inside a rotating parent
 var _spinner_pivot: Node3D
 var _spinner_mat:   StandardMaterial3D
 

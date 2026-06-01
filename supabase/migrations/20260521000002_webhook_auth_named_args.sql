@@ -1,5 +1,5 @@
 -- Fix both webhook trigger functions to use named args for net.http_post.
--- Positional arg 3 is `params` (query string), not `headers` — named args
+-- Positional arg 3 is `params` (query string), not `headers` - named args
 -- ensure the Authorization header is sent correctly.
 
 CREATE OR REPLACE FUNCTION public.trigger_bbox_computation() RETURNS trigger

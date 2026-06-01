@@ -16,17 +16,28 @@ var _pending_save: Dictionary = {}      # ml2_uuid → Node3D (write glb_positio
 # Kabsch calibration
 var _kabsch_src: Array[Vector3] = []
 var _kabsch_nodes: Array[Node3D] = []
+var _kabsch_names: Array[String] = []
 var _calibration := Transform3D.IDENTITY
-var _calibrated := false
+var _calibrated := false       # true once we have any valid calibration transform
+var _space_calibrated := false # true once the *current* space's calibration is ready
 var _last_kabsch_error := 0.0
 
-# Building stitching: space_id → Transform3D (offset from that space's GLB to the reference space's GLB)
+# Building stitching: space_id → Transform3D
 var _space_offsets: Dictionary = {}
-var _building_spaces: Array[Space] = []
 var _current_space_id := ""
 
 # Virtual markers (non-ML2, positioned by GLB coords): [{marker: Node3D, anchor: Anchor}]
 var _virtual_markers: Array[Dictionary] = []
+
+# Calibration validation (held-out reference anchors)
+var _holdout_anchors: Dictionary = {}   # ml2_id → Anchor (excluded from Kabsch)
+var _holdout_nodes: Dictionary = {}     # ml2_id → Node3D (their tracked nodes once found)
+var _validation_markers: Array[Node3D] = []
+
+# Cross-space alignment visualisation
+var _prev_calibration := Transform3D.IDENTITY
+var _prev_space_id := ""
+var _cross_space_markers: Array[Node3D] = []
 
 # ML2 tracking
 var tracked_nodes: Dictionary = {}     # ml2_uuid → Node3D
@@ -50,7 +61,7 @@ signal anchor_untracked(uuid: StringName)
 
 func _ready() -> void:
 	if not ClassDB.class_exists("OpenXRMlSpatialAnchorManager"):
-		push_warning("AnchorManager: OpenXRMlSpatialAnchorManager unavailable — spatial anchors disabled.")
+		push_warning("AnchorManager: OpenXRMlSpatialAnchorManager unavailable - spatial anchors disabled.")
 		return
 	_ml_mgr = ClassDB.instantiate("OpenXRMlSpatialAnchorManager")
 	_ml_mgr.connect("openxr_ml_spatial_anchor_tracked", _on_ml_anchor_tracked)
@@ -74,7 +85,7 @@ func _process(delta: float) -> void:
 			for uuid in _storage_pending.duplicate():
 				_ml_mgr.call("load_anchor", StringName(uuid))
 
-	if _calibrated and _kabsch_nodes.size() >= 3 and _kabsch_snapshot.size() == _kabsch_nodes.size():
+	if _calibrated and _kabsch_nodes.size() >= 2 and _kabsch_snapshot.size() == _kabsch_nodes.size():
 		if DevConfig.PERIODIC_RECALIBRATION:
 			_periodic_recalib_timer += delta
 			if _periodic_recalib_timer >= DevConfig.PERIODIC_RECALIBRATION_INTERVAL:
@@ -92,9 +103,27 @@ func _process(delta: float) -> void:
 # ── Calibration API ───────────────────────────────────────────────────────────
 
 # loads anchors from supabase and runs calibration (called by LocationManager)
-func calibrate_to_space(space_id: String) -> void:
-	await load_anchors_from_db() # sets the global _all_anchors to the curr spaces anchors
+func calibrate_to_space(space_id: String, p_space_offsets: Dictionary, p_anchors: Array[Anchor], p_spaces: Array[Space]) -> void:
+	var _t0 := Time.get_ticks_msec()
+	if _calibrated:
+		_prev_calibration = _calibration
+		_prev_space_id = _current_space_id
+
+	_space_offsets = p_space_offsets
+	_building_spaces = p_spaces
+
+	var _t1 := Time.get_ticks_msec()
+	_all_anchors.clear()
+	var next_num := 1
+	for anchor in p_anchors:
+		_all_anchors[anchor.id] = anchor
+		if anchor.name.is_valid_int():
+			next_num = max(next_num, anchor.name.to_int() + 1)
+	_next_num = next_num
+	print("[TIMING] process anchors: ", Time.get_ticks_msec() - _t1, "ms")
+
 	_setup_space_for_calibration(space_id)
+	print("[TIMING] calibrate_to_space total: ", Time.get_ticks_msec() - _t0, "ms")
 
 
 func get_calibration() -> Transform3D:
@@ -118,6 +147,9 @@ func get_space_offsets() -> Dictionary:
 
 func get_building_spaces() -> Array[Space]:
 	return _building_spaces
+
+
+var _building_spaces: Array[Space] = []
 
 func get_last_kabsch_error() -> float:
 	return _last_kabsch_error
@@ -144,6 +176,22 @@ func get_kabsch_pairs() -> Array[Dictionary]:
 func _v3_dict(v: Vector3) -> Dictionary:
 	return {"x": snappedf(v.x, 0.0001), "y": snappedf(v.y, 0.0001), "z": snappedf(v.z, 0.0001)}
 
+func get_space_anchor_xr_positions() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for anchor in _all_anchors.values():
+		if anchor.space_id != _current_space_id or not anchor.ml2_id:
+			continue
+		var node: Node3D = tracked_nodes.get(anchor.ml2_id)
+		if not is_instance_valid(node):
+			continue
+		result.append({
+			"name": anchor.name,
+			"anchor_type": anchor.anchor_type,
+			"xr_pos": _v3_dict(node.position),
+		})
+	return result
+
+
 func get_current_space_id() -> String:
 	return _current_space_id
 
@@ -166,7 +214,7 @@ func ref_anchor_count(space_id: String) -> int:
 ## GLB position to Supabase. Returns the new Supabase UUID or "" on failure.
 func create_temp_anchor(local_pos: Vector3) -> String:
 	if not _calibrated:
-		push_warning("AnchorManager: not calibrated — cannot create content anchor")
+		push_warning("AnchorManager: not calibrated - cannot create content anchor")
 		return ""
 	var glb_pos: Vector3 = _calibration.affine_inverse() * local_pos
 	var anchor := Anchor.new()
@@ -178,6 +226,7 @@ func create_temp_anchor(local_pos: Vector3) -> String:
 	if not inserted or inserted.id.is_empty():
 		push_warning("AnchorManager: failed to insert content anchor")
 		return ""
+	_building_spaces.clear()  # force re-fetch on next calibrate
 	print("AnchorManager: created content anchor ", inserted.id, " at glb ", glb_pos)
 	return inserted.id
 
@@ -235,6 +284,14 @@ func clear_markers() -> void:
 		if is_instance_valid(node):
 			for child in node.get_children():
 				child.queue_free()
+	for m in _validation_markers:
+		if is_instance_valid(m):
+			m.queue_free()
+	_validation_markers.clear()
+	for m in _cross_space_markers:
+		if is_instance_valid(m):
+			m.queue_free()
+	_cross_space_markers.clear()
 
 
 func spawn_note_marker(anchor: Anchor, text: String, world_pos: Vector3) -> void:
@@ -260,29 +317,6 @@ func clear_note_markers() -> void:
 
 # ── Anchor loading ────────────────────────────────────────────────────────────
 
-# sets the global anchor vars for this new space: _all_anchors, _next_num
-func load_anchors_from_db() -> void:
-	var all_anchors: Array[Anchor] = await SupabaseManager.get_anchors()
-	_all_anchors.clear()
-	var next_num := 1
-	for anchor in all_anchors:
-		_all_anchors[anchor.id] = anchor
-		if anchor.name.is_valid_int():
-			next_num = max(next_num, anchor.name.to_int() + 1)
-	_next_num = next_num
-
-
-func _load_building_offsets(space_id: String) -> void:
-	if space_id.is_empty():
-		return
-	var sibling_spaces: Array[Space] = await SupabaseManager.get_sibling_spaces(space_id)
-	if sibling_spaces.is_empty():
-		print("AnchorManager: no building found for space ", space_id)
-		return
-	print("AnchorManager: building has ", sibling_spaces.size(), " spaces")
-	_building_spaces = sibling_spaces
-	for s in sibling_spaces:
-		_space_offsets[s.id] = s.offset_transformation
 
 
 # ── Calibration internals ─────────────────────────────────────────────────────
@@ -295,75 +329,145 @@ func _setup_space_for_calibration(space_id: String) -> void:
 	_desktop_content.clear()
 	_kabsch_src.clear()
 	_kabsch_nodes.clear()
-	_calibrated = false
+	_kabsch_names.clear()
+	_holdout_anchors.clear()
+	_holdout_nodes.clear()
+	for m in _validation_markers:
+		if is_instance_valid(m):
+			m.queue_free()
+	_validation_markers.clear()
+	for m in _cross_space_markers:
+		if is_instance_valid(m):
+			m.queue_free()
+	_cross_space_markers.clear()
+	_space_calibrated = false
 	_current_space_id = space_id
 
+	# Collect all valid reference anchors for this space
+	var valid_refs: Array = []
 	for anchor in _all_anchors.values():
-		if anchor.space_id != space_id:
+		if anchor.space_id != space_id or anchor.anchor_type != Anchor.TYPE_REFERENCE:
 			continue
-		if anchor.anchor_type == Anchor.TYPE_TEMP:
-			continue
-		elif anchor.anchor_type == Anchor.TYPE_REFERENCE:
-			if anchor.glb_position != null:
-				_ref_anchors[anchor.ml2_id] = anchor
-				var already_tracked: Node3D = tracked_nodes.get(anchor.ml2_id)
-				if already_tracked:
-					_kabsch_src.append(anchor.glb_position)
-					_kabsch_nodes.append(already_tracked)
-				else:
-					load_anchor_from_ml2(anchor.ml2_id)
-			else:
-				print("AnchorManager: ref anchor ", anchor.id, " has no glb_position — skipping")
+		if anchor.glb_position != null and anchor.ml2_id:
+			valid_refs.append(anchor)
 		else:
-			if anchor.ml2_id != null:
-				if not tracked_nodes.has(anchor.ml2_id):
-					load_anchor_from_ml2(anchor.ml2_id)
+			print("AnchorManager: ref anchor ", anchor.id, " skipped - missing glb_position or ml2_id")
+
+	# Split into calibration vs held-out sets when validation mode is active
+	var calib_refs: Array = []
+	if DevConfig.CALIBRATION_VALIDATION and valid_refs.size() > DevConfig.CALIBRATION_VALIDATION_MIN_ANCHORS:
+		if not DevConfig.CALIBRATION_ANCHOR_NAMES.is_empty():
+			var pinned: Array = valid_refs.filter(func(a): return a.name in DevConfig.CALIBRATION_ANCHOR_NAMES)
+			if pinned.is_empty():
+				print("AnchorManager: CALIBRATION_ANCHOR_NAMES had no matches - falling back to random")
 			else:
-				_desktop_content.append(anchor)
+				calib_refs = pinned
+				for a in valid_refs:
+					if not a.name in DevConfig.CALIBRATION_ANCHOR_NAMES:
+						_holdout_anchors[a.ml2_id] = a
+				print("AnchorManager: pinned calibration anchors: ", calib_refs.map(func(a): return a.name))
+		if calib_refs.is_empty():
+			valid_refs.shuffle()
+			var n_holdout := valid_refs.size() - DevConfig.CALIBRATION_VALIDATION_MIN_ANCHORS
+			for i in valid_refs.size():
+				if i < n_holdout:
+					_holdout_anchors[valid_refs[i].ml2_id] = valid_refs[i]
+				else:
+					calib_refs.append(valid_refs[i])
+		print("AnchorManager: validation mode - ", calib_refs.size(), " calibration anchors, ", _holdout_anchors.size(), " held out")
+	else:
+		calib_refs = valid_refs
+
+	# Load calibration anchors into Kabsch
+	for anchor in calib_refs:
+		_ref_anchors[anchor.ml2_id] = anchor
+		var already_tracked: Node3D = tracked_nodes.get(anchor.ml2_id)
+		if already_tracked:
+			_kabsch_src.append(anchor.glb_position)
+			_kabsch_nodes.append(already_tracked)
+			_kabsch_names.append(anchor.name)
+		else:
+			load_anchor_from_ml2(anchor.ml2_id)
+
+	# Load held-out anchors via ML2 (for actual-position tracking) but not into Kabsch
+	for ml2_id in _holdout_anchors:
+		var already_tracked: Node3D = tracked_nodes.get(ml2_id)
+		if already_tracked:
+			_holdout_nodes[ml2_id] = already_tracked
+		else:
+			load_anchor_from_ml2(ml2_id)
+
+	# Handle non-reference anchors
+	for anchor in _all_anchors.values():
+		if anchor.space_id != space_id or anchor.anchor_type == Anchor.TYPE_TEMP or anchor.anchor_type == Anchor.TYPE_REFERENCE:
+			continue
+		if anchor.ml2_id != null:
+			if not tracked_nodes.has(anchor.ml2_id):
+				load_anchor_from_ml2(anchor.ml2_id)
+		else:
+			_desktop_content.append(anchor)
 
 	print("AnchorManager: setup space ", space_id,
-			" — ", _ref_anchors.size(), " ref anchors, ", _kabsch_src.size(), " already tracked")
-	if _kabsch_src.size() >= 3:
-		_try_calibrate()
+			" - ", _ref_anchors.size(), " ref anchors, ", _kabsch_src.size(), " already tracked")
+	if _kabsch_src.size() >= 2:
+		await _try_calibrate()
 
 
 func _try_calibrate() -> void:
-	if _kabsch_src.size() < 3:
-		print("AnchorManager: need ≥3 reference pairs (have ", _kabsch_src.size(), ")")
+	if _kabsch_src.size() < 2:
+		print("AnchorManager: need ≥2 reference pairs (have ", _kabsch_src.size(), ")")
 		return
 
+	var _t0 := Time.get_ticks_msec()
 	var kabsch_dst: Array[Vector3] = []
 	for node in _kabsch_nodes:
 		kabsch_dst.append(node.position)
 
-	var first_calibration := not _calibrated
+	var first_calibration := not _space_calibrated
 	_calibration = Kabsch.compute_yaw_locked(_kabsch_src, kabsch_dst)
 	_calibrated = true
+	_space_calibrated = true
 	_kabsch_snapshot = kabsch_dst
+	print("[TIMING] Kabsch compute: ", Time.get_ticks_msec() - _t0, "ms")
 
 	var total_err := 0.0
 	for i in _kabsch_src.size():
 		var predicted := _calibration * _kabsch_src[i]
 		var err := predicted.distance_to(kabsch_dst[i])
 		total_err += err
-		print("  ref[", i, "] error=", snappedf(err, 0.001), "m")
+		if DevConfig.ANCHOR_VERBOSE_LOG:
+			var g := _kabsch_src[i]
+			var x := kabsch_dst[i]
+			print("  ref[", _kabsch_names[i], "] glb=(", snappedf(g.x,0.001), ",", snappedf(g.y,0.001), ",", snappedf(g.z,0.001), ") xr=(", snappedf(x.x,0.001), ",", snappedf(x.y,0.001), ",", snappedf(x.z,0.001), ") err=", snappedf(err,0.001), "m")
 	_last_kabsch_error = total_err / _kabsch_src.size()
-	print("AnchorManager: calibrated from ", _kabsch_src.size(), " reference points — avg error ", snappedf(_last_kabsch_error, 0.001), "m")
+	print("AnchorManager: calibrated from ", _kabsch_src.size(), " reference points - avg error ", snappedf(_last_kabsch_error, 0.001), "m")
 
 	if not first_calibration:
 		return
 
-	await _load_building_offsets(_current_space_id)
-
+	# Emit and let signal handlers (wall rebuild, bbox visuals) run, then give a frame to render
+	var _t1 := Time.get_ticks_msec()
 	calibrated.emit()
+	print("[TIMING] calibrated.emit (wall+bbox rebuild): ", Time.get_ticks_msec() - _t1, "ms")
+	await get_tree().process_frame
 
-	for entry in _virtual_markers:
-		if is_instance_valid(entry.marker):
-			entry.marker.queue_free()
+	var _t2 := Time.get_ticks_msec()
+	_spawn_ready_validation_markers()
+	_spawn_cross_space_markers()
+	print("[TIMING] validation+cross-space markers: ", Time.get_ticks_msec() - _t2, "ms")
+
+	# Keep old markers visible until new ones are fully placed, then swap
+	var old_markers := _virtual_markers.duplicate()
 	_virtual_markers.clear()
 
+	# Spread virtual marker placement across frames — 10 per frame to avoid a single-frame spike
+	var _t3 := Time.get_ticks_msec()
+	var placed := 0
 	for anchor in _desktop_content:
 		_place_virtual_marker(anchor, false)
+		placed += 1
+		if placed % 10 == 0:
+			await get_tree().process_frame
 
 	for anchor in _all_anchors.values():
 		if anchor.space_id == _current_space_id or anchor.glb_position == null:
@@ -371,6 +475,14 @@ func _try_calibrate() -> void:
 		if anchor.anchor_type != Anchor.TYPE_CONTENT and anchor.anchor_type != Anchor.TYPE_ASSET and anchor.anchor_type != Anchor.TYPE_NOTE:
 			continue
 		_place_virtual_marker(anchor, true)
+		placed += 1
+		if placed % 10 == 0:
+			await get_tree().process_frame
+	print("[TIMING] place ", placed, " virtual markers: ", Time.get_ticks_msec() - _t3, "ms")
+
+	for entry in old_markers:
+		if is_instance_valid(entry.marker):
+			entry.marker.queue_free()
 
 	for uuid in _pending_save:
 		_write_glb_position(uuid, _pending_save[uuid].position)
@@ -388,14 +500,20 @@ func _refresh_calibration() -> void:
 
 	var err := 0.0
 	for i in _kabsch_src.size():
-		err += (new_calibration * _kabsch_src[i]).distance_to(kabsch_dst[i])
+		var e := (new_calibration * _kabsch_src[i]).distance_to(kabsch_dst[i])
+		err += e
+		if DevConfig.ANCHOR_VERBOSE_LOG:
+			print("  ref[", _kabsch_names[i], "] error=", snappedf(e, 0.001), "m")
 	err /= _kabsch_src.size()
 
 	_last_kabsch_error = err
-	print("AnchorManager: recalibrated — avg error ", snappedf(err, 0.001), "m")
+	if DevConfig.ANCHOR_VERBOSE_LOG:
+		print("AnchorManager: recalibrated - avg error ", snappedf(err, 0.001), "m")
 	_calibration = new_calibration
 	_kabsch_snapshot = kabsch_dst
 	_reposition_virtual_markers()
+
+
 
 
 func _reposition_virtual_markers() -> void:
@@ -436,6 +554,8 @@ func _place_virtual_marker(anchor: Anchor, other_space: bool) -> void:
 	_virtual_markers.append({ "marker": marker, "anchor": anchor })
 
 
+
+
 func _create_virtual_marker(anchor: Anchor, other_space: bool) -> Node3D:
 	match anchor.anchor_type:
 		Anchor.TYPE_ASSET:
@@ -462,7 +582,7 @@ func _create_tracked_marker(anchor: Anchor) -> Node3D:
 			m.anchor = anchor
 			return m
 		Anchor.TYPE_REFERENCE:
-			if not DevConfig.DEV_MODE and not _anchor_editing:
+			if not DevConfig.DEV_MODE and not _anchor_editing and not DevConfig.CALIBRATION_VALIDATION:
 				return Node3D.new()
 			var m := ReferenceAnchorMarker.new()
 			m.anchor = anchor
@@ -479,6 +599,60 @@ func _create_tracked_marker(anchor: Anchor) -> Node3D:
 			return m
 
 
+# Capture a CV-camera photo of the anchor's surroundings and attach it to the
+# anchor row, so the desktop can show what the anchor is pointing at while it is
+# being mapped to the mesh. Fire-and-forget: the camera latency gives the insert
+# above time to land before upload_anchor_image updates the row by ml2_id.
+func _capture_anchor_image(ml2_id: String) -> void:
+	var image: Image = await CVCameraManager.capture_frame()
+	if image == null:
+		return
+	await SupabaseManager.upload_anchor_image(ml2_id, image)
+
+
+func _spawn_validation_marker(ml2_id: String) -> void:
+	var anchor: Anchor = _holdout_anchors.get(ml2_id)
+	var tracked: Node3D = _holdout_nodes.get(ml2_id)
+	if not anchor or not is_instance_valid(tracked):
+		return
+	var marker := CalibrationValidationMarker.new()
+	marker.actual_node = tracked
+	marker.glb_position = anchor.glb_position
+	marker.anchor_name = anchor.name
+	marker.anchor_mgr = self
+	get_parent().add_child(marker)
+	_validation_markers.append(marker)
+	print("AnchorManager: validation marker spawned for held-out anchor ", anchor.name, " (", ml2_id, ")")
+
+
+func _spawn_ready_validation_markers() -> void:
+	for ml2_id in _holdout_nodes:
+		_spawn_validation_marker(ml2_id)
+
+
+func _spawn_cross_space_markers() -> void:
+	if not DevConfig.CROSS_SPACE_ALIGNMENT_VIZ or _prev_space_id.is_empty():
+		return
+	var prev_offset: Transform3D = _space_offsets.get(_prev_space_id, Transform3D.IDENTITY)
+	var curr_offset: Transform3D = _space_offsets.get(_current_space_id, Transform3D.IDENTITY)
+	var spawned := 0
+	for anchor in _all_anchors.values():
+		if anchor.space_id != _current_space_id or anchor.anchor_type != Anchor.TYPE_REFERENCE:
+			continue
+		if anchor.glb_position == null:
+			continue
+		var rough_pos: Vector3 = _prev_calibration * (prev_offset.affine_inverse() * (curr_offset * (anchor.glb_position as Vector3)))
+		var marker := CrossSpaceAlignmentMarker.new()
+		marker.rough_pos = rough_pos
+		marker.glb_position = anchor.glb_position
+		marker.anchor_name = anchor.name
+		marker.anchor_mgr = self
+		get_parent().add_child(marker)
+		_cross_space_markers.append(marker)
+		spawned += 1
+	print("AnchorManager: cross-space alignment markers spawned for ", spawned, " anchors (", _prev_space_id, " → ", _current_space_id, ")")
+
+
 func _get_anchor_by_ml2(ml2_id: String) -> Anchor:
 	for anchor in _all_anchors.values():
 		if anchor.ml2_id == ml2_id:
@@ -490,7 +664,8 @@ func _get_anchor_by_ml2(ml2_id: String) -> Anchor:
 
 func _on_ml_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bool) -> void:
 	var uuid_str := str(ml2_uuid)
-	print("AnchorManager: tracked ", uuid_str, " (new=", is_new, ")")
+	if DevConfig.ANCHOR_VERBOSE_LOG:
+		print("AnchorManager: tracked ", uuid_str, " (new=", is_new, ")")
 	tracked_nodes[uuid_str] = anchor_node
 	_retry_uuids.erase(uuid_str)
 	_storage_pending.erase(uuid_str)
@@ -503,7 +678,9 @@ func _on_ml_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bo
 		new_anchor.space_id    = _current_space_id
 		_next_num += 1
 		_all_anchors[new_anchor.id] = new_anchor
+		_building_spaces.clear()  # force re-fetch on next calibrate
 		SupabaseManager.insert_anchor(new_anchor)
+		_capture_anchor_image(uuid_str)
 		var new_marker := ReferenceAnchorMarker.new()
 		new_marker.anchor = new_anchor
 		anchor_node.add_child(new_marker)
@@ -519,6 +696,13 @@ func _on_ml_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bo
 
 	await get_tree().process_frame
 
+	if _holdout_anchors.has(uuid_str):
+		_holdout_nodes[uuid_str] = anchor_node
+		if _calibrated:
+			_spawn_validation_marker(uuid_str)
+		anchor_tracked.emit(anchor_node, ml2_uuid, is_new)
+		return
+
 	if _ref_anchors.has(uuid_str):
 		var ref: Anchor = _ref_anchors[uuid_str]
 		if anchor:
@@ -527,11 +711,14 @@ func _on_ml_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bo
 			var fallback := ReferenceAnchorMarker.new()
 			fallback.anchor = Anchor.new()
 			anchor_node.add_child(fallback)
-		_kabsch_src.append(ref.glb_position)
-		_kabsch_nodes.append(anchor_node)
-		print("AnchorManager: Kabsch pair #", _kabsch_src.size(), " for ", uuid_str)
+		if anchor_node not in _kabsch_nodes:
+			_kabsch_src.append(ref.glb_position)
+			_kabsch_nodes.append(anchor_node)
+			_kabsch_names.append(ref.name)
+		if DevConfig.ANCHOR_VERBOSE_LOG:
+			print("AnchorManager: Kabsch pair #", _kabsch_src.size(), " for ", uuid_str)
 		# try and calibrate every time we get a new tracked anchor
-		_try_calibrate()
+		await _try_calibrate()
 	elif _calibrated:
 		if anchor and anchor.glb_position:
 			_place_virtual_marker(anchor, anchor.space_id != _current_space_id)
@@ -556,6 +743,6 @@ func _on_load_failed(uuid: StringName) -> void:
 		return
 	var attempt: int = _retry_uuids[uuid_str]
 	_retry_uuids[uuid_str] = attempt + 1
-	print("AnchorManager: load failed for ", uuid, " — retrying in ", RETRY_DELAY, "s (attempt ", attempt + 1, ")")
+	print("AnchorManager: load failed for ", uuid, " - retrying in ", RETRY_DELAY, "s (attempt ", attempt + 1, ")")
 	await get_tree().create_timer(RETRY_DELAY).timeout
 	_ml_mgr.call("load_anchor", uuid)

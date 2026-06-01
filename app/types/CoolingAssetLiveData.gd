@@ -1,6 +1,6 @@
 class_name CoolingAssetLiveData
 
-var temperature: float  = 0.0   # °C — supply temperature
+var temperature: float  = 0.0   # °C - supply temperature
 var load_percent: float = 0.0   # 0–100
 
 static func from_dict(data: Dictionary) -> CoolingAssetLiveData:

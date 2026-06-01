@@ -36,6 +36,7 @@ export interface Space {
   offset_transformation: RigidTransform | null;
   bounding_box: BoundingBox | null;
   loc_bounding_box: BoundingBox | null;
+  tight_bounding_box: BoundingBox | null;
 }
 
 export interface Anchor {
@@ -45,6 +46,7 @@ export interface Anchor {
   anchor_type: string;
   ml2_id: string | null;
   space_id: string | null;
+  img_path: string | null;
   created_at: string;
 }
 

@@ -19,6 +19,7 @@ export const load: PageLoad = async ({ params }) => {
         url: await getSpaceGlbUrl(s.glb_path!),
         transform: s.offset_transformation as RigidTransform | null,
         boundingBox: s.bounding_box ?? null,
+        tightBoundingBox: s.tight_bounding_box ?? null,
       })),
   );
 
@@ -40,15 +41,18 @@ export const load: PageLoad = async ({ params }) => {
     }
   }
 
-  let existingFloorplanNavMesh: { url: string } | null = null;
+  let existingFloorplanNavMesh: { url: string; buildSettings: Record<string, unknown> } | null = null;
   if ((building as any).floorplan_id) {
     const { data: fp } = await supabase
       .from("navmeshes")
-      .select("navmesh_path")
+      .select("navmesh_path, build_settings")
       .eq("id", (building as any).floorplan_id)
       .single();
     if (fp?.navmesh_path) {
-      existingFloorplanNavMesh = { url: await getNavMeshUrl(fp.navmesh_path) };
+      existingFloorplanNavMesh = {
+        url: await getNavMeshUrl(fp.navmesh_path),
+        buildSettings: fp.build_settings ?? {},
+      };
     }
   }
 

@@ -49,6 +49,7 @@
   let activeBuildingId: string | null = null
 
   let bX = $state(0)
+  let bY = $state(0)
   let bZ = $state(0)
   let bYDeg = $state(0)
   let bYRot = $derived((bYDeg * Math.PI) / 180)
@@ -194,7 +195,7 @@
       error = (e as Error).message
       return
     }
-    bX = 0; bZ = 0; bYDeg = 0
+    bX = 0; bY = 0; bZ = 0; bYDeg = 0
     alignResult = null
     phase = 'align'
   }
@@ -210,7 +211,7 @@
         .map(async s => ({ space: s, glbUrl: await getSpaceGlbUrl(s.glb_path!), transform: s.offset_transformation }))
     )
     currentIdx = builtSpaces.length
-    bX = 0; bZ = 0; bYDeg = 0
+    bX = 0; bY = 0; bZ = 0; bYDeg = 0
     alignResult = null
     phase = currentIdx >= orderedSpaceIds.length ? 'complete' : 'align'
   }
@@ -218,7 +219,7 @@
   function rigidTransform(): RigidTransform {
     const half = bYRot / 2
     return {
-      position: { x: bX, y: 0, z: bZ },
+      position: { x: bX, y: bY, z: bZ },
       quaternion: { x: 0, y: Math.sin(half), z: 0, w: Math.cos(half) },
     }
   }
@@ -246,6 +247,7 @@
       alignResult = { fitness: data.fitness, inlier_rmse: data.inlier_rmse }
       const t = data.transform as RigidTransform
       bX = t.position.x
+      bY = t.position.y
       bZ = t.position.z
       const q = t.quaternion
       bYDeg = (Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z)) * 180) / Math.PI
@@ -264,13 +266,14 @@
     const t = prev.transform
     if (t) {
       bX = t.position?.x ?? 0
+      bY = t.position?.y ?? 0
       bZ = t.position?.z ?? 0
       const q = t.quaternion
       bYDeg = q
         ? (Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z)) * 180) / Math.PI
         : 0
     } else {
-      bX = 0; bZ = 0; bYDeg = 0
+      bX = 0; bY = 0; bZ = 0; bYDeg = 0
     }
     alignResult = null
   }
@@ -290,7 +293,7 @@
       transform,
     }]
     currentIdx++
-    bX = 0; bZ = 0; bYDeg = 0
+    bX = 0; bY = 0; bZ = 0; bYDeg = 0
     alignResult = null
     phase = currentIdx >= orderedSpaceIds.length ? 'complete' : 'align'
   }
@@ -306,7 +309,7 @@
       orderedSpaceIds = []
       buildingName = ''
     }
-    bX = 0; bZ = 0; bYDeg = 0
+    bX = 0; bY = 0; bZ = 0; bYDeg = 0
     alignResult = null
   }
 
@@ -421,8 +424,8 @@
       <section>
         <label class="section-label">Position</label>
         <div class="pos-row">
-          <span class="muted">X {bX.toFixed(2)}  Z {bZ.toFixed(2)}  Y {bYDeg.toFixed(1)}°</span>
-          <Button size="sm" onclick={() => { bX = 0; bZ = 0; bYDeg = 0; alignResult = null }}>Reset</Button>
+          <span class="muted">X {bX.toFixed(2)}  Y {bY.toFixed(2)}  Z {bZ.toFixed(2)}  R {bYDeg.toFixed(1)}°</span>
+          <Button size="sm" onclick={() => { bX = 0; bY = 0; bZ = 0; bYDeg = 0; alignResult = null }}>Reset</Button>
         </div>
       </section>
 
@@ -438,7 +441,7 @@
           <div class="stat"><span>Fitness</span><strong>{alignResult.fitness.toFixed(3)}</strong></div>
           <div class="stat"><span>RMSE</span><strong>{alignResult.inlier_rmse.toFixed(4)}m</strong></div>
           {#if alignResult.fitness < 0.1}
-            <p class="warn">Low fitness — rough alignment may be off</p>
+            <p class="warn">Low fitness - rough alignment may be off</p>
           {/if}
         </section>
       {/if}
@@ -490,6 +493,7 @@
           builtSpaces={builtSpacesForScene}
           newSpaceUrl={currentSpaceGlbUrl}
           newX={bX}
+          newY={bY}
           newZ={bZ}
           newYRot={bYRot}
           newBoundingBox={currentSpace?.bounding_box ?? null}
@@ -498,8 +502,9 @@
           {bestReferenceIndex}
           {exportTrigger}
           onexportblob={handleExportBlob}
-          ontransform={(x, z, yRot) => {
+          ontransform={(x, y, z, yRot) => {
             bX = x
+            bY = y
             bZ = z
             bYDeg = (yRot * 180) / Math.PI
           }}

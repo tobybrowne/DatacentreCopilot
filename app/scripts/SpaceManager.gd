@@ -80,7 +80,7 @@ func export_space(space: Space):
 
 	var ml2_uuid := get_ml2_uuid(space.id)
 
-	# Export binary localization map blob — synchronous C++ call, run on background
+	# Export binary localization map blob - synchronous C++ call, run on background
 	# thread so the main loop continues processing XR events (required to avoid deadlock).
 	print("export_space: starting blob export for ", ml2_uuid)
 	var blob_result := []
@@ -108,7 +108,7 @@ func export_space(space: Space):
 	var blob_upload = await Supabase.storage.from("spaces_bucket").upload(blob_path, blob_tmp, false).completed
 	DirAccess.remove_absolute(blob_tmp)
 	if blob_upload.error != null:
-		print("export_space: blob upload failed — HTTP ", blob_upload.error.code, " ", blob_upload.error.message)
+		print("export_space: blob upload failed - HTTP ", blob_upload.error.code, " ", blob_upload.error.message)
 		return null
 
 	# Upload GLB from device if the Spaces app has exported it
@@ -125,10 +125,10 @@ func export_space(space: Space):
 		var glb_upload = await Supabase.storage.from("spaces_bucket").upload(glb_path, glb_tmp, false).completed
 		DirAccess.remove_absolute(glb_tmp)
 		if glb_upload.error != null:
-			print("export_current_space: GLB upload failed (continuing without GLB) — ", glb_upload.error.message)
+			print("export_current_space: GLB upload failed (continuing without GLB) - ", glb_upload.error.message)
 			glb_path = ""
 	else:
-		print("export_space: no GLB found at ", device_glb, " — export from Spaces app first")
+		print("export_space: no GLB found at ", device_glb, " - export from Spaces app first")
 
 	space.blob_path = blob_path
 	space.glb_path = glb_path
@@ -169,7 +169,7 @@ func import_space(space: Space) -> bool:
 
 
 
-# delete_space_local is disabled — IMapManager::DeleteMap (txn 14) requires
+# delete_space_local is disabled - IMapManager::DeleteMap (txn 14) requires
 # com.magicleap.permission.PW_MAP which is signature-protected and not grantable
 # to third-party apps. Revisit if ML exposes this via SPACE_MANAGER or enterprise MDM.
 #func delete_space_local(space: Space) -> bool:
@@ -191,7 +191,7 @@ func import_space(space: Space) -> bool:
 func ensure_space_local(space: Space) -> bool:
 	if is_space_local(space.id):
 		return true
-	print("SpaceManager: space not local — importing ", space.id)
+	print("SpaceManager: space not local - importing ", space.id)
 	var ok := await import_space(space)
 	if not ok:
 		push_warning("SpaceManager: import failed for space ", space.id)

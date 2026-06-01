@@ -90,7 +90,7 @@ func request_path(anchor_a_id: String, anchor_b_id: String) -> Array[Vector3]:
 
 	if response_code != 200:
 		push_warning("RouteManager: server returned ", response_code,
-				" — ", body_bytes.get_string_from_utf8())
+				" - ", body_bytes.get_string_from_utf8())
 		return []
 
 	var json := JSON.new()

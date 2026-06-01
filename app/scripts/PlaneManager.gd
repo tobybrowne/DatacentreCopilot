@@ -16,11 +16,11 @@ var RENDER_PLANES := false
 
 # Color per semantic type
 const COLORS := {
-	2: Color(0.2, 1.0, 0.3, 0.18),   # floor     — green
-	3: Color(0.2, 0.5, 1.0, 0.18),   # wall      — blue
-	1: Color(1.0, 0.9, 0.2, 0.18),   # ceiling   — yellow
-	4: Color(0.8, 0.4, 1.0, 0.18),   # platform  — purple
-	0: Color(0.8, 0.8, 0.8, 0.12),   # undefined — grey
+	2: Color(0.2, 1.0, 0.3, 0.18),   # floor     - green
+	3: Color(0.2, 0.5, 1.0, 0.18),   # wall      - blue
+	1: Color(1.0, 0.9, 0.2, 0.18),   # ceiling   - yellow
+	4: Color(0.8, 0.4, 1.0, 0.18),   # platform  - purple
+	0: Color(0.8, 0.8, 0.8, 0.12),   # undefined - grey
 }
 const EDGE_COLORS := {
 	2: Color(0.2, 1.0, 0.3, 0.9),

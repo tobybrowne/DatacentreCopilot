@@ -11,6 +11,7 @@
     builtSpaces: Array<{ url: string; transform: RigidTransform | null; boundingBox?: BoundingBox | null }>
     newSpaceUrl: string
     newX: number
+    newY: number
     newZ: number
     newYRot: number
     newBoundingBox?: BoundingBox | null
@@ -18,11 +19,11 @@
     showBoundingBoxes?: boolean
     bestReferenceIndex?: number | null
     exportTrigger?: number
-    ontransform: (x: number, z: number, yRot: number) => void
+    ontransform: (x: number, y: number, z: number, yRot: number) => void
     onexportblob?: (blob: Blob) => void
   }
 
-  let { builtSpaces, newSpaceUrl, newX, newZ, newYRot, newBoundingBox = null, mode, showBoundingBoxes = false, bestReferenceIndex = null, exportTrigger = 0, ontransform, onexportblob }: Props = $props()
+  let { builtSpaces, newSpaceUrl, newX, newY, newZ, newYRot, newBoundingBox = null, mode, showBoundingBoxes = false, bestReferenceIndex = null, exportTrigger = 0, ontransform, onexportblob }: Props = $props()
 
   const BOX_COLORS = [
     0x00ff88, 0x4488ff, 0xff4444, 0xffaa00,
@@ -55,9 +56,9 @@
   })
 
   $effect(() => {
-    const x = newX, z = newZ, yRot = newYRot, group = newGroup
+    const x = newX, y = newY, z = newZ, yRot = newYRot, group = newGroup
     if (!group || untrack(() => dragging)) return
-    group.position.set(x, 0, z)
+    group.position.set(x, y, z)
     group.rotation.set(0, yRot, 0)
     invalidate()
   })
@@ -66,7 +67,7 @@
     if (!tc) return
     tc.setMode(mode)
     tc.showX = mode === 'translate'
-    tc.showY = mode === 'rotate'
+    tc.showY = true
     tc.showZ = mode === 'translate'
   })
 
@@ -78,7 +79,7 @@
 
   const onChange = () => {
     if (!newGroup) return
-    ontransform(newGroup.position.x, newGroup.position.z, getYaw(newGroup.quaternion))
+    ontransform(newGroup.position.x, newGroup.position.y, newGroup.position.z, getYaw(newGroup.quaternion))
     invalidate()
   }
 
@@ -86,7 +87,7 @@
     dragging = e.value
     orbitEnabled = !e.value
     if (!e.value && newGroup) {
-      ontransform(newGroup.position.x, newGroup.position.z, getYaw(newGroup.quaternion))
+      ontransform(newGroup.position.x, newGroup.position.y, newGroup.position.z, getYaw(newGroup.quaternion))
     }
   }
 
@@ -109,7 +110,7 @@
             m.emissive.set(want ? 0xff8800 : 0x000000)
             m.emissiveIntensity = want ? 0.18 : 0
           } else {
-            // MeshBasicMaterial — tint via color
+            // MeshBasicMaterial - tint via color
             const m = mat as THREE.MeshBasicMaterial
             m.color.set(want ? 0xffaa55 : 0xffffff)
           }
@@ -134,7 +135,7 @@
 
     tc.setMode(mode)
     tc.showX = mode === 'translate'
-    tc.showY = mode === 'rotate'
+    tc.showY = true
     tc.showZ = mode === 'translate'
 
     stop()
@@ -186,7 +187,7 @@
 <T.DirectionalLight position={[5, 10, 5]} intensity={1} />
 
 <T.PerspectiveCamera makeDefault position={[0, 4, 8]} fov={60}>
-  <OrbitControls enabled={orbitEnabled} minDistance={0.5} screenSpacePanning={true} />
+  <OrbitControls enabled={orbitEnabled} zoomToCursor={true} screenSpacePanning={true} />
 </T.PerspectiveCamera>
 
 {#each builtSpaces as space, i (space.url)}

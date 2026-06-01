@@ -20,7 +20,6 @@ from stitch.router import router as stitch_router
 from video.router import router as video_router
 from copilot.router import router as realtime_router
 from navmesh_rooms.router import router as navmesh_rooms_router
-from mesh_rooms.router import router as mesh_rooms_router
 import live_asset_data
 
 _DETOUR_PORT = int(os.environ.get('DETOUR_PORT', '7654'))
@@ -48,12 +47,9 @@ def _start_detour_server() -> subprocess.Popen:
 async def lifespan(app: FastAPI):
     detour_proc = await asyncio.to_thread(_start_detour_server)
 
-    output_dir = os.environ.get('OUTPUT_DIR')
-    if output_dir:
-        infer.load(output_dir, os.environ.get('METHOD', 'kmeans'))
-
     task = asyncio.create_task(live_asset_data.run())
     yield
+
     task.cancel()
     detour_proc.terminate()
     detour_proc.wait()
@@ -81,8 +77,6 @@ app.include_router(stitch_router)
 app.include_router(video_router)
 app.include_router(realtime_router)
 app.include_router(navmesh_rooms_router)
-app.include_router(mesh_rooms_router)
-# app.include_router(room_inference_router)
 
 
 @app.get('/health')

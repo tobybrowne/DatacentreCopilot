@@ -1,7 +1,7 @@
 class_name OcclusionManager
 extends Node3D
 
-# Fallback depth occluders built from loc_bounding_box polygon edges.
+# Fallback depth occluders built from tight_bounding_box polygon edges (falls back to loc_bounding_box).
 # Each edge becomes a wall quad rendered at render_priority=-50, after WorldMeshManager
 # (-100). Standard GPU depth testing ensures world mesh wins where scanned; the
 # fallback wall writes depth only where the depth buffer still shows the far plane.
@@ -13,7 +13,7 @@ extends Node3D
 			if is_instance_valid(mi):
 				mi.visible = v
 
-# When true, renders translucent orange walls instead of depth-only — useful for
+# When true, renders translucent orange walls instead of depth-only - useful for
 # verifying wall placement without putting on the headset.
 @export var debug_visible: bool = false
 @export var tof_range: float = 4
@@ -37,12 +37,12 @@ func _rebuild_walls() -> void:
 	_wall_nodes.clear()
 
 	for space: Space in _anchor_manager.get_building_spaces():
-		if not space.loc_bounding_box.is_empty():
+		if not space.tight_bounding_box.is_empty() or not space.loc_bounding_box.is_empty():
 			_build_walls_for_space(space)
 
 
 func _build_walls_for_space(space: Space) -> void:
-	var bbox: Dictionary = space.loc_bounding_box
+	var bbox: Dictionary = space.tight_bounding_box if not space.tight_bounding_box.is_empty() else space.loc_bounding_box
 	var verts: Array = bbox.get("vertices_2d", [])
 	if verts.size() < 2:
 		return

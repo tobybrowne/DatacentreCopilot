@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict KFCJTAD6atDV3iVk0H29nvHEmjqs662nNv3c0kZTrVgxcIautX2N0bamSk921oG
+\restrict Ac2S71bW0rhm6H9bZPTcrOdysfEeRyZcbG0augea3ZfBEfa7SJFKG5ALg28ypRS
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.6
@@ -122,12 +122,15 @@ $$;
 CREATE FUNCTION public.trigger_bbox_computation() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
+DECLARE
+  _secret text;
 BEGIN
   IF NEW.glb_path IS NOT NULL AND (OLD IS NULL OR OLD.glb_path IS DISTINCT FROM NEW.glb_path) THEN
+    SELECT decrypted_secret INTO _secret FROM vault.decrypted_secrets WHERE name = 'webhook_secret';
     PERFORM net.http_post(
-      'https://room-finder.tobybrowne.co.uk/spaces/compute-bbox'::text,
-      json_build_object('space_id', NEW.id)::jsonb,
-      '{"Content-Type": "application/json"}'::jsonb
+      url     := 'https://room-finder.tobybrowne.co.uk/spaces/compute-bbox',
+      body    := json_build_object('space_id', NEW.id)::jsonb,
+      headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || _secret)
     );
   END IF;
   RETURN NEW;
@@ -142,12 +145,15 @@ $$;
 CREATE FUNCTION public.trigger_video_conversion() RETURNS trigger
     LANGUAGE plpgsql SECURITY DEFINER
     AS $$
+DECLARE
+  _secret text;
 BEGIN
   IF NEW.camera_recording_path IS NOT NULL THEN
+    SELECT decrypted_secret INTO _secret FROM vault.decrypted_secrets WHERE name = 'webhook_secret';
     PERFORM net.http_post(
-      'https://room-finder.tobybrowne.co.uk/video/convert'::text,
-      json_build_object('log_id', NEW.id)::jsonb,
-      '{"Content-Type": "application/json"}'::jsonb
+      url     := 'https://room-finder.tobybrowne.co.uk/video/convert',
+      body    := json_build_object('log_id', NEW.id)::jsonb,
+      headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || _secret)
     );
   END IF;
   RETURN NEW;
@@ -172,7 +178,8 @@ CREATE TABLE public.anchors (
     glb_position jsonb,
     space_id uuid NOT NULL,
     anchor_type public.anchor_type_enum DEFAULT 'content'::public.anchor_type_enum NOT NULL,
-    glb_rotation jsonb
+    glb_rotation jsonb,
+    img_path text
 );
 
 
@@ -187,7 +194,8 @@ CREATE TABLE public.asset_live_data (
     alarm boolean DEFAULT false NOT NULL,
     "timestamp" timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    space_id uuid
 );
 
 
@@ -232,7 +240,8 @@ CREATE TABLE public.buildings (
     updated_at timestamp without time zone DEFAULT now(),
     draft boolean DEFAULT true NOT NULL,
     navmesh_id uuid,
-    site_id uuid NOT NULL
+    site_id uuid NOT NULL,
+    floorplan_id uuid
 );
 
 
@@ -254,6 +263,7 @@ CREATE TABLE public.experiment_logs (
 CREATE VIEW public.latest_asset_live_data AS
  SELECT DISTINCT ON (asset_id) id,
     asset_id,
+    space_id,
     data,
     alarm,
     "timestamp",
@@ -315,7 +325,8 @@ CREATE TABLE public.navmeshes (
     build_settings jsonb NOT NULL,
     created_at timestamp without time zone DEFAULT now(),
     updated_at timestamp without time zone DEFAULT now(),
-    glb_path text
+    glb_path text,
+    room_segments jsonb
 );
 
 
@@ -360,18 +371,6 @@ CREATE TABLE public.procedures (
 
 
 --
--- Name: routes; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.routes (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    start_anchor_id uuid NOT NULL,
-    end_anchor_id uuid NOT NULL,
-    waypoints jsonb NOT NULL
-);
-
-
---
 -- Name: sites; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -399,7 +398,8 @@ CREATE TABLE public.spaces (
     building_index integer,
     offset_transformation jsonb,
     bounding_box jsonb,
-    loc_bounding_box jsonb
+    loc_bounding_box jsonb,
+    tight_bounding_box jsonb
 );
 
 
@@ -532,14 +532,6 @@ ALTER TABLE ONLY public.procedures
 
 
 --
--- Name: routes routes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.routes
-    ADD CONSTRAINT routes_pkey PRIMARY KEY (id);
-
-
---
 -- Name: sites sites_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -601,6 +593,14 @@ ALTER TABLE ONLY public.asset_live_data
 
 
 --
+-- Name: asset_live_data asset_live_data_space_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.asset_live_data
+    ADD CONSTRAINT asset_live_data_space_id_fkey FOREIGN KEY (space_id) REFERENCES public.spaces(id) ON DELETE SET NULL;
+
+
+--
 -- Name: asset_models asset_models_manual_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -638,6 +638,14 @@ ALTER TABLE ONLY public.assets
 
 ALTER TABLE ONLY public.assets
     ADD CONSTRAINT assets_building_id_fkey FOREIGN KEY (building_id) REFERENCES public.buildings(id) ON DELETE CASCADE;
+
+
+--
+-- Name: buildings buildings_floorplan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.buildings
+    ADD CONSTRAINT buildings_floorplan_id_fkey FOREIGN KEY (floorplan_id) REFERENCES public.navmeshes(id);
 
 
 --
@@ -737,22 +745,6 @@ ALTER TABLE ONLY public.procedures
 
 
 --
--- Name: routes routes_end_anchor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.routes
-    ADD CONSTRAINT routes_end_anchor_id_fkey FOREIGN KEY (end_anchor_id) REFERENCES public.anchors(id) ON DELETE CASCADE;
-
-
---
--- Name: routes routes_start_anchor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.routes
-    ADD CONSTRAINT routes_start_anchor_id_fkey FOREIGN KEY (start_anchor_id) REFERENCES public.anchors(id) ON DELETE CASCADE;
-
-
---
 -- Name: spaces spaces_building_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -810,7 +802,7 @@ CREATE POLICY "Site members can update buildings" ON public.buildings FOR UPDATE
 CREATE POLICY "Site members can update navmeshes" ON public.navmeshes FOR UPDATE USING ((EXISTS ( SELECT 1
    FROM (public.buildings
      JOIN public.users ON ((users.site_id = buildings.site_id)))
-  WHERE ((buildings.navmesh_id = navmeshes.id) AND (users.id = ( SELECT auth.uid() AS uid))))));
+  WHERE (((buildings.navmesh_id = navmeshes.id) OR (buildings.floorplan_id = navmeshes.id)) AND (users.id = ( SELECT auth.uid() AS uid))))));
 
 
 --
@@ -1152,7 +1144,7 @@ CREATE POLICY "Users can view manuals for sites they have access to" ON public.m
 
 CREATE POLICY "Users can view navmeshes for buildings they have access to" ON public.navmeshes FOR SELECT USING ((EXISTS ( SELECT 1
    FROM public.buildings
-  WHERE (buildings.navmesh_id = navmeshes.id))));
+  WHERE ((buildings.navmesh_id = navmeshes.id) OR (buildings.floorplan_id = navmeshes.id)))));
 
 
 --
@@ -1308,5 +1300,5 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict KFCJTAD6atDV3iVk0H29nvHEmjqs662nNv3c0kZTrVgxcIautX2N0bamSk921oG
+\unrestrict Ac2S71bW0rhm6H9bZPTcrOdysfEeRyZcbG0augea3ZfBEfa7SJFKG5ALg28ypRS
 

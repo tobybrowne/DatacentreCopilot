@@ -140,7 +140,7 @@ func _upload_gesture_recording(frames: Array[PoseRec], step_id: String) -> Strin
 	DirAccess.remove_absolute(tmp_path)
 
 	if task.error != null:
-		push_warning("LogRecordManager: gesture upload failed — code=%s message=%s details=%s" % [task.error.code, task.error.message, task.error.details])
+		push_warning("LogRecordManager: gesture upload failed - code=%s message=%s details=%s" % [task.error.code, task.error.message, task.error.details])
 		return ""
 	return remote_path
 
@@ -155,7 +155,7 @@ func _upload_camera_recording(local_path: String, step_id: String) -> String:
 	DirAccess.remove_absolute(local_path)
 
 	if task.error != null:
-		push_warning("LogRecordManager: camera upload failed — code=%s message=%s details=%s" % [task.error.code, task.error.message, task.error.details])
+		push_warning("LogRecordManager: camera upload failed - code=%s message=%s details=%s" % [task.error.code, task.error.message, task.error.details])
 		return ""
 	return remote_path
 

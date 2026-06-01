@@ -24,8 +24,12 @@
     pointClouds?: Array<{ points: Position[]; color: number }>;
     mergedSpacesClickable?: boolean;
     showDensity?: boolean;
+    draggableAnchorId?: string | null;
+    canExport?: boolean;
+    exportName?: string;
     onplace?: (detail: { position: Position; spaceIndex: number | null }) => void;
     onselect?: (id: string) => void;
+    ondraganchor?: (id: string, pos: Position) => void;
   }
 
   let {
@@ -46,9 +50,28 @@
     pointClouds = [],
     mergedSpacesClickable = false,
     showDensity = false,
+    draggableAnchorId = null,
+    canExport = false,
+    exportName = 'space',
     onplace,
-    onselect
+    onselect,
+    ondraganchor
   }: Props = $props();
+
+  let exportTrigger = $state(0)
+
+  function exportPng(): void {
+    exportTrigger++
+  }
+
+  function handleExportBlob(blob: Blob): void {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${exportName}.png`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 </script>
 
 <div class="canvas-wrap">
@@ -72,13 +95,23 @@
       {mergedSpacesClickable}
       {showDensity}
       {whiteBackground}
+      {draggableAnchorId}
+      {exportTrigger}
+      exportScale={2}
       {onplace}
       {onselect}
+      {ondraganchor}
+      onexportblob={handleExportBlob}
     />
   </Canvas>
   <button class="bg-toggle" onclick={() => whiteBackground = !whiteBackground}>
     {whiteBackground ? 'Dark' : 'White'} bg
   </button>
+  {#if canExport}
+    <button class="bg-toggle" style="bottom: 44px" onclick={exportPng}>
+      Export PNG
+    </button>
+  {/if}
 </div>
 
 <style>

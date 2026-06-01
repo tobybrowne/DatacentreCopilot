@@ -3,12 +3,20 @@ extends Node3D
 
 var anchor: Anchor  # set before add_child
 
-const COLOR_COMPLETE   := Color(1.0, 0.85, 0.0)   # yellow — has glb_position
-const COLOR_INCOMPLETE := Color(0.2, 0.8,  1.0)   # cyan   — newly placed, no glb_position yet
+const COLOR_COMPLETE   := Color(1.0, 0.85, 0.0)   # yellow - has glb_position
+const COLOR_INCOMPLETE := Color(0.2, 0.8,  1.0)   # cyan   - newly placed, no glb_position yet
 
 
 func _ready() -> void:
 	var color := COLOR_COMPLETE if anchor.glb_position != null else COLOR_INCOMPLETE
+	var label_color := color
+
+	# In calibration-validation mode, draw the pure (calibration) reference anchors
+	# green to match the actual-position spheres of the held-out validation markers.
+	# The label keeps the default white so it matches the other markers' text.
+	if DevConfig.CALIBRATION_VALIDATION and anchor.glb_position != null:
+		color = CalibrationValidationMarker.COLOR_ACTUAL
+		label_color = Color.WHITE
 
 	var mi := MeshInstance3D.new()
 	var sphere := SphereMesh.new()
@@ -38,5 +46,5 @@ func _ready() -> void:
 		lbl.pixel_size = 0.0005
 		lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 		lbl.no_depth_test = true
-		lbl.modulate = color
+		lbl.modulate = label_color
 		add_child(lbl)

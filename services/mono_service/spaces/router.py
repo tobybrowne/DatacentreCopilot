@@ -95,10 +95,11 @@ def _compute_bounding_box(space_id: str, ratio: float = 0.3) -> None:
 
         hull_pts = np.array(shape.exterior.coords[:-1])  # drop repeated closing vertex
 
+        y_vals = verts[:, 1]
         bounding_box = {
             'vertices_2d': [[float(p[0]), float(p[1])] for p in hull_pts],
-            'y_min': float(verts[:, 1].min()),
-            'y_max': float(verts[:, 1].max()),
+            'y_min': float(np.percentile(y_vals, 1)),
+            'y_max': float(np.percentile(y_vals, 99)),
         }
     finally:
         os.unlink(tmp)

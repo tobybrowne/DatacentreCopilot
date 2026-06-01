@@ -2,6 +2,9 @@
   import { T, useThrelte } from '@threlte/core'
   import { GLTF, OrbitControls, interactivity, type IntersectionEvent } from '@threlte/extras'
   import * as THREE from 'three'
+  import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js'
+  import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js'
+  import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
   import BoundingBoxMesh from './BoundingBoxMesh.svelte'
   import type { BoundingBox, Position, RigidTransform, RoomSegment } from './types'
 
@@ -12,13 +15,13 @@
   ]
 
   const COLLAPSED_BOX_COLORS = [
-    0xffa500, 0xff69b4, 0x7fff00, 0x00ced1,
-    0xff6347, 0xba55d3, 0x20b2aa, 0xffd700,
+    0xff8800, 0xff00cc, 0x00ffcc, 0xffff00,
+    0x00aaff, 0xaa00ff, 0xff4400, 0x00ff44,
   ]
 
   const BOX_COLORS = [
-    0x00ff88, 0x4488ff, 0xff4444, 0xffaa00,
-    0xff44ff, 0x44ffff, 0xffff44, 0x88ff44,
+    0xff8800, 0xff00cc, 0x00ffcc, 0xffff00,
+    0x00aaff, 0xaa00ff, 0xff4400, 0x00ff44,
   ]
 
   interface Props {
@@ -37,6 +40,7 @@
     pickingEnabled?: boolean;
     whiteBackground?: boolean;
     shadedBoxes?: boolean;
+    shadedBoxesCaps?: boolean;
     exportTrigger?: number;
     exportScale?: number;
     onplace?: (pos: Position) => void;
@@ -59,13 +63,14 @@
     pickingEnabled = false,
     whiteBackground = false,
     shadedBoxes = false,
+    shadedBoxesCaps = false,
     exportTrigger = 0,
     exportScale = 1,
     onplace,
     onexportblob
   }: Props = $props();
 
-  const { invalidate, renderer, scene, camera } = useThrelte()
+  const { invalidate, renderer, scene, camera, size } = useThrelte()
 
   $effect(() => {
     if (exportTrigger === 0) return
@@ -83,9 +88,12 @@
         cam.updateProjectionMatrix()
       }
 
+      const savedBackground = scene.background
+      scene.background = null
       renderer.render(scene, cam)
 
       renderer.domElement.toBlob(blob => {
+        scene.background = savedBackground
         if (blob) onexportblob?.(blob)
         renderer.setSize(size.x, size.y, false)
         if (cam instanceof THREE.PerspectiveCamera) {
@@ -96,7 +104,7 @@
       })
     })
   })
-  function buildBoxObjects(verts: [number, number][], y_min: number, y_max: number, color: number, shaded: boolean): THREE.Object3D[] {
+  function buildBoxObjects(verts: [number, number][], y_min: number, y_max: number, color: number, shaded: boolean, shadedCaps: boolean): THREE.Object3D[] {
     const n = verts.length
     const linePositions: number[] = []
     for (let j = 0; j < n; j++) {
@@ -106,9 +114,12 @@
       linePositions.push(x0, y_max, z0, x1, y_max, z1)
       linePositions.push(x0, y_min, z0, x0, y_max, z0)
     }
-    const lineGeo = new THREE.BufferGeometry()
-    lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3))
-    const objects: THREE.Object3D[] = [new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ color }))]
+    const lineGeo = new LineSegmentsGeometry()
+    lineGeo.setPositions(linePositions)
+    const lineMat = new LineMaterial({ color, linewidth: 1.5 })
+    lineMat.resolution.set(size.current.width, size.current.height)
+    const objects: THREE.Object3D[] = [new LineSegments2(lineGeo, lineMat)]
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false })
 
     if (shaded) {
       const positions: number[] = []
@@ -122,7 +133,24 @@
       const fillGeo = new THREE.BufferGeometry()
       fillGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
       fillGeo.setIndex(indices)
-      objects.push(new THREE.Mesh(fillGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.15, side: THREE.DoubleSide, depthWrite: false })))
+      objects.push(new THREE.Mesh(fillGeo, mat))
+    }
+
+    if (shadedCaps) {
+      const positions: number[] = []
+      for (const [x, z] of verts) positions.push(x, y_min, z)
+      for (const [x, z] of verts) positions.push(x, y_max, z)
+      const contour = verts.map(([x, z]) => new THREE.Vector2(x, z))
+      const tris = THREE.ShapeUtils.triangulateShape(contour, [])
+      const indices: number[] = []
+      for (const [a, b, c] of tris) {
+        indices.push(a, b, c)
+        indices.push(n + a, n + c, n + b)
+      }
+      const capGeo = new THREE.BufferGeometry()
+      capGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+      capGeo.setIndex(indices)
+      objects.push(new THREE.Mesh(capGeo, mat))
     }
 
     return objects
@@ -148,7 +176,7 @@
       const fill = new THREE.Mesh(fillGeo, new THREE.MeshBasicMaterial({
         color: ROOM_COLORS[i % ROOM_COLORS.length],
         transparent: true,
-        opacity: 0.15,
+        opacity: 0.4,
         side: THREE.DoubleSide,
         depthWrite: false,
       }))
@@ -175,7 +203,7 @@
     tightBoxesGroup.clear()
     tightBoxes.forEach((bb, i) => {
       const color = TIGHT_BOX_COLORS[i % TIGHT_BOX_COLORS.length]
-      buildBoxObjects(bb.vertices_2d, bb.y_min, bb.y_max, color, shadedBoxes).forEach(o => tightBoxesGroup.add(o))
+      buildBoxObjects(bb.vertices_2d, bb.y_min, bb.y_max, color, shadedBoxes, shadedBoxesCaps).forEach(o => tightBoxesGroup.add(o))
     })
     invalidate()
   })
@@ -184,7 +212,7 @@
     collapsedBoxesGroup.clear()
     collapsedBoxes.forEach((bb, i) => {
       const color = COLLAPSED_BOX_COLORS[i % COLLAPSED_BOX_COLORS.length]
-      buildBoxObjects(bb.vertices_2d, bb.y_min, bb.y_max, color, shadedBoxes).forEach(o => collapsedBoxesGroup.add(o))
+      buildBoxObjects(bb.vertices_2d, bb.y_min, bb.y_max, color, shadedBoxes, shadedBoxesCaps).forEach(o => collapsedBoxesGroup.add(o))
     })
     invalidate()
   })
@@ -226,7 +254,7 @@
 <T.DirectionalLight position={[5, 10, 5]} intensity={1} />
 
 <T.PerspectiveCamera makeDefault position={[0, 2, 5]} fov={60}>
-  <OrbitControls minDistance={0.5} screenSpacePanning={true} />
+  <OrbitControls zoomToCursor={true} screenSpacePanning={true} />
 </T.PerspectiveCamera>
 
 {#each spaces as space, i (space.url)}
@@ -235,7 +263,7 @@
       <GLTF url={space.url} onclick={handleClick} />
     {/if}
     {#if showBoundingBoxes && space.boundingBox}
-      <BoundingBoxMesh boundingBox={space.boundingBox} color={BOX_COLORS[i % BOX_COLORS.length]} shaded={shadedBoxes} />
+      <BoundingBoxMesh boundingBox={space.boundingBox} color={BOX_COLORS[i % BOX_COLORS.length]} shaded={shadedBoxes} shadedCaps={shadedBoxesCaps} />
     {/if}
   </T.Group>
 {/each}

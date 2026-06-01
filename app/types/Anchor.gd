@@ -10,7 +10,7 @@ var id: String
 var name: String
 var ml2_id           # optional ID from ML2 localization map, if applicable
 var anchor_type: String = TYPE_CONTENT
-var glb_position     # null or Vector3 — position in GLB mesh space
+var glb_position     # null or Vector3 - position in GLB mesh space
 var glb_rotation: Quaternion = Quaternion.IDENTITY
 var space_id: String = ""
 

@@ -52,6 +52,14 @@ export async function getSpaceGlbUrl(glbPath: string): Promise<string> {
   return data.signedUrl;
 }
 
+export async function getAnchorImageUrl(imgPath: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from("anchor_img_bucket")
+    .createSignedUrl(imgPath, 3600);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
 export async function computeBoundingBox(spaceId: string): Promise<void> {
   const monoUrl = import.meta.env.VITE_MONO_URL as string;
   const res = await fetch(`${monoUrl}/spaces/compute-bbox`, {
@@ -415,6 +423,17 @@ export async function saveLocBoundingBox(
   const { error } = await supabase
     .from('spaces')
     .update({ loc_bounding_box: bb })
+    .eq('id', spaceId);
+  if (error) throw error;
+}
+
+export async function saveTightBoundingBox(
+  spaceId: string,
+  bb: import('./types').BoundingBox | null
+): Promise<void> {
+  const { error } = await supabase
+    .from('spaces')
+    .update({ tight_bounding_box: bb })
     .eq('id', spaceId);
   if (error) throw error;
 }

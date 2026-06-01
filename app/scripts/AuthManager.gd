@@ -1,6 +1,6 @@
 extends Node
 
-# Hardcoded credentials — replace with secure storage / env vars before production
+# Hardcoded credentials - replace with secure storage / env vars before production
 const _EMAIL := "demo@entangl.ai"
 const _PASSWORD := "@Entangl24"
 
@@ -24,6 +24,6 @@ func _login() -> void:
 	if is_authenticated:
 		print("[AuthManager] authenticated as ", _EMAIL)
 	else:
-		push_warning("[AuthManager] login failed — Supabase calls will not have a valid session")
+		push_warning("[AuthManager] login failed - Supabase calls will not have a valid session")
 		PanelRouter.push("auth_error", {"message": "Login failed. Check credentials and restart."})
 	auth_ready.emit(is_authenticated)

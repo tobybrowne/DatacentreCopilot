@@ -119,7 +119,7 @@
         {#each filteredLogs as log, i (log.id)}
           {@const hasGesture = !!log.geometry_recording_path}
           {@const hasVideo   = !!log.camera_recording_path}
-          {@const clickable  = hasGesture || hasVideo}
+          {@const clickable  = hasVideo}
           {@const day = log.created_at.slice(0, 10)}
           {@const prevDay = i > 0 ? filteredLogs[i - 1].created_at.slice(0, 10) : null}
           {#if day !== prevDay}

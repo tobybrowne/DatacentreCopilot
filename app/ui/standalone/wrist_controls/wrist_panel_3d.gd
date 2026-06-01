@@ -78,7 +78,7 @@ func _process(delta: float) -> void:
 		_panel.set_hold_progress(_hold_timer / _HOLD_TIME)
 
 
-const _HOLD_RADIUS := 0.03  # metres — must be within 3cm of panel centre
+const _HOLD_RADIUS := 0.03  # metres - must be within 3cm of panel centre
 
 func _finger_over_panel(tip_world: Vector3) -> bool:
 	var local := _mesh_instance.global_transform.affine_inverse() * tip_world

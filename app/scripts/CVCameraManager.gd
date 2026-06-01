@@ -1,9 +1,9 @@
 extends Node
 
-# Camera ID 1 is the ML2 CV (computer vision) camera — wide-angle, fixed focus,
-# optimised for close-range feature tracking. Images will appear soft/out of focus
-# at normal distances. For sharper general-purpose images use camera ID 0 (main RGB
-# camera with autofocus), but that requires changing the ID in CVCameraPlugin.kt.
+# Camera ID 0 is the ML2 main RGB camera (autofocus) - sharper general-purpose
+# images. Camera ID 1 is the CV (computer vision) camera - wide-angle, fixed focus,
+# optimised for close-range feature tracking but soft at normal distances. Switch
+# the ID in CVCameraPlugin.kt to change which camera is opened.
 
 const SAVE_DIR := "user://cv_frames/"
 const VIDEO_DIR := "user://cv_videos/"
@@ -53,6 +53,17 @@ func _on_camera_opened() -> void:
 		_timer.timeout.connect(func(): _cv_camera.captureFrame())
 		add_child(_timer)
 		_cv_camera.captureFrame()
+
+# One-shot capture: triggers a single frame and awaits the decoded Image
+# (the same 640x480 image emitted by frame_captured). Returns null if the plugin
+# is unavailable (e.g. desktop simulator).
+func capture_frame() -> Image:
+	if not _cv_camera:
+		push_warning("CVCamera: plugin not available")
+		return null
+	_cv_camera.captureFrame()
+	return await frame_captured
+
 
 func _on_frame_available(data: PackedByteArray) -> void:
 	var image := Image.new()

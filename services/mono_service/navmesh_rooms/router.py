@@ -1,6 +1,5 @@
 import tempfile
 import os
-from datetime import datetime
 
 import numpy as np
 import trimesh
@@ -13,23 +12,6 @@ from shapely.geometry import Polygon as ShapelyPolygon
 from common import get_supabase, require_auth
 
 router = APIRouter(prefix='/navmesh-rooms')
-
-PALETTE = np.array([
-    [0,   212, 255, 200],
-    [255,  80,  80, 200],
-    [80,  255, 120, 200],
-    [255, 200,   0, 200],
-    [180,  80, 255, 200],
-    [255, 140,   0, 200],
-    [0,   180, 255, 200],
-    [255,  60, 180, 200],
-    [60,  220, 180, 200],
-    [200, 255,  60, 200],
-    [255, 160, 120, 200],
-    [120, 120, 255, 200],
-], dtype=np.uint8)
-
-OUTPUT_DIR = os.environ.get('NAVMESH_OUTPUT_DIR', os.path.join(os.path.dirname(__file__), '..', 'navmesh_rooms_output'))
 
 
 class SegmentRequest(BaseModel):
@@ -138,22 +120,6 @@ def _room_polygon(mesh: trimesh.Trimesh, face_ids: list[int]) -> dict:
     }
 
 
-def _export_coloured_glb(mesh: trimesh.Trimesh, rooms: list[list[int]], navmesh_id: str) -> str:
-    coloured = mesh.copy()
-    coloured.unmerge_vertices()
-    face_colors = np.zeros((len(coloured.faces), 4), dtype=np.uint8)
-    for ri, face_ids in enumerate(rooms):
-        face_colors[face_ids] = PALETTE[ri % len(PALETTE)]
-    coloured.visual = trimesh.visual.ColorVisuals(mesh=coloured, face_colors=face_colors)
-
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-    path = os.path.join(OUTPUT_DIR, f'{navmesh_id}_{ts}.glb')
-    coloured.export(path)
-    print(f'[navmesh-rooms] saved coloured GLB → {path}')
-    return path
-
-
 @router.post('/segment')
 async def segment(req: SegmentRequest, _: None = Depends(require_auth)) -> list[dict]:
     sb = get_supabase()
@@ -172,6 +138,8 @@ async def segment(req: SegmentRequest, _: None = Depends(require_auth)) -> list[
     data = sb.storage.from_('spaces_bucket').download(row['glb_path'])
     mesh = _load_mesh(data)
     rooms = _segment(mesh, resolution=req.resolution)
-    _export_coloured_glb(mesh, rooms, req.navmesh_id)
 
-    return [_room_polygon(mesh, fids) for fids in rooms]
+    segments = [_room_polygon(mesh, fids) for fids in rooms]
+    sb.table('navmeshes').update({'room_segments': segments}).eq('id', req.navmesh_id).execute()
+    print(f'[navmesh-rooms] saved {len(segments)} room segments for navmesh {req.navmesh_id}')
+    return segments

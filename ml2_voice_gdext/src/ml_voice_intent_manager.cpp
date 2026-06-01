@@ -182,7 +182,7 @@ void MLVoiceIntentManager::on_voice_event(const MLVoiceIntentEvent *event) {
 		return;
 	}
 
-	// Callback fires on MLSDK thread — must defer all signal emissions to the main thread.
+	// Callback fires on MLSDK thread - must defer all signal emissions to the main thread.
 	call_deferred("emit_signal", "voice_state_changed", (int)event->state);
 
 	if (!event->is_success) {

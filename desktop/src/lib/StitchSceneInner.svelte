@@ -91,7 +91,7 @@
 <T.DirectionalLight position={[5, 10, 5]} intensity={1} />
 
 <T.PerspectiveCamera makeDefault position={[0, 4, 8]} fov={60}>
-  <OrbitControls enabled={orbitEnabled} minDistance={0.5} screenSpacePanning={true} />
+  <OrbitControls enabled={orbitEnabled} zoomToCursor={true} screenSpacePanning={true} />
 </T.PerspectiveCamera>
 
 {#if spaceAUrl}

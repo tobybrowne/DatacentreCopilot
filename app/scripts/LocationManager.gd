@@ -33,7 +33,7 @@ var _indicator: TrackingIndicator
 	set(v):
 		show_bounding_boxes = v
 		for vis in _bbox_visuals:
-			vis.visible = v and DevConfig.DEV_MODE
+			vis.visible = v and DevConfig.SHOW_BOUNDING_BOXES
 
 var _bbox_visuals: Array[BoundingBoxVisual] = []
 
@@ -75,7 +75,7 @@ func _rebuild_bbox_visuals() -> void:
 		vis.bbox = space.loc_bounding_box
 		vis.color = BoundingBoxVisual.COLORS[i % BoundingBoxVisual.COLORS.size()]
 		vis.anchor_manager = _anchor_manager
-		vis.visible = show_bounding_boxes and DevConfig.DEV_MODE
+		vis.visible = show_bounding_boxes and DevConfig.SHOW_BOUNDING_BOXES
 		get_parent().add_child(vis)
 		_bbox_visuals.append(vis)
 
@@ -152,19 +152,8 @@ func _update_room_label(building_pos: Vector3) -> void:
 	var closest_id := ""
 	if contained.size() == 1:
 		closest_id = contained[0]
-	else:
-		# Fallback: nearest centroid anchor — restricted to contained set when overlapping, else all spaces.
-		var closest_dist := INF
-		for anchor in _anchor_manager.get_all_anchors().values():
-			if anchor.name != "__centroid__" or anchor.glb_position == null:
-				continue
-			if contained.size() > 1 and not anchor.space_id in contained:
-				continue
-			var offset: Transform3D = offsets.get(anchor.space_id, Transform3D.IDENTITY)
-			var dist: float = building_pos.distance_to(offset * anchor.glb_position)
-			if dist < closest_dist:
-				closest_dist = dist
-				closest_id = anchor.space_id
+	elif contained.size() > 1:
+		closest_id = contained[0]
 
 	if closest_id.is_empty():
 		return
@@ -188,12 +177,11 @@ func _poll_localization() -> void:
 	if _indicator:
 		_indicator.set_confidence(confidence)
 
-	if confidence == 0:
+	if not current_coarse_space.is_empty() and current_coarse_space != _anchor_manager.get_current_space_id():
 		_poor_quality_timer += LOC_POLL_INTERVAL
 		if _poor_quality_timer >= POOR_RELOC_THRESHOLD:
-			if not current_coarse_space.is_empty() and current_coarse_space != _anchor_manager.get_current_space_id():
-				_attempt_relocalisation(current_coarse_space)
-				_poor_quality_timer = 0.0
+			_attempt_relocalisation(current_coarse_space)
+			_poor_quality_timer = 0.0
 	else:
 		_poor_quality_timer = 0.0
 
@@ -201,10 +189,10 @@ func _poll_localization() -> void:
 func _attempt_relocalisation(target_space_id: String) -> void:
 	var ref_count := _anchor_manager.ref_anchor_count(target_space_id)
 	if ref_count < 3:
-		print("LocationManager: skipping reloc to ", target_space_id, " — only ", ref_count, "/3 ref anchors")
+		print("LocationManager: skipping reloc to ", target_space_id, " - only ", ref_count, "/3 ref anchors")
 		return
 
-	print("LocationManager: POOR quality too long — attempting reloc to ", target_space_id)
+	print("LocationManager: coarse space mismatch - attempting reloc to ", target_space_id)
 	var ext := _ml2_ext()
 	if not ext:
 		return
@@ -217,7 +205,7 @@ func _attempt_relocalisation(target_space_id: String) -> void:
 
 func _on_localization_changed(state: int, _confidence: int, _error_flags: int) -> void:
 	match state:
-		1: # LOCALIZED — success
+		1: # LOCALIZED - success
 			var was_relocalising := _relocalising
 			_relocalising = false
 			if was_relocalising:
@@ -232,14 +220,15 @@ func _on_localization_changed(state: int, _confidence: int, _error_flags: int) -
 							print("LocationManager: relocalised to ", supabase_id)
 							current_coarse_space = supabase_id
 							localised_space_changed.emit(supabase_id)
-							_anchor_manager.calibrate_to_space(supabase_id)
+							var bsm := BuildingSessionManager.instance
+							_anchor_manager.calibrate_to_space(supabase_id, bsm.space_offsets, bsm.anchors, bsm.spaces)
 
 		0: # NOT_LOCALIZED
 			if _relocalising:
 				_relocalising = false
 				if _indicator:
 					_indicator.set_spinning(false)
-				print("LocationManager: relocalisation failed — NOT_LOCALIZED")
+				print("LocationManager: relocalisation failed - NOT_LOCALIZED")
 
 		2, 3: # PENDING / SLEEPING
 			pass
@@ -247,8 +236,12 @@ func _on_localization_changed(state: int, _confidence: int, _error_flags: int) -
 
 func calibrate_to_space(space_id: String) -> void:
 	_request_localization(space_id)
+	BuildingSessionManager.instance.clear()
+	# Load building data and wait for fair localisation in parallel
+	await BuildingSessionManager.instance.load_for_space(space_id)
 	await _wait_for_fair_localisation()
-	await _anchor_manager.calibrate_to_space(space_id)
+	var bsm := BuildingSessionManager.instance
+	await _anchor_manager.calibrate_to_space(space_id, bsm.space_offsets, bsm.anchors, bsm.spaces)
 	print("LocationManager: calibrate_to_space ", space_id)
 	localised_space_changed.emit(space_id)
 
@@ -265,7 +258,7 @@ func _wait_for_fair_localisation() -> void:
 	while true:
 		var args = await ext.localization_changed
 		if args[0] == 1 and args[1] >= 1:
-			print("LocationManager: reached FAIR — proceeding with calibration")
+			print("LocationManager: reached FAIR - proceeding with calibration")
 			break
 	if _indicator:
 		_indicator.set_spinning(false)

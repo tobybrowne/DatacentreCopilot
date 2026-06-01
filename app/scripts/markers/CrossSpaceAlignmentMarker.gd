@@ -1,0 +1,84 @@
+class_name CrossSpaceAlignmentMarker
+extends Node3D
+
+## Visualises cross-space stitch alignment error for a reference anchor.
+## Shows two predictions of where the anchor should be in ML2 world space:
+##   orange: predicted by the previous space's calibration + stitch offset
+##   green:  predicted by this space's own calibration matrix
+## The distance between them is the error incurred by not recalibrating.
+##
+## Must be added as a child of XROrigin3D at position Vector3.ZERO.
+
+var rough_pos: Vector3      # fixed: prev calibration + stitch offset prediction
+var glb_position: Vector3   # anchor's GLB position (actual prediction updates on recalibration)
+var anchor_name: String = ""
+var anchor_mgr: AnchorManager
+
+const COLOR_ROUGH  := Color(1.0, 0.5, 0.0)   # orange - stitch-only prediction
+const COLOR_ACTUAL := Color(0.0, 1.0, 0.3)   # green  - this space's calibration
+
+var _rough_mi: MeshInstance3D
+var _actual_mi: MeshInstance3D
+var _dist_label: Label3D
+var _line_mesh: ImmediateMesh
+var _line_mat: StandardMaterial3D
+
+
+func _ready() -> void:
+	_rough_mi = _make_sphere(COLOR_ROUGH, 0.06)
+	_rough_mi.position = rough_pos
+	add_child(_rough_mi)
+
+	_actual_mi = _make_sphere(COLOR_ACTUAL, 0.06)
+	add_child(_actual_mi)
+
+	_dist_label = Label3D.new()
+	_dist_label.font_size = 128
+	_dist_label.pixel_size = 0.0005
+	_dist_label.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	_dist_label.no_depth_test = true
+	add_child(_dist_label)
+
+	_line_mat = StandardMaterial3D.new()
+	_line_mat.albedo_color = Color.WHITE
+	_line_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_line_mat.no_depth_test = true
+
+	_line_mesh = ImmediateMesh.new()
+	var line_mi := MeshInstance3D.new()
+	line_mi.mesh = _line_mesh
+	add_child(line_mi)
+
+
+func _process(_delta: float) -> void:
+	if anchor_mgr == null:
+		return
+
+	var actual_pos := anchor_mgr.glb_to_world(glb_position)
+	_actual_mi.position = actual_pos
+
+	var dist := rough_pos.distance_to(actual_pos)
+	var label := anchor_name + "\n" if anchor_name != "" else ""
+	_dist_label.text = label + "%.3f m" % dist
+	_dist_label.position = (rough_pos + actual_pos) * 0.5 + Vector3(0, 0.12, 0)
+
+	_line_mesh.clear_surfaces()
+	_line_mesh.surface_begin(Mesh.PRIMITIVE_LINES, _line_mat)
+	_line_mesh.surface_add_vertex(rough_pos)
+	_line_mesh.surface_add_vertex(actual_pos)
+	_line_mesh.surface_end()
+
+
+func _make_sphere(color: Color, radius: float) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = radius
+	sphere.height = radius * 2.0
+	mi.mesh = sphere
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.emission_enabled = true
+	mat.emission = color
+	mat.emission_energy_multiplier = 2.0
+	mi.material_override = mat
+	return mi

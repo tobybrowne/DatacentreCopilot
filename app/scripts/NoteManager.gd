@@ -45,7 +45,7 @@ func create_note_at(world_pos: Vector3, text: String) -> void:
 		note.anchor_id = inserted_anchor.id
 		await SupabaseManager.insert_note(note)
 	else:
-		push_warning("NoteManager: failed to insert anchor — showing note locally only")
+		push_warning("NoteManager: failed to insert anchor - showing note locally only")
 		inserted_anchor = anchor
 
 	_anchor_manager.spawn_note_marker(inserted_anchor, text, world_pos)
