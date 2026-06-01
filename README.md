@@ -50,7 +50,7 @@ Each component has its own setup instructions — start there:
 
 - **Headset app:** build & deploy to a connected ML2 with `./launch.sh` (exports the
   Godot project to an APK via `adb`, launches it as an immersive HMD app, and streams
-  `logcat`). See [`docs/ANDROID.md`](docs/ANDROID.md) and [`docs/DEPLOY.md`](docs/DEPLOY.md).
+  `logcat`).
 - **Backend:** [`services/mono_service/README.md`](services/mono_service/README.md)
 - **Web companion:** [`desktop/README.md`](desktop/README.md)
 - **Database:** the `supabase/` directory holds the schema and migrations; run a local
@@ -73,23 +73,6 @@ entangl-copilot/
 ├── cv_camera_plugin/     # ML2 Camera2 GDExtension
 ├── ml2_voice_gdext/      # ML2 voice-intent GDExtension
 ├── ml2_imu_gdext/        # ML2 IMU GDExtension
-├── docs/                 # deeper docs + database ERD
 ├── testing/              # experiments & benchmarks (git-ignored)
 └── launch.sh             # build & deploy the headset app to ML2
 ```
-
----
-
-## Documentation
-
-Deeper notes live in [`docs/`](docs):
-
-| Doc | Topic |
-|-----|-------|
-| [`Anchors.md`](docs/Anchors.md) | Spatial anchor system and the coordinate-space rules for world-locked content |
-| [`SCAN_STITCHING.md`](docs/SCAN_STITCHING.md) | How room scans are aligned and stitched into a building |
-| [`LOCALISATION.md`](docs/LOCALISATION.md) | ML2 localization maps |
-| [`ANDROID.md`](docs/ANDROID.md) · [`DEPLOY.md`](docs/DEPLOY.md) | Building and deploying the ML2 APK |
-| [`GODOT-NOTES.md`](docs/GODOT-NOTES.md) | Godot / OpenXR gotchas |
-| [`UV.md`](docs/UV.md) | Python tooling (`uv`) |
-| `erd.*` | Generated database entity-relationship diagrams |

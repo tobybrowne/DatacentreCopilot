@@ -21,7 +21,7 @@ mostly stateless request handling plus a couple of background tasks.
 
 ## Setup
 
-Requires **Python 3.12+**, [`uv`](../../docs/UV.md), and **Node.js** (for the navmesh sidecar).
+Requires **Python 3.12+**, [`uv`](https://docs.astral.sh/uv/), and **Node.js** (for the navmesh sidecar).
 
 ```bash
 cd services/mono_service
