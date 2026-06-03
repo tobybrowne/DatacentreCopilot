@@ -1,12 +1,14 @@
 <script lang="ts">
   import { T, useThrelte, useTask } from '@threlte/core'
-  import { GLTF, OrbitControls, interactivity, type IntersectionEvent } from '@threlte/extras'
+  import { GLTF, interactivity, type IntersectionEvent } from '@threlte/extras'
   import { onDestroy } from 'svelte'
   import * as THREE from 'three'
   import { TransformControls } from 'three/addons/controls/TransformControls.js'
   import TransformedGltf from './TransformedGltf.svelte'
   import BoundingBoxMesh from './BoundingBoxMesh.svelte'
   import DensityHeatmap from './DensityHeatmap.svelte'
+  import SceneStage from './SceneStage.svelte'
+  import { useSnapshot } from './useSnapshot'
   import type { Anchor, BoundingBox, Position, RigidTransform } from './types'
 
 
@@ -74,39 +76,18 @@
 
   let originGroup: THREE.Group | undefined = $state()
 
-  // Render the current view to a PNG blob at exportScale resolution whenever
-  // exportTrigger changes (mirrors NavigateSceneInner's export).
+  // Render to a PNG whenever exportTrigger changes; hide the origin marker first.
+  const snapshot = useSnapshot({
+    scale: () => exportScale,
+    onblob: (blob) => onexportblob?.(blob),
+    prepare: () => {
+      if (originGroup) originGroup.visible = false
+      return () => { if (originGroup) originGroup.visible = true }
+    },
+  })
   $effect(() => {
     if (exportTrigger === 0) return
-    invalidate()
-    requestAnimationFrame(() => {
-      const vp = renderer.getSize(new THREE.Vector2())
-      const w = vp.x * exportScale
-      const h = vp.y * exportScale
-
-      renderer.setSize(w, h, false)
-
-      const cam = camera.current
-      if (cam instanceof THREE.PerspectiveCamera) {
-        cam.aspect = w / h
-        cam.updateProjectionMatrix()
-      }
-
-      // Hide the origin marker/axes helper so they don't appear in the export.
-      if (originGroup) originGroup.visible = false
-      renderer.render(scene, cam)
-
-      renderer.domElement.toBlob(blob => {
-        if (originGroup) originGroup.visible = true
-        if (blob) onexportblob?.(blob)
-        renderer.setSize(vp.x, vp.y, false)
-        if (cam instanceof THREE.PerspectiveCamera) {
-          cam.aspect = vp.x / vp.y
-          cam.updateProjectionMatrix()
-        }
-        invalidate()
-      })
-    })
+    snapshot()
   })
 
   let tc: TransformControls | null = null
@@ -227,18 +208,9 @@
 </script>
 
 
-{#if whiteBackground}
-  <T.Color attach="background" args={[0xffffff]} />
-{/if}
+<SceneStage {whiteBackground} {orbitEnabled} />
 
-<!-- generic scene setting, define lighting and add axis helper at 0,0,0 -->
-<T.AmbientLight intensity={0.6} />
-<T.DirectionalLight position={[5, 10, 5]} intensity={1} castShadow />
-
-<T.PerspectiveCamera makeDefault position={[0, 2, 5]} fov={60}>
-  <OrbitControls enabled={orbitEnabled} zoomToCursor={true} screenSpacePanning={true} />
-</T.PerspectiveCamera>
-
+<!-- origin marker -->
 <T.Group bind:ref={originGroup}>
   <T.Mesh position={[0, 0, 0]}>
     <T.SphereGeometry args={[0.04, 12, 12]} />

@@ -7,7 +7,8 @@
   import { fetchSpaces, fetchBuildingById, getSpaceGlbUrl, createDraftBuilding, prepareAddSpace, resetBuildingForRestitch, updateBuildingSpaceTransform, finalizeDraftBuilding } from '$lib/supabase'
   import { session } from '$lib/auth'
   import BuildingStitchScene from '$lib/BuildingStitchScene.svelte'
-  import NavigateSceneInner from '$lib/NavigateSceneInner.svelte'
+  import BuildingSceneInner from '$lib/BuildingSceneInner.svelte'
+  import ExportButton from '$lib/ExportButton.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
   import DetailLayout from '$lib/DetailLayout.svelte'
   import Button from '$lib/Button.svelte'
@@ -563,12 +564,12 @@
           }}
         />
       </Canvas>
-      <button class="export-btn" onclick={() => exportTrigger++}>Export PNG</button>
+      <ExportButton onclick={() => exportTrigger++} />
     {:else if phase === 'align' && !currentSpaceId && builtSpaces.length > 0}
       <Canvas rendererParameters={{ preserveDrawingBuffer: true, alpha: false }}>
-        <NavigateSceneInner spaces={builtSpacesForScene} {showBoundingBoxes} {exportTrigger} exportScale={2} onexportblob={handleExportBlob} />
+        <BuildingSceneInner spaces={builtSpacesForScene} {showBoundingBoxes} {exportTrigger} exportScale={2} onexportblob={handleExportBlob} />
       </Canvas>
-      <button class="export-btn" onclick={() => exportTrigger++}>Export PNG</button>
+      <ExportButton onclick={() => exportTrigger++} />
     {:else}
       <div class="placeholder">
         {phase === 'setup'
@@ -588,21 +589,6 @@
     height: 100%;
     overflow: hidden;
   }
-
-  .export-btn {
-    position: absolute;
-    bottom: 12px;
-    right: 12px;
-    padding: 4px 10px;
-    font-size: 12px;
-    background: rgba(0,0,0,0.4);
-    color: white;
-    border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .export-btn:hover { background: rgba(0,0,0,0.6); }
-
 
   .nav-row { display: flex; gap: 6px; margin-top: 8px; }
   .nav-row :global(button) { flex: 1; }

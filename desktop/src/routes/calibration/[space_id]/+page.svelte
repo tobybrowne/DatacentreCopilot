@@ -3,7 +3,7 @@
   import { page } from '$app/stores'
   import { onMount } from 'svelte'
   import { fetchAnchors, fetchSpaceById, deleteAnchor, unmapAnchor, setGlbPosition, getSpaceGlbUrl, getAnchorImageUrl, computeBoundingBox } from '$lib/supabase'
-  import Scene from '$lib/Scene.svelte'
+  import AnchorScene from '$lib/AnchorScene.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
   import DetailLayout from '$lib/DetailLayout.svelte'
   import Collapsible from '$lib/Collapsible.svelte'
@@ -252,7 +252,7 @@
   </Collapsible>
 </Sidebar>
 
-<Scene
+<AnchorScene
   {glbUrl}
   {anchors}
   {selectedId}

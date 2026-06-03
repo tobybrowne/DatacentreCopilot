@@ -1,10 +1,12 @@
 <script lang="ts">
   import { T, useThrelte, useTask } from '@threlte/core'
-  import { GLTF, OrbitControls } from '@threlte/extras'
+  import { GLTF } from '@threlte/extras'
   import { onDestroy, untrack } from 'svelte'
   import * as THREE from 'three'
   import { TransformControls } from 'three/addons/controls/TransformControls.js'
   import BoundingBoxMesh from './BoundingBoxMesh.svelte'
+  import SceneStage from './SceneStage.svelte'
+  import { useSnapshot } from './useSnapshot'
   import type { BoundingBox, RigidTransform } from './types'
 
   interface Props {
@@ -145,30 +147,10 @@
     if (tc && newGroup) tc.attach(newGroup)
   })
 
+  const snapshot = useSnapshot({ scale: () => 2, onblob: (blob) => onexportblob?.(blob) })
   $effect(() => {
     if (exportTrigger === 0) return
-    invalidate()
-    requestAnimationFrame(() => {
-      const size = renderer.getSize(new THREE.Vector2())
-      const w = size.x * 2
-      const h = size.y * 2
-      renderer.setSize(w, h, false)
-      const cam = camera.current
-      if (cam instanceof THREE.PerspectiveCamera) {
-        cam.aspect = w / h
-        cam.updateProjectionMatrix()
-      }
-      renderer.render(scene, cam)
-      renderer.domElement.toBlob(blob => {
-        if (blob) onexportblob?.(blob)
-        renderer.setSize(size.x, size.y, false)
-        if (cam instanceof THREE.PerspectiveCamera) {
-          cam.aspect = size.x / size.y
-          cam.updateProjectionMatrix()
-        }
-        invalidate()
-      })
-    })
+    snapshot()
   })
 
   onDestroy(() => {
@@ -183,12 +165,7 @@
   })
 </script>
 
-<T.AmbientLight intensity={0.6} />
-<T.DirectionalLight position={[5, 10, 5]} intensity={1} />
-
-<T.PerspectiveCamera makeDefault position={[0, 4, 8]} fov={60}>
-  <OrbitControls enabled={orbitEnabled} zoomToCursor={true} screenSpacePanning={true} />
-</T.PerspectiveCamera>
+<SceneStage cameraPosition={[0, 4, 8]} {orbitEnabled} />
 
 {#each builtSpaces as space, i (space.url)}
   <T.Group bind:ref={groupRefs[i]}>

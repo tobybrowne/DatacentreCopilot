@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { Canvas } from '@threlte/core'
   import { exportNavMesh, NavMeshQuery, type NavMesh } from 'recast-navigation'
   import { floodFillPruneNavMesh } from '@recast-navigation/core'
   import * as THREE from 'three'
@@ -8,7 +7,8 @@
   import concaveman from 'concaveman'
   import polygonClipping from 'polygon-clipping'
   import type { MultiPolygon } from 'polygon-clipping'
-  import NavigateSceneInner from './NavigateSceneInner.svelte'
+  import BuildingSceneInner from './BuildingSceneInner.svelte'
+  import SceneCanvas from './SceneCanvas.svelte'
   import Sidebar from './Sidebar.svelte'
   import DetailLayout from './DetailLayout.svelte'
   import Collapsible from './Collapsible.svelte'
@@ -321,20 +321,6 @@
     ))
   }
   let whiteBackground = $state(false)
-  let exportTrigger = $state(0)
-
-  function exportPng(): void {
-    exportTrigger++
-  }
-
-  function handleExportBlob(blob: Blob): void {
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${buildingName}-navmesh.png`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
 
   let saveState: 'idle' | 'saving' | 'saved' | 'error' = $state('idle')
   let navMeshDirty = $state(false)
@@ -793,9 +779,15 @@
 
 </Sidebar>
 
-<div class="canvas-wrap">
-  <Canvas rendererParameters={{ preserveDrawingBuffer: true, alpha: false }}>
-    <NavigateSceneInner
+<SceneCanvas
+  bind:whiteBackground
+  showBgToggle={false}
+  canExport
+  exportName={`${buildingName}-navmesh`}
+  rendererParameters={{ preserveDrawingBuffer: true, alpha: false }}
+>
+  {#snippet children({ whiteBackground: wb, exportTrigger, onexportblob })}
+    <BuildingSceneInner
       {spaces}
       {showScan}
       {showBoundingBoxes}
@@ -803,12 +795,12 @@
       {endPos}
       {pathGeometry}
       {pickingEnabled}
-      {whiteBackground}
+      whiteBackground={wb}
       {shadedBoxes}
       {shadedBoxesCaps}
       {exportTrigger}
       exportScale={2}
-      onexportblob={handleExportBlob}
+      {onexportblob}
       navMeshMesh={showNavMesh ? activeNavMeshMesh : null}
       floorplanMesh={showFloorplanMesh ? floorplanDebugMesh : null}
       rooms={showRooms ? rooms : []}
@@ -816,14 +808,8 @@
       collapsedBoxes={showCollapsedBoxes ? collapsedBoxes : []}
       onplace={handlePlace}
     />
-  </Canvas>
-  <!-- <button class="bg-toggle" onclick={() => whiteBackground = !whiteBackground}>
-    {whiteBackground ? 'Dark' : 'White'} bg
-  </button> -->
-  <button class="bg-toggle" style="bottom: 44px" onclick={exportPng}>
-    Export PNG
-  </button>
-</div>
+  {/snippet}
+</SceneCanvas>
 </DetailLayout>
 
 {#if phase === 'pickStart'}
@@ -833,30 +819,6 @@
 {/if}
 
 <style>
-  .canvas-wrap {
-    flex: 1;
-    height: 100%;
-    overflow: hidden;
-    position: relative;
-  }
-
-  .bg-toggle {
-    position: absolute;
-    bottom: 12px;
-    right: 12px;
-    padding: 4px 10px;
-    font-size: 12px;
-    background: rgba(0,0,0,0.4);
-    color: white;
-    border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 4px;
-    cursor: pointer;
-  }
-
-  .bg-toggle:hover {
-    background: rgba(0,0,0,0.6);
-  }
-
   .hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0; }
   .hint.danger { color: var(--danger); }
 

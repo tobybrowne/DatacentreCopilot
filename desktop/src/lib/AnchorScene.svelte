@@ -1,9 +1,7 @@
 <script lang="ts">
-  import { Canvas } from '@threlte/core'
-  import SceneInner from './SceneInner.svelte'
+  import SceneCanvas from './SceneCanvas.svelte'
+  import AnchorSceneInner from './AnchorSceneInner.svelte'
   import type { Anchor, BoundingBox, Position, RigidTransform } from './types'
-
-  let whiteBackground = $state(false)
 
   interface Props {
     glbUrl?: string | null;
@@ -57,26 +55,11 @@
     onselect,
     ondraganchor
   }: Props = $props();
-
-  let exportTrigger = $state(0)
-
-  function exportPng(): void {
-    exportTrigger++
-  }
-
-  function handleExportBlob(blob: Blob): void {
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${exportName}.png`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
 </script>
 
-<div class="canvas-wrap">
-  <Canvas>
-    <SceneInner
+<SceneCanvas {canExport} {exportName}>
+  {#snippet children({ whiteBackground, exportTrigger, onexportblob })}
+    <AnchorSceneInner
       {glbUrl}
       {anchors}
       {selectedId}
@@ -101,41 +84,7 @@
       {onplace}
       {onselect}
       {ondraganchor}
-      onexportblob={handleExportBlob}
+      {onexportblob}
     />
-  </Canvas>
-  <button class="bg-toggle" onclick={() => whiteBackground = !whiteBackground}>
-    {whiteBackground ? 'Dark' : 'White'} bg
-  </button>
-  {#if canExport}
-    <button class="bg-toggle" style="bottom: 44px" onclick={exportPng}>
-      Export PNG
-    </button>
-  {/if}
-</div>
-
-<style>
-  .canvas-wrap {
-    flex: 1;
-    height: 100%;
-    overflow: hidden;
-    position: relative;
-  }
-
-  .bg-toggle {
-    position: absolute;
-    bottom: 12px;
-    right: 12px;
-    padding: 4px 10px;
-    font-size: 12px;
-    background: rgba(0,0,0,0.4);
-    color: white;
-    border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 4px;
-    cursor: pointer;
-  }
-
-  .bg-toggle:hover {
-    background: rgba(0,0,0,0.6);
-  }
-</style>
+  {/snippet}
+</SceneCanvas>

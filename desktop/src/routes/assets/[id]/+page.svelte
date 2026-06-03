@@ -13,7 +13,7 @@
     setGlbPosition,
     getSpaceGlbUrl,
   } from '$lib/supabase'
-  import Scene from '$lib/Scene.svelte'
+  import AnchorScene from '$lib/AnchorScene.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
   import DetailLayout from '$lib/DetailLayout.svelte'
   import Modal from '$lib/Modal.svelte'
@@ -223,7 +223,7 @@
   </Sidebar>
 
   <div class="scene-wrap">
-    <Scene
+    <AnchorScene
       {mergedSpaces}
       {mergedSpacesClickable}
       anchors={sceneAnchors}

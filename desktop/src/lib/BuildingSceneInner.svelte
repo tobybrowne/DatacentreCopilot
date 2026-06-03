@@ -1,11 +1,13 @@
 <script lang="ts">
   import { T, useThrelte } from '@threlte/core'
-  import { GLTF, OrbitControls, interactivity, type IntersectionEvent } from '@threlte/extras'
+  import { GLTF, interactivity, type IntersectionEvent } from '@threlte/extras'
   import * as THREE from 'three'
   import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js'
   import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js'
   import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
   import BoundingBoxMesh from './BoundingBoxMesh.svelte'
+  import SceneStage from './SceneStage.svelte'
+  import { useSnapshot } from './useSnapshot'
   import type { BoundingBox, Position, RigidTransform, RoomSegment } from './types'
 
   const ROOM_COLORS = [
@@ -70,39 +72,21 @@
     onexportblob
   }: Props = $props();
 
-  const { invalidate, renderer, scene, camera, size } = useThrelte()
+  const { scene, size, invalidate } = useThrelte()
 
+  // Render to a PNG whenever exportTrigger changes; drop the background first.
+  const snapshot = useSnapshot({
+    scale: () => exportScale,
+    onblob: (blob) => onexportblob?.(blob),
+    prepare: () => {
+      const saved = scene.background
+      scene.background = null
+      return () => { scene.background = saved }
+    },
+  })
   $effect(() => {
     if (exportTrigger === 0) return
-    invalidate()
-    requestAnimationFrame(() => {
-      const size = renderer.getSize(new THREE.Vector2())
-      const w = size.x * exportScale
-      const h = size.y * exportScale
-
-      renderer.setSize(w, h, false)
-
-      const cam = camera.current
-      if (cam instanceof THREE.PerspectiveCamera) {
-        cam.aspect = w / h
-        cam.updateProjectionMatrix()
-      }
-
-      const savedBackground = scene.background
-      scene.background = null
-      renderer.render(scene, cam)
-
-      renderer.domElement.toBlob(blob => {
-        scene.background = savedBackground
-        if (blob) onexportblob?.(blob)
-        renderer.setSize(size.x, size.y, false)
-        if (cam instanceof THREE.PerspectiveCamera) {
-          cam.aspect = size.x / size.y
-          cam.updateProjectionMatrix()
-        }
-        invalidate()
-      })
-    })
+    snapshot()
   })
   function buildBoxObjects(verts: [number, number][], y_min: number, y_max: number, color: number, shaded: boolean, shadedCaps: boolean): THREE.Object3D[] {
     const n = verts.length
@@ -246,16 +230,7 @@
   })
 </script>
 
-{#if whiteBackground}
-  <T.Color attach="background" args={[0xffffff]} />
-{/if}
-
-<T.AmbientLight intensity={0.6} />
-<T.DirectionalLight position={[5, 10, 5]} intensity={1} />
-
-<T.PerspectiveCamera makeDefault position={[0, 2, 5]} fov={60}>
-  <OrbitControls zoomToCursor={true} screenSpacePanning={true} />
-</T.PerspectiveCamera>
+<SceneStage {whiteBackground} />
 
 {#each spaces as space, i (space.url)}
   <T.Group bind:ref={groupRefs[i]}>

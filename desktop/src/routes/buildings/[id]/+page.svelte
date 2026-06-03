@@ -8,7 +8,8 @@
   import DetailLayout from '$lib/DetailLayout.svelte'
   import Button from '$lib/Button.svelte'
   import { Canvas } from '@threlte/core'
-  import NavigateSceneInner from '$lib/NavigateSceneInner.svelte'
+  import BuildingSceneInner from '$lib/BuildingSceneInner.svelte'
+  import ExportButton from '$lib/ExportButton.svelte'
   import { toast } from '$lib/toast'
   import type { Building, RigidTransform, Space } from '$lib/types'
 
@@ -129,7 +130,7 @@
       <div class="placeholder">Loading building…</div>
     {:else if mergedSpaces.length > 0}
       <Canvas rendererParameters={{ preserveDrawingBuffer: true, alpha: false }}>
-        <NavigateSceneInner
+        <BuildingSceneInner
           spaces={mergedSpaces}
           showBoundingBoxes={showScanBounds}
           collapsedBoxes={showLocBounds ? locBoundingBoxes : []}
@@ -138,7 +139,7 @@
           onexportblob={handleExportBlob}
         />
       </Canvas>
-      <button class="export-btn" onclick={() => exportTrigger++}>Export PNG</button>
+      <ExportButton onclick={() => exportTrigger++} />
     {:else}
       <div class="placeholder">No stitched spaces yet.</div>
     {/if}
@@ -146,19 +147,6 @@
 </DetailLayout>
 
 <style>
-  .export-btn {
-    position: absolute;
-    bottom: 12px;
-    right: 12px;
-    padding: 4px 10px;
-    font-size: 12px;
-    background: rgba(0,0,0,0.4);
-    color: white;
-    border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .export-btn:hover { background: rgba(0,0,0,0.6); }
 
   .muted { color: var(--text-muted); font-size: 12px; font-style: italic; }
 
