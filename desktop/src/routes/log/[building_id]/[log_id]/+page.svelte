@@ -4,6 +4,7 @@
   import { getLogBucketUrl } from '$lib/supabase'
   import { formatDate, getStepText } from '$lib/logUtils'
   import Sidebar from '$lib/Sidebar.svelte'
+  import DetailLayout from '$lib/DetailLayout.svelte'
   import { toast } from '$lib/toast'
   import type { LogWithContext } from '$lib/types'
   import type { PageData } from './$types'
@@ -38,8 +39,8 @@
   const stepText   = getStepText(log)
 </script>
 
-<div class="log-view">
-  <Sidebar title="Log Viewer" onback={() => goto(`/log/${buildingId}`)}>
+<DetailLayout title={log.procedureRun?.procedure.title ?? 'Log'} onback={() => goto(`/log/${buildingId}`)}>
+  <Sidebar>
 
     <section>
       <div class="log-meta">
@@ -90,19 +91,12 @@
       <div class="placeholder">No video recording for this log.</div>
     {/if}
   </div>
-</div>
+</DetailLayout>
 
 <style>
-  .log-view {
-    display: flex;
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
-  }
-
   .main {
     flex: 1;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
     display: flex;
     flex-direction: column;

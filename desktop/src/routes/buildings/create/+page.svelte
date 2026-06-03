@@ -9,6 +9,7 @@
   import BuildingStitchScene from '$lib/BuildingStitchScene.svelte'
   import NavigateSceneInner from '$lib/NavigateSceneInner.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
+  import DetailLayout from '$lib/DetailLayout.svelte'
   import Button from '$lib/Button.svelte'
   import { downloadMergedGlb as mergeAndDownloadGlb } from '$lib/glbMerge'
   import { overlapArea, extractYaw } from '$lib/polygon2d'
@@ -19,7 +20,7 @@
   const restitchId = $page.url.searchParams.get('restitch') ?? undefined
   const addSpaceId = $page.url.searchParams.get('addspace') ?? undefined
 
-  type Phase = 'setup' | 'align' | 'complete'
+  type Phase = 'setup' | 'align'
 
   interface SpaceEntry {
     space: Space
@@ -45,7 +46,8 @@
 
   let phase = $state<Phase>('setup')
   let builtSpaces: SpaceEntry[] = $state([])
-  let currentIdx = $state(1)
+  // The scan currently being aligned (chosen by the user); null = picking next.
+  let currentSpaceId: string | null = $state(null)
   let activeBuildingId: string | null = null
 
   let bX = $state(0)
@@ -79,10 +81,29 @@
     } catch (e) { error = (e as Error).message }
   })
 
+  // The building being edited (if any) — its own spaces remain selectable.
+  const editingBuildingId = draftId ?? restitchId ?? addSpaceId ?? null
   let glbSpaces = $derived(allSpaces.filter(s => s.glb_path))
-  let unselectedSpaces = $derived(glbSpaces.filter(s => !orderedSpaceIds.includes(s.id)))
-  let currentSpace = $derived(orderedSpaceIds[currentIdx] ? allSpaces.find(s => s.id === orderedSpaceIds[currentIdx]) ?? null : null)
+  // Only offer spaces not already assigned to another building.
+  let availableSpaces = $derived(glbSpaces.filter(s => s.building_id == null || s.building_id === editingBuildingId))
+  let unselectedSpaces = $derived(availableSpaces.filter(s => !orderedSpaceIds.includes(s.id)))
+  let currentSpace = $derived(currentSpaceId ? allSpaces.find(s => s.id === currentSpaceId) ?? null : null)
   let builtSpacesForScene = $derived(builtSpaces.map(e => ({ url: e.glbUrl, transform: e.transform, boundingBox: e.space.bounding_box })))
+
+  // Selected scans not yet placed and not currently being aligned — the pool to pick from.
+  let placedIds = $derived(new Set(builtSpaces.map(e => e.space.id)))
+  let remainingSpaces = $derived(
+    orderedSpaceIds
+      .filter(id => !placedIds.has(id) && id !== currentSpaceId)
+      .map(id => allSpaces.find(s => s.id === id))
+      .filter((s): s is Space => !!s)
+  )
+  // Before any reference scan is placed, the first pick just anchors the origin.
+  let needsReference = $derived(builtSpaces.length === 0)
+  // Every selected scan placed and nothing mid-alignment → ready to save.
+  let allPlaced = $derived(
+    builtSpaces.length > 0 && !currentSpaceId && orderedSpaceIds.every(id => placedIds.has(id))
+  )
 
   const bestReferenceIndex = $derived.by(() => {
     if (builtSpaces.length === 0) return null
@@ -145,13 +166,6 @@
     orderedSpaceIds = orderedSpaceIds.filter(id => id !== spaceId)
   }
 
-  function moveUp(i: number): void {
-    if (i <= frozenCount) return
-    const ids = [...orderedSpaceIds]
-    ;[ids[i-1], ids[i]] = [ids[i], ids[i-1]]
-    orderedSpaceIds = ids
-  }
-
   async function loadForAddSpace(existing: Building & { spaces: Space[] }): Promise<void> {
     const sorted = [...existing.spaces]
       .filter(s => s.glb_path)
@@ -178,23 +192,19 @@
         await prepareAddSpace(addSpaceId, frozenCount, newSpaceIds)
         activeBuildingId = addSpaceId
         builtSpaces = [...frozenSpaces]
-        currentIdx = frozenCount
       } else if (restitchId) {
         await resetBuildingForRestitch(restitchId, buildingName, orderedSpaceIds)
         activeBuildingId = restitchId
-        const refSpace = allSpaces.find(s => s.id === orderedSpaceIds[0])!
-        builtSpaces = [{ space: refSpace, glbUrl: await getSpaceGlbUrl(refSpace.glb_path!), transform: null }]
-        currentIdx = 1
+        builtSpaces = []
       } else {
         activeBuildingId = await createDraftBuilding(buildingName, orderedSpaceIds)
-        const refSpace = allSpaces.find(s => s.id === orderedSpaceIds[0])!
-        builtSpaces = [{ space: refSpace, glbUrl: await getSpaceGlbUrl(refSpace.glb_path!), transform: null }]
-        currentIdx = 1
+        builtSpaces = []
       }
     } catch (e) {
       error = (e as Error).message
       return
     }
+    currentSpaceId = null
     bX = 0; bY = 0; bZ = 0; bYDeg = 0
     alignResult = null
     phase = 'align'
@@ -205,15 +215,16 @@
     orderedSpaceIds = sorted.map(s => s.id)
     buildingName = draft.name ?? ''
     activeBuildingId = draft.id
+    // A placed scan is one with a stored transform (the reference gets an identity transform).
     builtSpaces = await Promise.all(
       sorted
-        .filter(s => s.building_index === 0 || s.offset_transformation !== null)
+        .filter(s => s.offset_transformation !== null)
         .map(async s => ({ space: s, glbUrl: await getSpaceGlbUrl(s.glb_path!), transform: s.offset_transformation }))
     )
-    currentIdx = builtSpaces.length
+    currentSpaceId = null
     bX = 0; bY = 0; bZ = 0; bYDeg = 0
     alignResult = null
-    phase = currentIdx >= orderedSpaceIds.length ? 'complete' : 'align'
+    phase = 'align'
   }
 
   function rigidTransform(): RigidTransform {
@@ -258,24 +269,49 @@
     }
   }
 
-  function goBack(): void {
-    if (currentIdx <= 1) return
-    const prev = builtSpaces[builtSpaces.length - 1]
-    builtSpaces = builtSpaces.slice(0, -1)
-    currentIdx--
-    const t = prev.transform
-    if (t) {
-      bX = t.position?.x ?? 0
-      bY = t.position?.y ?? 0
-      bZ = t.position?.z ?? 0
-      const q = t.quaternion
-      bYDeg = q
-        ? (Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z)) * 180) / Math.PI
-        : 0
-    } else {
-      bX = 0; bY = 0; bZ = 0; bYDeg = 0
-    }
+  // User picks which scan to align next. The first pick (no reference yet)
+  // anchors the origin; later picks open the alignment gizmo.
+  function pickNext(space: Space): void {
+    if (needsReference) placeReference(space)
+    else beginAlign(space.id)
+  }
+
+  function beginAlign(spaceId: string): void {
+    currentSpaceId = spaceId
+    bX = 0; bY = 0; bZ = 0; bYDeg = 0
     alignResult = null
+  }
+
+  const IDENTITY: RigidTransform = { position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } }
+
+  async function placeReference(space: Space): Promise<void> {
+    if (!activeBuildingId) return
+    try {
+      await updateBuildingSpaceTransform(activeBuildingId, space.id, IDENTITY)
+    } catch (e) {
+      error = (e as Error).message
+      return
+    }
+    builtSpaces = [...builtSpaces, { space, glbUrl: await getSpaceGlbUrl(space.glb_path!), transform: IDENTITY }]
+  }
+
+  function cancelAlign(): void {
+    currentSpaceId = null
+    bX = 0; bY = 0; bZ = 0; bYDeg = 0
+    alignResult = null
+  }
+
+  // Mark a placed scan as unplaced: drop its stored transform so it returns to the pool.
+  async function unplace(spaceId: string): Promise<void> {
+    if (!activeBuildingId) return
+    try {
+      await updateBuildingSpaceTransform(activeBuildingId, spaceId, null)
+    } catch (e) {
+      error = (e as Error).message
+      return
+    }
+    builtSpaces = builtSpaces.filter(e => e.space.id !== spaceId)
+    if (currentSpaceId === spaceId) cancelAlign()
   }
 
   async function confirmAlign(): Promise<void> {
@@ -292,15 +328,15 @@
       glbUrl: currentSpaceGlbUrl!,
       transform,
     }]
-    currentIdx++
+    currentSpaceId = null
     bX = 0; bY = 0; bZ = 0; bYDeg = 0
     alignResult = null
-    phase = currentIdx >= orderedSpaceIds.length ? 'complete' : 'align'
   }
 
   function resetBuilding(): void {
     phase = 'setup'
     builtSpaces = []
+    currentSpaceId = null
     if (addSpaceId) {
       orderedSpaceIds = frozenSpaces.map(e => e.space.id)
       activeBuildingId = addSpaceId
@@ -343,8 +379,9 @@
   }
 </script>
 
-<div class="layout">
-  <Sidebar title="Building Manager" onback={() => goto('/buildings')}>
+<DetailLayout title={buildingName?.trim() || 'New Building'} onback={() => goto('/buildings')}>
+  {#snippet badge()}<span class="pill draft">Draft</span>{/snippet}
+  <Sidebar>
     {#if phase === 'setup'}
       <section>
         <label class="section-label">Building name</label>
@@ -352,7 +389,7 @@
       </section>
 
       <section class="spaces-pool">
-        <label class="section-label">Add spaces <span class="muted">(click to add in order)</span></label>
+        <label class="section-label">Add spaces</label>
         {#if unselectedSpaces.length === 0}
           <p class="hint">All spaces added.</p>
         {:else}
@@ -369,20 +406,14 @@
 
       {#if orderedSpaceIds.length > 0}
         <section class="order-section">
-          <label class="section-label">Stitch order</label>
+          <label class="section-label">Selected scans <span class="muted">({orderedSpaceIds.length})</span></label>
           <ul class="order-list">
             {#each orderedSpaceIds as id, i (id)}
               {@const s = allSpaces.find(sp => sp.id === id)}
               {@const frozen = i < frozenCount}
               <li class="order-item" class:frozen-item={frozen}>
                 <div class="order-left">
-                  {#if i === 0}
-                    <span class="ref-badge">ref</span>
-                  {:else if frozen}
-                    <span class="done-badge">✓</span>
-                  {:else}
-                    <button class="up-btn" onclick={() => moveUp(i)} disabled={i <= frozenCount}>↑</button>
-                  {/if}
+                  {#if frozen}<span class="done-badge">✓</span>{/if}
                   <span class="order-name">{s?.name || id}</span>
                 </div>
                 {#if !frozen}
@@ -405,44 +436,77 @@
       </section>
 
     {:else if phase === 'align'}
-      <section>
-        <label class="section-label">
-          Aligning {currentIdx}/{orderedSpaceIds.length - 1}
-        </label>
-        <p class="hint space-name">{currentSpace?.name || ''}</p>
+      <!-- Placed scans -->
+      <section class="order-section">
+        <label class="section-label">Placed <span class="muted">({builtSpaces.length}/{orderedSpaceIds.length})</span></label>
+        {#if builtSpaces.length === 0}
+          <p class="hint">None yet.</p>
+        {:else}
+          <ul class="order-list">
+            {#each builtSpaces as e, i (e.space.id)}
+              {@const frozen = i < frozenCount}
+              <li class="order-item" class:frozen-item={frozen}>
+                <div class="order-left">
+                  <span class="done-badge">✓</span>
+                  <span class="order-name">{e.space.name || e.space.id}</span>
+                </div>
+                {#if !frozen}
+                  <button class="remove-btn" title="Mark unplaced" onclick={() => unplace(e.space.id)}>Unplace</button>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
       </section>
 
-      <section>
-        <label class="section-label">Gizmo mode</label>
-        <div class="mode-row">
-          <button class="mode-btn" class:active={mode === 'translate'} onclick={() => mode = 'translate'}>Move</button>
-          <button class="mode-btn" class:active={mode === 'rotate'} onclick={() => mode = 'rotate'}>Rotate</button>
-        </div>
-        <p class="hint">Drag the gizmo axes · Right-drag to orbit</p>
+      <!-- Unplaced scans -->
+      <section class="spaces-pool">
+        <label class="section-label">Unplaced</label>
+        {#if remainingSpaces.length === 0}
+          <p class="hint">{currentSpaceId ? 'Aligning the last scan…' : 'All scans placed.'}</p>
+        {:else}
+          <ul class="pool-list">
+            {#each remainingSpaces as s (s.id)}
+              <li class="pool-item" onclick={() => pickNext(s)}>
+                <span>{s.name || s.id}</span>
+                <span class="add-icon">{needsReference ? '★' : '→'}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if needsReference && !currentSpaceId}
+          <p class="hint">★ The first scan you pick anchors the origin.</p>
+        {/if}
       </section>
 
-      <section>
-        <label class="section-label">Position</label>
-        <div class="pos-row">
-          <span class="muted">X {bX.toFixed(2)}  Y {bY.toFixed(2)}  Z {bZ.toFixed(2)}  R {bYDeg.toFixed(1)}°</span>
-          <Button size="sm" onclick={() => { bX = 0; bY = 0; bZ = 0; bYDeg = 0; alignResult = null }}>Reset</Button>
-        </div>
-      </section>
+      <!-- Alignment controls for the scan being positioned -->
+      {#if currentSpaceId}
+        <section class="aligning-block">
+          <label class="section-label">Aligning</label>
 
-      <section>
-        <Button variant="primary" style="width:100%" onclick={refine} disabled={refining}>
-          {refining ? 'Snapping…' : 'Snap align'}
-        </Button>
-      </section>
+          <div class="mode-row">
+            <button class="mode-btn" class:active={mode === 'translate'} onclick={() => mode = 'translate'}>Move</button>
+            <button class="mode-btn" class:active={mode === 'rotate'} onclick={() => mode = 'rotate'}>Rotate</button>
+          </div>
 
-      {#if alignResult}
-        <section class="result" class:good={alignResult.fitness > 0.3} class:bad={alignResult.fitness <= 0.1}>
-          <label class="section-label">ICP Result</label>
-          <div class="stat"><span>Fitness</span><strong>{alignResult.fitness.toFixed(3)}</strong></div>
-          <div class="stat"><span>RMSE</span><strong>{alignResult.inlier_rmse.toFixed(4)}m</strong></div>
-          {#if alignResult.fitness < 0.1}
-            <p class="warn">Low fitness - rough alignment may be off</p>
+          <Button variant="primary" style="width:100%" onclick={refine} disabled={refining}>
+            {refining ? 'Snapping…' : 'Snap align'}
+          </Button>
+
+          {#if alignResult}
+            <div class="result" class:good={alignResult.fitness > 0.3} class:bad={alignResult.fitness <= 0.1}>
+              <div class="stat"><span>Fitness</span><strong>{alignResult.fitness.toFixed(3)}</strong></div>
+              <div class="stat"><span>RMSE</span><strong>{alignResult.inlier_rmse.toFixed(4)}m</strong></div>
+              {#if alignResult.fitness < 0.1}
+                <p class="warn">Low fitness - rough alignment may be off</p>
+              {/if}
+            </div>
           {/if}
+
+          <div class="nav-row">
+            <Button onclick={cancelAlign}>Cancel</Button>
+            <Button variant="primary" onclick={confirmAlign}>Place →</Button>
+          </div>
         </section>
       {/if}
 
@@ -452,32 +516,21 @@
         </Button>
       </section>
 
-      <section class="nav-section">
-        <div class="nav-row">
-          <Button disabled={currentIdx <= frozenCount} onclick={goBack}>← Back</Button>
-          <Button variant="primary" onclick={confirmAlign}>
-            {currentIdx < orderedSpaceIds.length - 1 ? 'Next →' : 'Finish →'}
+      <!-- Save once everything is placed -->
+      {#if allPlaced}
+        <section>
+          <p class="hint placed">All {builtSpaces.length} scans placed — ready to save "{buildingName}".</p>
+          <Button variant="primary" style="width:100%;margin-bottom:6px" onclick={downloadMergedGlb} disabled={downloading}>
+            {downloading ? 'Exporting…' : '↓ Download GLB'}
           </Button>
-        </div>
-        <Button style="width:100%" onclick={resetBuilding}>Cancel</Button>
-      </section>
-
-    {:else if phase === 'complete'}
-      <section>
-        <label class="section-label">All scans stitched</label>
-        <p class="hint placed">{builtSpaces.length} spaces ready to save as "{buildingName}".</p>
-      </section>
+          <Button variant="primary" style="width:100%" onclick={saveBuilding} disabled={saving}>
+            {saving ? 'Saving…' : 'Save building'}
+          </Button>
+        </section>
+      {/if}
 
       <section>
-        <Button variant="primary" style="width:100%" onclick={downloadMergedGlb} disabled={downloading}>
-          {downloading ? 'Exporting…' : '↓ Download GLB'}
-        </Button>
-      </section>
-      <section class="row-section">
-        <Button onclick={resetBuilding}>Reset</Button>
-        <Button variant="primary" onclick={saveBuilding} disabled={saving}>
-          {saving ? 'Saving…' : 'Save building'}
-        </Button>
+        <Button style="width:100%" onclick={resetBuilding}>Cancel building</Button>
       </section>
     {/if}
 
@@ -511,31 +564,28 @@
         />
       </Canvas>
       <button class="export-btn" onclick={() => exportTrigger++}>Export PNG</button>
-    {:else if phase === 'complete'}
+    {:else if phase === 'align' && !currentSpaceId && builtSpaces.length > 0}
       <Canvas rendererParameters={{ preserveDrawingBuffer: true, alpha: false }}>
         <NavigateSceneInner spaces={builtSpacesForScene} {showBoundingBoxes} {exportTrigger} exportScale={2} onexportblob={handleExportBlob} />
       </Canvas>
       <button class="export-btn" onclick={() => exportTrigger++}>Export PNG</button>
     {:else}
       <div class="placeholder">
-        {phase === 'setup' ? 'Configure your building to begin' : 'Loading scan…'}
+        {phase === 'setup'
+          ? 'Configure your building to begin'
+          : (phase === 'align' && !currentSpaceId)
+            ? 'Pick the reference scan to begin'
+            : 'Loading scan…'}
       </div>
     {/if}
   </div>
-</div>
+</DetailLayout>
 
 <style>
-  .layout {
-    display: flex;
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
-  }
-
   .scene-wrap {
     position: relative;
     flex: 1;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
   }
 
@@ -554,16 +604,14 @@
   .export-btn:hover { background: rgba(0,0,0,0.6); }
 
 
-  .row-section { flex-direction: row; }
-  .row-section button { flex: 1; }
-  .nav-section { gap: 6px; }
-  .nav-row { display: flex; gap: 6px; }
+  .nav-row { display: flex; gap: 6px; margin-top: 8px; }
   .nav-row :global(button) { flex: 1; }
+
+  .aligning-block { border-top: 1px solid var(--border); gap: 10px; }
 
   .muted { text-transform: none; letter-spacing: 0; font-size: 10px; }
   .hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0; }
   .hint.placed { color: var(--text); }
-  .hint.space-name { font-weight: 600; color: var(--accent); font-size: 13px; }
 
   .spaces-pool { overflow: hidden; }
   .pool-list { list-style: none; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
@@ -592,16 +640,6 @@
   .order-left { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
   .order-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .ref-badge {
-    font-size: 9px;
-    padding: 1px 5px;
-    border-radius: 3px;
-    background: var(--accent-dim);
-    color: var(--accent);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    flex-shrink: 0;
-  }
   .done-badge {
     font-size: 10px;
     padding: 1px 5px;
@@ -611,7 +649,6 @@
     flex-shrink: 0;
   }
   .frozen-item .order-name { color: var(--text-muted); }
-  .up-btn { padding: 1px 5px; font-size: 11px; border-radius: 3px; flex-shrink: 0; }
   .remove-btn {
     padding: 1px 6px;
     font-size: 13px;
@@ -636,20 +673,23 @@
   }
   .mode-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
 
-  .pos-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 4px;
-  }
-  .muted { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+  .muted { font-size: 11px; color: var(--text-muted); }
 
-  .result { border-top: 1px solid var(--border); }
-  .result.good .section-label { color: #88ff88; }
-  .result.bad .section-label { color: var(--danger); }
+  .result { border-top: 1px solid var(--border); padding-top: 8px; }
   .stat { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
   .stat span { color: var(--text-muted); }
   .warn { font-size: 11px; color: var(--pending); margin-top: 4px; }
 
   .err { padding: 8px 16px; font-size: 12px; color: var(--danger); }
+
+  .pill {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+  .pill.draft { background: var(--pending); color: #000; }
 </style>

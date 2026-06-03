@@ -19,7 +19,7 @@
 <style>
   .banner {
     position: fixed;
-    top: 16px;
+    bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
     background: var(--surface);

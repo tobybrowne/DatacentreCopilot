@@ -117,7 +117,7 @@
 <style>
   .canvas-wrap {
     flex: 1;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
     position: relative;
   }

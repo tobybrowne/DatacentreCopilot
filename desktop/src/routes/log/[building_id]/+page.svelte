@@ -3,6 +3,7 @@
   import { Hand, Video } from 'lucide-svelte'
   import { formatDate, getStepText } from '$lib/logUtils'
   import Sidebar from '$lib/Sidebar.svelte'
+  import DetailLayout from '$lib/DetailLayout.svelte'
   import { toast } from '$lib/toast'
   import type { LogWithContext, Procedure } from '$lib/types'
   import type { PageData } from './$types'
@@ -58,8 +59,8 @@
   }
 </script>
 
-<div class="log-browser">
-  <Sidebar title={building.name ?? 'Log Viewer'} onback={() => goto('/log')}>
+<DetailLayout title={building.name ?? 'Log Viewer'} onback={() => goto('/log')}>
+  <Sidebar>
 
     <section class="filters">
       <label class="section-label">Filters</label>
@@ -151,19 +152,12 @@
       {/if}
     </div>
   </div>
-</div>
+</DetailLayout>
 
 <style>
-  .log-browser {
-    display: flex;
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
-  }
-
   .main {
     flex: 1;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
     display: flex;
     flex-direction: column;

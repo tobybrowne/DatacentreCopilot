@@ -5,6 +5,7 @@
   import { fetchBuildingById, getSpaceGlbUrl, deleteBuilding } from '$lib/supabase'
   import { downloadMergedGlb } from '$lib/glbMerge'
   import Sidebar from '$lib/Sidebar.svelte'
+  import DetailLayout from '$lib/DetailLayout.svelte'
   import Button from '$lib/Button.svelte'
   import { Canvas } from '@threlte/core'
   import NavigateSceneInner from '$lib/NavigateSceneInner.svelte'
@@ -82,8 +83,8 @@
   }
 </script>
 
-<div class="layout">
-  <Sidebar title={building?.name || 'Building'} onback={() => goto('/buildings')}>
+<DetailLayout title={building?.name || 'Building'} onback={() => goto('/buildings')}>
+  <Sidebar>
     {#if loading}
       <p class="muted">Loading…</p>
     {:else if building}
@@ -142,16 +143,9 @@
       <div class="placeholder">No stitched spaces yet.</div>
     {/if}
   </div>
-</div>
+</DetailLayout>
 
 <style>
-  .layout {
-    display: flex;
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
-  }
-
   .export-btn {
     position: absolute;
     bottom: 12px;
@@ -184,13 +178,14 @@
     list-style: none;
     display: flex;
     flex-direction: column;
+    margin: 0 -24px;
   }
 
   .space-list li {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 7px 0;
+    padding: 7px 24px;
     border-bottom: 1px solid var(--border);
     font-size: 13px;
   }
@@ -202,7 +197,7 @@
   .scene-wrap {
     position: relative;
     flex: 1;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
   }
 

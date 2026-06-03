@@ -75,7 +75,7 @@ export interface Procedure {
   title: string;
   building_id: string | null;
   steps: ProcedureStep[];
-  log_type: 'FULL' | 'CAMERA_ONLY' | 'GEOMETRY_ONLY' | 'NONE';
+  log_type: "FULL" | "CAMERA_ONLY" | "GEOMETRY_ONLY" | "NONE";
 }
 
 export interface ProcedureRun {

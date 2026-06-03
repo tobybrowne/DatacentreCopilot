@@ -10,6 +10,9 @@
   import type { MultiPolygon } from 'polygon-clipping'
   import NavigateSceneInner from './NavigateSceneInner.svelte'
   import Sidebar from './Sidebar.svelte'
+  import DetailLayout from './DetailLayout.svelte'
+  import Collapsible from './Collapsible.svelte'
+  import ActionBanner from './ActionBanner.svelte'
   import Checkbox from './Checkbox.svelte'
   import Button from './Button.svelte'
   import type { BoundingBox, Position, RigidTransform, RoomSegment } from './types'
@@ -43,7 +46,7 @@
     onback
   }: Props = $props();
 
-  type Phase = 'loading' | 'pickStart' | 'pickEnd' | 'result' | 'error'
+  type Phase = 'loading' | 'idle' | 'pickStart' | 'pickEnd' | 'result' | 'error'
   let phase = $state<Phase>('loading')
   let loadingMsg = $state('Loading models…')
   let error: string | null = $state(null)
@@ -364,13 +367,13 @@
   }
 
   let params: NavMeshParams = $state({
-    boundsYMax: 3,
+    boundsYMax: 4.0,
     cs: 0.1,
     ch: 0.1,
     walkableSlopeAngle: 35,
-    walkableHeight: 2.0,
+    walkableHeight: 1.2,
     walkableClimb: 0.3,
-    walkableRadius: 0.1,
+    walkableRadius: 0,
     maxEdgeLen: 4.0,
     maxSimplificationError: 1.3,
     minRegionArea: 0.08,
@@ -481,7 +484,7 @@
       navQuery = result.navQuery
       navMeshDebugMesh = result.debugMesh
       navMeshDirty = true
-      phase = 'pickStart'
+      phase = 'idle'
       if (buildingId) await handleSaveNavMesh()
     } catch (e) {
       error = (e as Error).message
@@ -526,7 +529,7 @@
         }
       }
 
-      phase = 'pickStart'
+      phase = 'idle'
     } catch (e) {
       error = (e as Error).message
       phase = 'error'
@@ -567,17 +570,29 @@
     }
   }
 
-  function reset(): void {
+  function clearRoute(): void {
     startPos = null
     endPos = null
     pathGeometry = null
     pathLength = 0
     error = null
+  }
+
+  // Begin picking: prompt for the start point (instructions shown in the toast).
+  function startRoute(): void {
+    clearRoute()
     phase = 'pickStart'
+  }
+
+  // Abandon an in-progress route and return to idle.
+  function cancelRoute(): void {
+    clearRoute()
+    phase = 'idle'
   }
 </script>
 
-<Sidebar title={buildingName} {onback}>
+<DetailLayout title={buildingName} {onback}>
+<Sidebar>
 
   <!-- Visualisation toggles - always visible -->
   <section>
@@ -607,69 +622,51 @@
   </section>
 
   <!-- Route -->
-  <section class="collapsible-header" onclick={() => showRouteSection = !showRouteSection}>
-    <label class="section-label" style="cursor:pointer;flex:1">Route</label>
-    <span class="chevron" class:open={showRouteSection}>›</span>
-  </section>
-  {#if showRouteSection}
-    <section class="collapsible-body">
-      {#if phase === 'loading'}
-        <p class="hint">{loadingMsg}</p>
-        <div class="spinner"></div>
+  <Collapsible title="Route" bind:open={showRouteSection}>
+    {#if phase === 'loading'}
+      <p class="hint">{loadingMsg}</p>
+      <div class="spinner"></div>
 
-      {:else if phase === 'pickStart'}
-        <p class="hint">Click the map to place your <strong class="green">start</strong> point.</p>
+    {:else if phase === 'idle'}
+      <Button variant="primary" style="width:100%" onclick={startRoute}>Start route</Button>
 
-      {:else if phase === 'pickEnd'}
-        <p class="hint">Click the map to place your <strong class="red">destination</strong>.</p>
-        <Button style="width:100%" onclick={reset}>Reset</Button>
+    {:else if phase === 'pickStart' || phase === 'pickEnd'}
+      <Button style="width:100%" onclick={cancelRoute}>Cancel</Button>
 
-      {:else if phase === 'result'}
-        <p class="distance">{pathLength.toFixed(1)}<span class="unit">m</span></p>
-        <Button variant="primary" style="width:100%" onclick={reset}>New route</Button>
+    {:else if phase === 'result'}
+      <p class="distance">{pathLength.toFixed(1)}<span class="unit">m</span></p>
+      <Button variant="primary" style="width:100%" onclick={startRoute}>New route</Button>
 
-      {:else if phase === 'error'}
-        <p class="hint danger">{error}</p>
-        <Button style="width:100%" onclick={reset}>Try again</Button>
-      {/if}
-    </section>
-  {/if}
+    {:else if phase === 'error'}
+      <p class="hint danger">{error}</p>
+      <Button style="width:100%" onclick={startRoute}>Try again</Button>
+    {/if}
+  </Collapsible>
 
   <!-- Room Division -->
   {#if navmeshId || floorplanId}
-    <section class="collapsible-header" onclick={() => showRoomSection = !showRoomSection}>
-      <label class="section-label" style="cursor:pointer;flex:1">Room Division</label>
-      <span class="chevron" class:open={showRoomSection}>›</span>
-    </section>
-    {#if showRoomSection}
-      <section class="collapsible-body">
-        <div class="param-row">
-          <label>Resolution<span class="param-hint">higher = more rooms</span></label>
-          <input type="number" min="0.01" step="0.05" bind:value={resolution} />
-        </div>
-        <div class="param-row">
-          <label>Concavity<span class="param-hint">lower = tighter</span></label>
-          <input type="number" min="0.1" step="0.5" bind:value={concavity} />
-        </div>
-        <Button
-          variant="primary"
-          style="width:100%"
-          disabled={roomsState === 'computing'}
-          onclick={fetchRooms}
-        >
-          {roomsState === 'computing' ? 'Computing…' : rooms.length > 0 ? 'Recompute rooms' : 'Compute rooms'}
-        </Button>
-      </section>
-    {/if}
+    <Collapsible title="Room Division" bind:open={showRoomSection}>
+      <div class="param-row">
+        <label>Resolution<span class="param-hint">higher = more rooms</span></label>
+        <input type="number" min="0.01" step="0.05" bind:value={resolution} />
+      </div>
+      <div class="param-row">
+        <label>Concavity<span class="param-hint">lower = tighter</span></label>
+        <input type="number" min="0.1" step="0.5" bind:value={concavity} />
+      </div>
+      <Button
+        variant="primary"
+        style="width:100%"
+        disabled={roomsState === 'computing'}
+        onclick={fetchRooms}
+      >
+        {roomsState === 'computing' ? 'Computing…' : rooms.length > 0 ? 'Recompute rooms' : 'Compute rooms'}
+      </Button>
+    </Collapsible>
   {/if}
 
   <!-- Navmesh Params -->
-  <section class="collapsible-header" onclick={() => showParams = !showParams}>
-    <label class="section-label" style="cursor:pointer;flex:1">Navmesh Params</label>
-    <span class="chevron" class:open={showParams}>›</span>
-  </section>
-  {#if showParams}
-    <section class="collapsible-body">
+  <Collapsible title="Navmesh Params" bind:open={showParams}>
       <div class="param-row">
         <label>Bounds Y max<span class="param-hint">m above floor</span></label>
         <input type="number" step="0.5" min="0.5" bind:value={params.boundsYMax} />
@@ -729,16 +726,10 @@
       <Button variant="primary" style="width:100%" onclick={buildNavMesh} disabled={saveState === 'saving'}>
         {saveState === 'saving' ? 'Saving…' : 'Rebuild'}
       </Button>
-    </section>
-  {/if}
+  </Collapsible>
 
   <!-- Floorplan Params -->
-  <section class="collapsible-header" onclick={() => showFloorplanParams = !showFloorplanParams}>
-    <label class="section-label" style="cursor:pointer;flex:1">Floorplan Params</label>
-    <span class="chevron" class:open={showFloorplanParams}>›</span>
-  </section>
-  {#if showFloorplanParams}
-    <section class="collapsible-body">
+  <Collapsible title="Floorplan Params" bind:open={showFloorplanParams}>
       <div class="param-row">
         <label>Bounds Y max<span class="param-hint">m above floor</span></label>
         <input type="number" step="0.5" min="0.5" bind:value={fpParams.boundsYMax} />
@@ -798,8 +789,7 @@
       <Button variant="primary" style="width:100%" onclick={handleSaveNavMesh} disabled={saveState === 'saving' || !navMesh}>
         {saveState === 'saving' ? 'Saving…' : 'Rebuild floorplan'}
       </Button>
-    </section>
-  {/if}
+  </Collapsible>
 
 </Sidebar>
 
@@ -834,11 +824,18 @@
     Export PNG
   </button>
 </div>
+</DetailLayout>
+
+{#if phase === 'pickStart'}
+  <ActionBanner prompt="Click the map to set your" name="start point" oncancel={cancelRoute} />
+{:else if phase === 'pickEnd'}
+  <ActionBanner prompt="Click the map to set your" name="destination" oncancel={cancelRoute} />
+{/if}
 
 <style>
   .canvas-wrap {
     flex: 1;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
     position: relative;
   }
@@ -862,8 +859,6 @@
 
   .hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0; }
   .hint.danger { color: var(--danger); }
-  .green { color: #00ff88; }
-  .red { color: #ff4444; }
 
   .distance {
     font-size: 36px;
@@ -883,24 +878,6 @@
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-
-  .collapsible-header {
-    flex-direction: row;
-    align-items: center;
-    cursor: pointer;
-    user-select: none;
-  }
-  .collapsible-header:hover .section-label { color: var(--text); }
-
-  .chevron {
-    font-size: 16px;
-    color: var(--text-muted);
-    transition: transform 0.15s;
-    transform: rotate(0deg);
-  }
-  .chevron.open { transform: rotate(90deg); }
-
-  .collapsible-body { gap: 6px; }
 
   .param-row {
     display: flex;

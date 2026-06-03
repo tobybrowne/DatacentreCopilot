@@ -5,6 +5,8 @@
   import { fetchAnchors, fetchSpaceById, deleteAnchor, unmapAnchor, setGlbPosition, getSpaceGlbUrl, getAnchorImageUrl, computeBoundingBox } from '$lib/supabase'
   import Scene from '$lib/Scene.svelte'
   import Sidebar from '$lib/Sidebar.svelte'
+  import DetailLayout from '$lib/DetailLayout.svelte'
+  import Collapsible from '$lib/Collapsible.svelte'
   import Button from '$lib/Button.svelte'
   import ActionBanner from '$lib/ActionBanner.svelte'
   import { toast } from '$lib/toast'
@@ -23,6 +25,10 @@
   let mappingAnchor: Anchor | null = $state(null)
   let mappingImgUrl: string | null = $state(null)
   let saving = $state(false)
+
+  let showUnmapped = $state(true)
+  let showRefs = $state(true)
+  let showContent = $state(true)
 
   // Fetch the reference photo (if any) for the anchor currently being mapped.
   $effect(() => {
@@ -145,15 +151,27 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<Sidebar title="Space Calibration" onback={() => goto('/calibration')}>
+<DetailLayout title={spaceName || 'Space Calibration'} onback={() => goto('/calibration')}>
+<Sidebar>
+  <section>
+    {#if boundingBox}
+      <Button style="width:100%;margin-bottom:6px" onclick={() => showBoundingBoxes = !showBoundingBoxes}>
+        {showBoundingBoxes ? 'Hide boxes' : 'Show boxes'}
+      </Button>
+    {/if}
+    <Button style="width:100%;margin-bottom:6px" onclick={handleRecomputeBbox} disabled={recomputingBbox}>
+      {recomputingBbox ? 'Starting…' : 'Recompute bounding box'}
+    </Button>
+    {#if glbUrl}
+      <Button style="width:100%" onclick={() => showDensity = !showDensity}>
+        {showDensity ? 'Hide density map' : 'Show density map'}
+      </Button>
+    {/if}
+  </section>
+
   {#if unmappedRefs.length > 0}
-    <section class="unmapped-section">
-      <label class="section-label warning">
-        Unmapped reference anchors
-        <span class="badge warning">{unmappedRefs.length}</span>
-      </label>
-      <p class="hint-text">These anchors exist on the headset but haven't been located in the mesh yet. Click "Map" then click their physical location in the 3D view.</p>
-      <ul>
+    <Collapsible title="Unmapped ref anchors" count={unmappedRefs.length} bind:open={showUnmapped} labelClass="warning" badgeClass="warning">
+      <ul class="unmapped-list">
         {#each unmappedRefs as anchor (anchor.id)}
           <li class:mapping={mappingAnchor?.id === anchor.id}>
             <span class="anchor-name">{anchor.name || 'Unnamed'}</span>
@@ -165,14 +183,10 @@
           </li>
         {/each}
       </ul>
-    </section>
+    </Collapsible>
   {/if}
 
-  <section>
-    <label class="section-label">
-      Reference anchors
-      <span class="badge">{mappedRefs.length}</span>
-    </label>
+  <Collapsible title="Reference anchors" count={mappedRefs.length} bind:open={showRefs}>
     {#if mappedRefs.length === 0}
       <p class="empty-msg">None mapped yet.</p>
     {:else}
@@ -201,13 +215,9 @@
         {/each}
       </ul>
     {/if}
-  </section>
+  </Collapsible>
 
-  <section>
-    <label class="section-label">
-      Content anchors
-      <span class="badge">{content.length}</span>
-    </label>
+  <Collapsible title="Content anchors" count={content.length} bind:open={showContent}>
     {#if content.length === 0}
       <p class="empty-msg">None placed.</p>
     {:else}
@@ -239,29 +249,7 @@
         {/each}
       </ul>
     {/if}
-  </section>
-
-  <section>
-    {#if boundingBox}
-      <Button style="width:100%;margin-bottom:6px" onclick={() => showBoundingBoxes = !showBoundingBoxes}>
-        {showBoundingBoxes ? 'Hide boxes' : 'Show boxes'}
-      </Button>
-    {/if}
-    <Button style="width:100%" onclick={handleRecomputeBbox} disabled={recomputingBbox}>
-      {recomputingBbox ? 'Starting…' : 'Recompute bounding box'}
-    </Button>
-  </section>
-
-  {#if glbUrl}
-    <section>
-      <Button style="width:100%" onclick={() => showDensity = !showDensity}>
-        {showDensity ? 'Hide density map' : 'Show density map'}
-      </Button>
-      {#if showDensity}
-        <p class="hint-text" style="margin-top:6px">Blue = sparse (doorway glimpse) · Red = dense (room interior)</p>
-      {/if}
-    </section>
-  {/if}
+  </Collapsible>
 </Sidebar>
 
 <Scene
@@ -279,6 +267,7 @@
   onselect={(id) => selectedId = id}
   ondraganchor={handleDragAnchor}
 />
+</DetailLayout>
 
 {#if mappingAnchor}
   <ActionBanner prompt="Click the mesh to map:" name={mappingAnchor.name || 'Unnamed'} oncancel={cancel} />
@@ -287,12 +276,6 @@
       <img src={mappingImgUrl} alt="Reference photo for {mappingAnchor.name || 'anchor'}" />
     </div>
   {/if}
-{/if}
-
-{#if unmappedRefs.length > 0 && !mappingAnchor && glbUrl}
-  <div class="unmapped-notice">
-    {unmappedRefs.length} reference anchor{unmappedRefs.length > 1 ? 's' : ''} not yet mapped to the mesh.
-  </div>
 {/if}
 
 <style>
@@ -315,17 +298,8 @@
     display: block;
   }
 
-  .unmapped-section {
-    background: #ffcc0009;
-    border-bottom: 1px solid #ffcc0044 !important;
-  }
-  .unmapped-section ul { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  .unmapped-list { list-style: none; display: flex; flex-direction: column; gap: 4px; margin: 0 -24px; }
 
-  .section-label.warning { color: var(--pending); }
-
-  .badge.warning { background: #ffcc0022; color: var(--pending); }
-
-  .hint-text { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 
   .tag {
     font-size: 10px;
@@ -339,13 +313,13 @@
   .tag.ref { background: #00d4ff22; color: var(--accent); }
   .tag.desktop { background: #88ff8822; color: #88ff88; }
 
-  .anchor-list { list-style: none; }
+  .anchor-list { list-style: none; margin: 0 -24px; }
 
   li {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 8px 0;
+    padding: 8px 24px;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
     position: relative;
@@ -395,18 +369,4 @@
   .map-btn.active { background: var(--accent); color: #000; }
 
   .empty-msg { color: var(--text-muted); font-size: 12px; font-style: italic; }
-
-  .unmapped-notice {
-    position: fixed;
-    top: 16px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #ffcc0022;
-    border: 1px solid var(--pending);
-    border-radius: 8px;
-    padding: 8px 16px;
-    font-size: 12px;
-    color: var(--pending);
-    z-index: 50;
-  }
 </style>

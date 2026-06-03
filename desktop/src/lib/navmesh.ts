@@ -39,7 +39,7 @@ export interface PathResult {
 }
 
 async function loadMeshes(
-  spaces: Array<{ url: string; transform: RigidTransform | null }>
+  spaces: Array<{ url: string; transform: RigidTransform | null }>,
 ): Promise<THREE.Mesh[]> {
   const loader = new GLTFLoader();
   const meshes: THREE.Mesh[] = [];
@@ -52,7 +52,7 @@ async function loadMeshes(
       "quat:",
       gltf.scene.quaternion,
       "transform:",
-      space.transform
+      space.transform,
     );
 
     const group = new THREE.Group();
@@ -78,7 +78,7 @@ async function loadMeshes(
       `[NavMesh] space[${si}] bounds:`,
       spaceBox.min,
       spaceBox.max,
-      `(${meshes.length - beforeCount} meshes)`
+      `(${meshes.length - beforeCount} meshes)`,
     );
   }
 
@@ -100,7 +100,7 @@ export function pruneToLargestComponent(mesh: THREE.Mesh): THREE.Mesh {
   const PREC = 1e4;
   const posKey = (vi: number) =>
     `${Math.round(pos.getX(vi) * PREC)},${Math.round(
-      pos.getY(vi) * PREC
+      pos.getY(vi) * PREC,
     )},${Math.round(pos.getZ(vi) * PREC)}`;
   const canonical = new Int32Array(vertCount);
   const keyToCanon = new Map<string, number>();
@@ -190,7 +190,7 @@ export function makeNavMeshResult(navMesh: NavMesh): NavMeshResult {
 
 export async function buildNavMeshFromSpaces(
   spaces: Array<{ url: string; transform: RigidTransform | null }>,
-  params: NavMeshParams
+  params: NavMeshParams,
 ): Promise<NavMeshResult> {
   await initRecast();
   const meshes = await loadMeshes(spaces);
@@ -208,7 +208,7 @@ export async function buildNavMeshFromSpaces(
     totalVerts,
     "bounds:",
     inputBox.min,
-    inputBox.max
+    inputBox.max,
   );
 
   const { boundsYMax, cs, ch } = params;
@@ -225,7 +225,7 @@ export async function buildNavMeshFromSpaces(
     minRegionArea: Math.max(0, Math.round(params.minRegionArea / (cs * cs))),
     mergeRegionArea: Math.max(
       0,
-      Math.round(params.mergeRegionArea / (cs * cs))
+      Math.round(params.mergeRegionArea / (cs * cs)),
     ),
     maxVertsPerPoly: params.maxVertsPerPoly,
     detailSampleDist: params.detailSampleDist,
@@ -261,7 +261,7 @@ export async function buildNavMeshFromSpaces(
   const result = threeToSoloNavMesh(clipped, { ...recastParams });
   if (!result.success || !result.navMesh) {
     throw new Error(
-      "Failed to generate navigation mesh. The scan geometry may be too noisy."
+      "Failed to generate navigation mesh. The scan geometry may be too noisy.",
     );
   }
 
@@ -283,14 +283,14 @@ export async function buildNavMeshFromSpaces(
     navPos.count,
     "bounds (world):",
     navBox.min,
-    navBox.max
+    navBox.max,
   );
 
   return navResult;
 }
 
 export async function loadNavMeshFromBuffer(
-  data: Uint8Array
+  data: Uint8Array,
 ): Promise<NavMeshResult> {
   await initRecast();
   const result = importNavMesh(data);
@@ -301,7 +301,7 @@ export async function loadNavMeshFromBuffer(
 export function computePath(
   navQuery: NavMeshQuery,
   startPos: Position,
-  endPos: Position
+  endPos: Position,
 ): PathResult {
   const { point: snappedStart, success: startOk } =
     navQuery.findClosestPoint(startPos);
@@ -310,7 +310,7 @@ export function computePath(
 
   if (!startOk || !endOk) {
     throw new Error(
-      "One or both points are too far from any walkable surface. Try clicking closer to the floor."
+      "One or both points are too far from any walkable surface. Try clicking closer to the floor.",
     );
   }
 
@@ -318,7 +318,7 @@ export function computePath(
 
   if (path.length < 2) {
     throw new Error(
-      "No path found - the two points may be in disconnected areas."
+      "No path found - the two points may be in disconnected areas.",
     );
   }
 
@@ -329,7 +329,7 @@ export function computePath(
     elevated.length * 4,
     0.04,
     8,
-    false
+    false,
   );
 
   const length = path.reduce((acc, pt, i) => {

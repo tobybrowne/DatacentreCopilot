@@ -14,7 +14,7 @@ import type {
 
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL as string,
-  import.meta.env.VITE_SUPABASE_KEY as string
+  import.meta.env.VITE_SUPABASE_KEY as string,
 );
 
 export async function fetchSpaces(): Promise<Space[]> {
@@ -24,6 +24,17 @@ export async function fetchSpaces(): Promise<Space[]> {
     .order("name", { ascending: true });
   if (error) throw error;
   return data as Space[];
+}
+
+export async function fetchBuildingNames(): Promise<Map<string, string>> {
+  const { data, error } = await supabase.from("buildings").select("id, name");
+  if (error) throw error;
+  return new Map(
+    (data as { id: string; name: string | null }[]).map((b) => [
+      b.id,
+      b.name ?? "Unnamed",
+    ]),
+  );
 }
 
 export async function fetchSpaceById(id: string): Promise<Space> {
@@ -71,7 +82,7 @@ export async function computeBoundingBox(spaceId: string): Promise<void> {
 }
 
 export async function fetchAnchors(
-  spaceId: string | null = null
+  spaceId: string | null = null,
 ): Promise<Anchor[]> {
   let query = supabase
     .from("anchors")
@@ -110,7 +121,7 @@ export async function insertAnchor({
 
 export async function setGlbPosition(
   id: string,
-  glbPosition: Position
+  glbPosition: Position,
 ): Promise<void> {
   const { error } = await supabase
     .from("anchors")
@@ -132,9 +143,8 @@ export async function unmapAnchor(id: string): Promise<void> {
   if (error) throw error;
 }
 
-
 export async function fetchUserPosition(
-  userId: string
+  userId: string,
 ): Promise<Position | null> {
   const { data, error } = await supabase
     .from("users")
@@ -146,7 +156,7 @@ export async function fetchUserPosition(
 }
 
 export async function fetchBuildingById(
-  id: string
+  id: string,
 ): Promise<Building & { spaces: Space[] }> {
   const { data, error } = await supabase
     .from("buildings")
@@ -199,7 +209,7 @@ async function getUserSiteId(): Promise<string> {
 // Creates a draft building and assigns spaces to it in order.
 export async function createDraftBuilding(
   name: string,
-  orderedSpaceIds: string[]
+  orderedSpaceIds: string[],
 ): Promise<string> {
   const site_id = await getUserSiteId();
   const { data: building, error: buildingErr } = await supabase
@@ -218,8 +228,8 @@ export async function createDraftBuilding(
           building_index: index,
           offset_transformation: null,
         })
-        .eq("id", spaceId)
-    )
+        .eq("id", spaceId),
+    ),
   );
 
   return building.id;
@@ -228,7 +238,7 @@ export async function createDraftBuilding(
 export async function updateBuildingSpaceTransform(
   _buildingId: string,
   spaceId: string,
-  transform: RigidTransform
+  transform: RigidTransform | null,
 ): Promise<void> {
   const { error } = await supabase
     .from("spaces")
@@ -250,7 +260,7 @@ async function _upsertNavmeshRow(
   columnId: "navmesh_id" | "floorplan_id",
   binPath: string,
   glbPath: string,
-  buildSettings: Record<string, unknown>
+  buildSettings: Record<string, unknown>,
 ): Promise<void> {
   const { data: building, error: buildingError } = await supabase
     .from("buildings")
@@ -275,7 +285,12 @@ async function _upsertNavmeshRow(
     const navmeshId = crypto.randomUUID();
     const { error: insertError } = await supabase
       .from("navmeshes")
-      .insert({ id: navmeshId, navmesh_path: binPath, glb_path: glbPath, build_settings: buildSettings });
+      .insert({
+        id: navmeshId,
+        navmesh_path: binPath,
+        glb_path: glbPath,
+        build_settings: buildSettings,
+      });
     if (insertError) throw insertError;
 
     const { error: updateError } = await supabase
@@ -291,7 +306,11 @@ export async function saveNavMesh(
   data: Uint8Array,
   glbData: ArrayBuffer,
   buildSettings: Record<string, unknown>,
-  floorplan?: { data: Uint8Array; glbData: ArrayBuffer; buildSettings: Record<string, unknown> }
+  floorplan?: {
+    data: Uint8Array;
+    glbData: ArrayBuffer;
+    buildSettings: Record<string, unknown>;
+  },
 ): Promise<void> {
   const binPath = `navmeshes/${buildingId}.bin`;
   const glbPath = `navmeshes/${buildingId}.glb`;
@@ -314,7 +333,13 @@ export async function saveNavMesh(
     userSiteId: userData?.site_id ?? null,
   });
 
-  await _upsertNavmeshRow(buildingId, "navmesh_id", binPath, glbPath, buildSettings);
+  await _upsertNavmeshRow(
+    buildingId,
+    "navmesh_id",
+    binPath,
+    glbPath,
+    buildSettings,
+  );
 
   const { error: binUploadError } = await supabase.storage
     .from("spaces_bucket")
@@ -323,7 +348,10 @@ export async function saveNavMesh(
       contentType: "application/octet-stream",
     });
   if (binUploadError) {
-    console.error("saveNavMesh bin upload error:", JSON.stringify(binUploadError, null, 2));
+    console.error(
+      "saveNavMesh bin upload error:",
+      JSON.stringify(binUploadError, null, 2),
+    );
     throw binUploadError;
   }
 
@@ -334,7 +362,10 @@ export async function saveNavMesh(
       contentType: "model/gltf-binary",
     });
   if (glbUploadError) {
-    console.error("saveNavMesh glb upload error:", JSON.stringify(glbUploadError, null, 2));
+    console.error(
+      "saveNavMesh glb upload error:",
+      JSON.stringify(glbUploadError, null, 2),
+    );
     throw glbUploadError;
   }
 
@@ -342,16 +373,28 @@ export async function saveNavMesh(
     const fpBinPath = `navmeshes/${buildingId}_floorplan.bin`;
     const fpGlbPath = `navmeshes/${buildingId}_floorplan.glb`;
 
-    await _upsertNavmeshRow(buildingId, "floorplan_id", fpBinPath, fpGlbPath, floorplan.buildSettings);
+    await _upsertNavmeshRow(
+      buildingId,
+      "floorplan_id",
+      fpBinPath,
+      fpGlbPath,
+      floorplan.buildSettings,
+    );
 
     const { error: fpBinErr } = await supabase.storage
       .from("spaces_bucket")
-      .upload(fpBinPath, floorplan.data, { upsert: true, contentType: "application/octet-stream" });
+      .upload(fpBinPath, floorplan.data, {
+        upsert: true,
+        contentType: "application/octet-stream",
+      });
     if (fpBinErr) throw fpBinErr;
 
     const { error: fpGlbErr } = await supabase.storage
       .from("spaces_bucket")
-      .upload(fpGlbPath, floorplan.glbData, { upsert: true, contentType: "model/gltf-binary" });
+      .upload(fpGlbPath, floorplan.glbData, {
+        upsert: true,
+        contentType: "model/gltf-binary",
+      });
     if (fpGlbErr) throw fpGlbErr;
   }
 }
@@ -359,32 +402,32 @@ export async function saveNavMesh(
 export async function prepareAddSpace(
   buildingId: string,
   existingCount: number,
-  newSpaceIds: string[]
+  newSpaceIds: string[],
 ): Promise<void> {
   const { error: buildingErr } = await supabase
-    .from('buildings')
+    .from("buildings")
     .update({ draft: true })
-    .eq('id', buildingId);
+    .eq("id", buildingId);
   if (buildingErr) throw buildingErr;
 
   await Promise.all(
     newSpaceIds.map((spaceId, index) =>
       supabase
-        .from('spaces')
+        .from("spaces")
         .update({
           building_id: buildingId,
           building_index: existingCount + index,
           offset_transformation: null,
         })
-        .eq('id', spaceId)
-    )
+        .eq("id", spaceId),
+    ),
   );
 }
 
 export async function resetBuildingForRestitch(
   buildingId: string,
   name: string,
-  orderedSpaceIds: string[]
+  orderedSpaceIds: string[],
 ): Promise<void> {
   const { error: clearErr } = await supabase
     .from("spaces")
@@ -411,38 +454,41 @@ export async function resetBuildingForRestitch(
           building_index: index,
           offset_transformation: null,
         })
-        .eq("id", spaceId)
-    )
+        .eq("id", spaceId),
+    ),
   );
 }
 
 export async function saveLocBoundingBox(
   spaceId: string,
-  bb: import('./types').BoundingBox | null
+  bb: import("./types").BoundingBox | null,
 ): Promise<void> {
   const { error } = await supabase
-    .from('spaces')
+    .from("spaces")
     .update({ loc_bounding_box: bb })
-    .eq('id', spaceId);
+    .eq("id", spaceId);
   if (error) throw error;
 }
 
 export async function saveTightBoundingBox(
   spaceId: string,
-  bb: import('./types').BoundingBox | null
+  bb: import("./types").BoundingBox | null,
 ): Promise<void> {
   const { error } = await supabase
-    .from('spaces')
+    .from("spaces")
     .update({ tight_bounding_box: bb })
-    .eq('id', spaceId);
+    .eq("id", spaceId);
   if (error) throw error;
 }
 
-export async function uploadSpaceGlb(glbPath: string, data: ArrayBuffer): Promise<void> {
+export async function uploadSpaceGlb(
+  glbPath: string,
+  data: ArrayBuffer,
+): Promise<void> {
   const { error } = await supabase.storage
-    .from('spaces_bucket')
-    .upload(glbPath, data, { upsert: true, contentType: 'model/gltf-binary' })
-  if (error) throw error
+    .from("spaces_bucket")
+    .upload(glbPath, data, { upsert: true, contentType: "model/gltf-binary" });
+  if (error) throw error;
 }
 
 export async function deleteBuilding(buildingId: string): Promise<void> {
@@ -454,7 +500,7 @@ export async function deleteBuilding(buildingId: string): Promise<void> {
 }
 
 export async function fetchAssetsWithAnchors(
-  buildingId: string
+  buildingId: string,
 ): Promise<AssetWithAnchor[]> {
   const { data, error } = await supabase
     .from("assets")
@@ -490,7 +536,7 @@ export async function deleteAsset(id: string): Promise<void> {
 
 export async function setAssetAnchor(
   assetId: string,
-  anchorId: string
+  anchorId: string,
 ): Promise<void> {
   const { error } = await supabase
     .from("assets")
@@ -500,7 +546,7 @@ export async function setAssetAnchor(
 }
 
 export async function fetchLogsForBuilding(
-  buildingId: string
+  buildingId: string,
 ): Promise<LogWithContext[]> {
   const { data: procs, error: e1 } = await supabase
     .from("procedures")
@@ -535,7 +581,7 @@ export async function fetchLogsForBuilding(
   }
 
   rawLogs.sort((a, b) =>
-    (b.created_at as string).localeCompare(a.created_at as string)
+    (b.created_at as string).localeCompare(a.created_at as string),
   );
 
   const uniqueUserIds = [...new Set(rawLogs.map((l) => l.user_id as string))];
@@ -544,7 +590,10 @@ export async function fetchLogsForBuilding(
     .select("id, contact_email")
     .in("id", uniqueUserIds);
   const emailMap = new Map(
-    (userRows ?? []).map((u: { id: string; contact_email: string }) => [u.id, u.contact_email])
+    (userRows ?? []).map((u: { id: string; contact_email: string }) => [
+      u.id,
+      u.contact_email,
+    ]),
   );
 
   // Fetch log_assets for all logs
@@ -556,7 +605,8 @@ export async function fetchLogsForBuilding(
       .select("log_id, asset_id")
       .in("log_id", logIds.slice(i, i + BATCH));
     if (error) throw error;
-    if (batch) rawLogAssets.push(...(batch as { log_id: string; asset_id: string }[]));
+    if (batch)
+      rawLogAssets.push(...(batch as { log_id: string; asset_id: string }[]));
   }
 
   const uniqueAssetIds = [...new Set(rawLogAssets.map((la) => la.asset_id))];
@@ -566,13 +616,17 @@ export async function fetchLogsForBuilding(
       .from("assets")
       .select("id, name")
       .in("id", uniqueAssetIds.slice(i, i + BATCH));
-    (assetBatch ?? []).forEach((a: { id: string; name: string | null }) => assetNameMap.set(a.id, a.name));
+    (assetBatch ?? []).forEach((a: { id: string; name: string | null }) =>
+      assetNameMap.set(a.id, a.name),
+    );
   }
 
   const logAssetsMap = new Map<string, { id: string; name: string | null }[]>();
   for (const la of rawLogAssets) {
     if (!logAssetsMap.has(la.log_id)) logAssetsMap.set(la.log_id, []);
-    logAssetsMap.get(la.log_id)!.push({ id: la.asset_id, name: assetNameMap.get(la.asset_id) ?? null });
+    logAssetsMap
+      .get(la.log_id)!
+      .push({ id: la.asset_id, name: assetNameMap.get(la.asset_id) ?? null });
   }
 
   return rawLogs.map((log) => {
@@ -599,18 +653,38 @@ export async function fetchLogById(id: string): Promise<LogWithContext | null> {
   if (!log) return null;
 
   const [logAssetsResult, userResult] = await Promise.all([
-    supabase.from("log_assets").select("asset_id, assets(id, name)").eq("log_id", log.id),
-    supabase.from("users").select("contact_email").eq("id", log.user_id).single(),
+    supabase
+      .from("log_assets")
+      .select("asset_id, assets(id, name)")
+      .eq("log_id", log.id),
+    supabase
+      .from("users")
+      .select("contact_email")
+      .eq("id", log.user_id)
+      .single(),
   ]);
   const assets = (logAssetsResult.data ?? []).map(
-    (la: { asset_id: string; assets: { id: string; name: string | null }[] | { id: string; name: string | null } | null }) => ({
+    (la: {
+      asset_id: string;
+      assets:
+        | { id: string; name: string | null }[]
+        | { id: string; name: string | null }
+        | null;
+    }) => ({
       id: la.asset_id,
-      name: Array.isArray(la.assets) ? (la.assets[0]?.name ?? null) : (la.assets?.name ?? null),
-    })
+      name: Array.isArray(la.assets)
+        ? (la.assets[0]?.name ?? null)
+        : (la.assets?.name ?? null),
+    }),
   );
 
   if (!log.procedure_run_id) {
-    return { ...log, procedureRun: null, userEmail: userResult.data?.contact_email ?? null, assets } as LogWithContext;
+    return {
+      ...log,
+      procedureRun: null,
+      userEmail: userResult.data?.contact_email ?? null,
+      assets,
+    } as LogWithContext;
   }
 
   const { data: run, error: e2 } = await supabase
@@ -619,7 +693,12 @@ export async function fetchLogById(id: string): Promise<LogWithContext | null> {
     .eq("id", log.procedure_run_id)
     .single();
   if (e2 || !run) {
-    return { ...log, procedureRun: null, userEmail: userResult.data?.contact_email ?? null, assets } as LogWithContext;
+    return {
+      ...log,
+      procedureRun: null,
+      userEmail: userResult.data?.contact_email ?? null,
+      assets,
+    } as LogWithContext;
   }
 
   const { data: proc, error: e3 } = await supabase
@@ -628,14 +707,22 @@ export async function fetchLogById(id: string): Promise<LogWithContext | null> {
     .eq("id", run.procedure_id)
     .single();
   if (e3 || !proc) {
-    return { ...log, procedureRun: null, userEmail: userResult.data?.contact_email ?? null, assets } as LogWithContext;
+    return {
+      ...log,
+      procedureRun: null,
+      userEmail: userResult.data?.contact_email ?? null,
+      assets,
+    } as LogWithContext;
   }
 
   return {
     ...log,
     userEmail: userResult.data?.contact_email ?? null,
     assets,
-    procedureRun: { ...(run as unknown as ProcedureRun), procedure: proc as unknown as Procedure },
+    procedureRun: {
+      ...(run as unknown as ProcedureRun),
+      procedure: proc as unknown as Procedure,
+    },
   } as LogWithContext;
 }
 
@@ -649,7 +736,7 @@ export async function getLogBucketUrl(path: string): Promise<string> {
 
 export function subscribeUserPosition(
   userId: string,
-  onChange: (pos: Position | null) => void
+  onChange: (pos: Position | null) => void,
 ): () => void {
   const channel = supabase
     .channel(`user-pos-${userId}`)
@@ -663,8 +750,8 @@ export function subscribeUserPosition(
       },
       (payload) =>
         onChange(
-          (payload.new as { glb_position?: Position }).glb_position ?? null
-        )
+          (payload.new as { glb_position?: Position }).glb_position ?? null,
+        ),
     )
     .subscribe();
   return () => supabase.removeChannel(channel);

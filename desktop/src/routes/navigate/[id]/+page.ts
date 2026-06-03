@@ -41,7 +41,10 @@ export const load: PageLoad = async ({ params }) => {
     }
   }
 
-  let existingFloorplanNavMesh: { url: string; buildSettings: Record<string, unknown> } | null = null;
+  let existingFloorplanNavMesh: {
+    url: string;
+    buildSettings: Record<string, unknown>;
+  } | null = null;
   if ((building as any).floorplan_id) {
     const { data: fp } = await supabase
       .from("navmeshes")
