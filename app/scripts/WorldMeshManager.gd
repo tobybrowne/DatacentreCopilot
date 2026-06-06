@@ -41,6 +41,7 @@ var _blocks: Dictionary = {}  # block_id (String) -> StaticBody3D (with MeshInst
 
 
 func _ready() -> void:
+	add_to_group("world_mesh")  # so AnchorManager can find us for ICP refinement
 	OS.request_permissions()
 	call_deferred("_initialize")
 
@@ -141,6 +142,34 @@ func _on_meshing_error(err: String) -> void:
 	else:
 		push_warning("WorldMeshManager: ext not available after error - not restarting")
 	_restarting = false
+
+
+## Collect every world-mesh vertex in GLOBAL space, voxel-downsampled so the
+## payload stays small. Keeps one point per voxel cell. Used by AnchorManager to
+## seed the backend ICP refinement.
+func collect_points(voxel_size: float = 0.05) -> PackedVector3Array:
+	var grid: Dictionary = {}
+	var inv_voxel := 1.0 / maxf(voxel_size, 0.001)
+	for body in _blocks.values():
+		if not is_instance_valid(body):
+			continue
+		var mesh_inst: MeshInstance3D = body.get_node_or_null("Mesh")
+		if not mesh_inst or not mesh_inst.mesh or mesh_inst.mesh.get_surface_count() == 0:
+			continue
+		var xf := mesh_inst.global_transform
+		var verts: PackedVector3Array = mesh_inst.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		for v in verts:
+			var gp := xf * v
+			var key := Vector3i(floori(gp.x * inv_voxel), floori(gp.y * inv_voxel), floori(gp.z * inv_voxel))
+			if not grid.has(key):
+				grid[key] = gp
+	var out := PackedVector3Array()
+	out.resize(grid.size())
+	var i := 0
+	for p in grid.values():
+		out[i] = p
+		i += 1
+	return out
 
 
 func _clear_blocks() -> void:

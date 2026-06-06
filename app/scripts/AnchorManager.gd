@@ -4,6 +4,8 @@ class_name AnchorManager
 ## ML2 spatial anchor lifecycle, Kabsch calibration, and building-wide visualisation.
 ## Must be a child of XROrigin3D.
 
+@export var stitch_api_url: String = "https://room-finder.tobybrowne.co.uk"
+
 var _ml_mgr: Node
 var _next_num := 1
 
@@ -22,6 +24,13 @@ var _calibrated := false       # true once we have any valid calibration transfo
 var _space_calibrated := false # true once the *current* space's calibration is ready
 var _last_kabsch_error := 0.0
 
+# ICP refinement: a world-frame correction applied on top of every Kabsch solve,
+# so the periodic Kabsch recalibration and the periodic ICP refinement don't
+# overwrite each other. Identity until _refine_with_icp() lands a result.
+var _icp_correction := Transform3D.IDENTITY
+var _refining := false
+var _icp_refine_timer := 0.0
+
 # Building stitching: space_id → Transform3D
 var _space_offsets: Dictionary = {}
 var _current_space_id := ""
@@ -32,6 +41,11 @@ var _virtual_markers: Array[Dictionary] = []
 # Calibration validation (held-out reference anchors)
 var _holdout_anchors: Dictionary = {}   # ml2_id → Anchor (excluded from Kabsch)
 var _holdout_nodes: Dictionary = {}     # ml2_id → Node3D (their tracked nodes once found)
+
+# Reference anchors that have an ml2_id but no glb_position yet (placed on the
+# headset, not yet mapped on desktop). Loaded and shown (cyan) in calibration
+# mode only, and kept out of Kabsch since they have no GLB coords to solve against.
+var _unmapped_refs: Dictionary = {}     # ml2_id → Anchor
 var _validation_markers: Array[Node3D] = []
 
 # Cross-space alignment visualisation
@@ -85,7 +99,7 @@ func _process(delta: float) -> void:
 			for uuid in _storage_pending.duplicate():
 				_ml_mgr.call("load_anchor", StringName(uuid))
 
-	if _calibrated and _kabsch_nodes.size() >= 2 and _kabsch_snapshot.size() == _kabsch_nodes.size():
+	if _calibrated and not _refining and _kabsch_nodes.size() >= 2 and _kabsch_snapshot.size() == _kabsch_nodes.size():
 		if DevConfig.PERIODIC_RECALIBRATION:
 			_periodic_recalib_timer += delta
 			if _periodic_recalib_timer >= DevConfig.PERIODIC_RECALIBRATION_INTERVAL:
@@ -98,6 +112,12 @@ func _process(delta: float) -> void:
 				if _kabsch_nodes[i].position.distance_to(_kabsch_snapshot[i]) >= RECALIB_MOVE_THRESHOLD:
 					_refresh_calibration()
 					break
+
+		if DevConfig.ICP_REFINEMENT:
+			_icp_refine_timer += delta
+			if _icp_refine_timer >= DevConfig.ICP_REFINEMENT_INTERVAL:
+				_icp_refine_timer = 0.0
+				_refine_with_icp()  # async; sets _refining to block overlap/recalib
 
 
 # ── Calibration API ───────────────────────────────────────────────────────────
@@ -188,6 +208,30 @@ func get_space_anchor_xr_positions() -> Array[Dictionary]:
 			"name": anchor.name,
 			"anchor_type": anchor.anchor_type,
 			"xr_pos": _v3_dict(node.position),
+		})
+	return result
+
+
+## World positions of every building-wide asset marker. Unlike reference anchors
+## (which swap per-space on re-localisation), assets persist across the whole
+## session, so logging these over time quantifies content judder - including the
+## jump at re-localisation, when cross-space assets are re-chained through a new
+## current_offset. in_current_space flags assets positioned directly vs. via the
+## stitch-offset chain (the latter judder more).
+func get_asset_world_positions() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for entry in _virtual_markers:
+		var anchor: Anchor = entry.anchor
+		if anchor.anchor_type != Anchor.TYPE_ASSET:
+			continue
+		if not is_instance_valid(entry.marker):
+			continue
+		result.append({
+			"id": anchor.id,
+			"name": anchor.name,
+			"space_id": anchor.space_id,
+			"in_current_space": anchor.space_id == _current_space_id,
+			"world_pos": _v3_dict(entry.marker.global_position),
 		})
 	return result
 
@@ -332,6 +376,7 @@ func _setup_space_for_calibration(space_id: String) -> void:
 	_kabsch_names.clear()
 	_holdout_anchors.clear()
 	_holdout_nodes.clear()
+	_unmapped_refs.clear()
 	for m in _validation_markers:
 		if is_instance_valid(m):
 			m.queue_free()
@@ -341,6 +386,8 @@ func _setup_space_for_calibration(space_id: String) -> void:
 			m.queue_free()
 	_cross_space_markers.clear()
 	_space_calibrated = false
+	# ICP refinement is per-space (its own mesh + GLB), so clear it on space change.
+	_icp_correction = Transform3D.IDENTITY
 	_current_space_id = space_id
 
 	# Collect all valid reference anchors for this space
@@ -350,6 +397,11 @@ func _setup_space_for_calibration(space_id: String) -> void:
 			continue
 		if anchor.glb_position != null and anchor.ml2_id:
 			valid_refs.append(anchor)
+		elif anchor.ml2_id and _anchor_editing:
+			# Placed on the headset but not yet mapped on desktop. Show it in
+			# calibration mode (cyan) so it can be seen/deleted, but keep it out
+			# of Kabsch since it has no glb_position to calibrate against.
+			_unmapped_refs[anchor.ml2_id] = anchor
 		else:
 			print("AnchorManager: ref anchor ", anchor.id, " skipped - missing glb_position or ml2_id")
 
@@ -397,6 +449,14 @@ func _setup_space_for_calibration(space_id: String) -> void:
 		else:
 			load_anchor_from_ml2(ml2_id)
 
+	# Load unmapped reference anchors so they're visible (cyan) in calibration mode
+	for ml2_id in _unmapped_refs:
+		var already_tracked: Node3D = tracked_nodes.get(ml2_id)
+		if already_tracked:
+			already_tracked.add_child(_create_tracked_marker(_unmapped_refs[ml2_id]))
+		else:
+			load_anchor_from_ml2(ml2_id)
+
 	# Handle non-reference anchors
 	for anchor in _all_anchors.values():
 		if anchor.space_id != space_id or anchor.anchor_type == Anchor.TYPE_TEMP or anchor.anchor_type == Anchor.TYPE_REFERENCE:
@@ -424,7 +484,7 @@ func _try_calibrate() -> void:
 		kabsch_dst.append(node.position)
 
 	var first_calibration := not _space_calibrated
-	_calibration = Kabsch.compute_yaw_locked(_kabsch_src, kabsch_dst)
+	_calibration = _icp_correction * Kabsch.compute_yaw_locked(_kabsch_src, kabsch_dst)
 	_calibrated = true
 	_space_calibrated = true
 	_kabsch_snapshot = kabsch_dst
@@ -496,7 +556,7 @@ func _refresh_calibration() -> void:
 			return
 		kabsch_dst.append(node.position)
 
-	var new_calibration := Kabsch.compute_yaw_locked(_kabsch_src, kabsch_dst)
+	var new_calibration := _icp_correction * Kabsch.compute_yaw_locked(_kabsch_src, kabsch_dst)
 
 	var err := 0.0
 	for i in _kabsch_src.size():
@@ -514,6 +574,110 @@ func _refresh_calibration() -> void:
 	_reposition_virtual_markers()
 
 
+
+
+## Refine the Kabsch calibration against the live ML2 world mesh via the backend
+## /stitch/refine_live endpoint. Runs periodically (see ICP_REFINEMENT_INTERVAL).
+## The current calibration seeds the ICP; an accepted result is stored as a
+## correction relative to the *pure* Kabsch solve, so the periodic recalibration
+## keeps re-applying it on top of Kabsch without the two compounding.
+func _refine_with_icp() -> void:
+	var wm = get_tree().get_first_node_in_group("world_mesh")
+	if wm == null:
+		push_warning("AnchorManager: ICP refine - no WorldMeshManager in group 'world_mesh'")
+		return
+	var pts: PackedVector3Array = wm.collect_points(DevConfig.ICP_REFINEMENT_VOXEL)
+	if pts.size() < DevConfig.ICP_REFINEMENT_MIN_POINTS:
+		print("AnchorManager: ICP refine skipped - only ", pts.size(), " live points (need ", DevConfig.ICP_REFINEMENT_MIN_POINTS, ")")
+		return
+
+	# Pure (uncorrected) Kabsch at this instant. The correction is defined
+	# relative to this, so repeated refinements stay consistent with the periodic
+	# Kabsch recalibration (which also multiplies _icp_correction onto pure Kabsch).
+	var kabsch_dst: Array[Vector3] = []
+	for node in _kabsch_nodes:
+		if not is_instance_valid(node):
+			return
+		kabsch_dst.append(node.position)
+	var k_pure := Kabsch.compute_yaw_locked(_kabsch_src, kabsch_dst)
+
+	_refining = true
+	# Mesh points come back in GLOBAL space; _calibration maps GLB -> XROrigin-local,
+	# so lift the seed into global space to match, and convert the result back after.
+	var origin_xf: Transform3D = (get_parent() as Node3D).global_transform
+	var seed_local := _calibration
+	var seed_global := origin_xf * seed_local
+	var q := seed_global.basis.get_rotation_quaternion()
+
+	var pt_list: Array = []
+	pt_list.resize(pts.size())
+	for i in pts.size():
+		var g := pts[i]
+		pt_list[i] = [g.x, g.y, g.z]
+
+	var body := JSON.stringify({
+		"space_id": _current_space_id,
+		"voxel": DevConfig.ICP_REFINEMENT_VOXEL,
+		"points": pt_list,
+		"initial_transform": {
+			"position": {"x": seed_global.origin.x, "y": seed_global.origin.y, "z": seed_global.origin.z},
+			"quaternion": {"x": q.x, "y": q.y, "z": q.z, "w": q.w},
+		},
+	})
+
+	var http := HTTPRequest.new()
+	add_child(http)
+	var headers := PackedStringArray(["Content-Type: application/json"])
+	if SupabaseManager.auth_user:
+		headers.append("Authorization: Bearer " + SupabaseManager.auth_user.access_token)
+	var send_err := http.request(stitch_api_url + "/stitch/refine_live", headers, HTTPClient.METHOD_POST, body)
+	if send_err != OK:
+		push_warning("AnchorManager: ICP refine request failed to start err=%d" % send_err)
+		http.queue_free()
+		_refining = false
+		return
+
+	print("AnchorManager: ICP refine - uploading ", pts.size(), " live points")
+	var result: Array = await http.request_completed
+	http.queue_free()
+	_refining = false
+
+	var code: int = result[1]
+	if code != 200:
+		push_warning("AnchorManager: ICP refine HTTP %d" % code)
+		return
+	var data = JSON.parse_string((result[3] as PackedByteArray).get_string_from_utf8())
+	if typeof(data) != TYPE_DICTIONARY or not data.has("transform"):
+		push_warning("AnchorManager: ICP refine - malformed response")
+		return
+
+	var fitness: float = data.get("fitness", 0.0)
+	var rmse: float = data.get("inlier_rmse", 0.0)
+	var t: Dictionary = data["transform"]
+	var pos: Dictionary = t["position"]
+	var quat: Dictionary = t["quaternion"]
+	var refined_global := Transform3D(
+		Basis(Quaternion(quat["x"], quat["y"], quat["z"], quat["w"])),
+		Vector3(pos["x"], pos["y"], pos["z"]),
+	)
+	var refined_local := origin_xf.affine_inverse() * refined_global
+
+	var delta := refined_local.origin.distance_to(seed_local.origin)
+	if not DevConfig.ICP_REFINEMENT_FORCE:
+		if fitness < DevConfig.ICP_REFINEMENT_MIN_FITNESS:
+			print("AnchorManager: ICP refine rejected - fitness ", snappedf(fitness, 0.001), " < ", DevConfig.ICP_REFINEMENT_MIN_FITNESS)
+			return
+		if delta > DevConfig.ICP_REFINEMENT_MAX_DELTA:
+			print("AnchorManager: ICP refine rejected - moved ", snappedf(delta, 0.001), "m > ", DevConfig.ICP_REFINEMENT_MAX_DELTA, "m")
+			return
+
+	# Store the ICP fix as a correction relative to the pure Kabsch solve, so the
+	# periodic recalibration re-applies it (via _icp_correction * Kabsch) rather
+	# than clobbering it, and repeated refinements don't compound.
+	_icp_correction = refined_local * k_pure.affine_inverse()
+	_calibration = refined_local
+	_reposition_virtual_markers()
+	print("AnchorManager: ICP refine applied - fitness ", snappedf(fitness, 0.001), " rmse ", snappedf(rmse, 0.001), "m moved ", snappedf(delta, 0.001), "m")
 
 
 func _reposition_virtual_markers() -> void:
@@ -700,6 +864,11 @@ func _on_ml_anchor_tracked(anchor_node: Node3D, ml2_uuid: StringName, is_new: bo
 		_holdout_nodes[uuid_str] = anchor_node
 		if _calibrated:
 			_spawn_validation_marker(uuid_str)
+		anchor_tracked.emit(anchor_node, ml2_uuid, is_new)
+		return
+
+	if _unmapped_refs.has(uuid_str):
+		anchor_node.add_child(_create_tracked_marker(_unmapped_refs[uuid_str]))
 		anchor_tracked.emit(anchor_node, ml2_uuid, is_new)
 		return
 

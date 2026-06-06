@@ -8,7 +8,6 @@ signal connected
 signal disconnected
 
 @export var service_url := "wss://room-finder.tobybrowne.co.uk/copilot/ws"
-@export var instructions := "You are a helpful AR assistant."
 @export var send_interval_ms := 100
 @export var playback_volume_db := 16.0
 
@@ -17,6 +16,24 @@ var tools: Array = [
 		"type": "function",
 		"name": "toggle_ar",
 		"description": "Show or hide all AR visuals so the user sees only the real world. Call again to restore.",
+		"parameters": {"type": "object", "properties": {}},
+	},
+	{
+		"type": "function",
+		"name": "show_map",
+		"description": "Show a small floating 3D dollhouse map of the current building with a marker for where the user is standing. Call when the user asks to see the map, a floor plan, the layout, or where they are in the building.",
+		"parameters": {"type": "object", "properties": {}},
+	},
+	{
+		"type": "function",
+		"name": "hide_map",
+		"description": "Hide the floating dollhouse map shown by show_map.",
+		"parameters": {"type": "object", "properties": {}},
+	},
+	{
+		"type": "function",
+		"name": "follow_map",
+		"description": "Enter navigation mode: show the dollhouse map (if not already shown) and have it follow the user and rotate to match the direction they are facing as they walk. Call when the user asks to navigate, to follow them, or for a map that tracks them. Call again to stop following and leave the map in place.",
 		"parameters": {"type": "object", "properties": {}},
 	},
 	{
@@ -34,7 +51,7 @@ var tools: Array = [
 	{
 		"type": "function",
 		"name": "query_table",
-		"description": "Query the database. Chain calls to simulate joins. Tables: users, assets, procedures, procedure_runs, logs, log_assets.",
+		"description": "Query the database. Chain calls to simulate joins.",
 		"parameters": {
 			"type": "object",
 			"properties": {
@@ -76,6 +93,7 @@ var _send_timer := 0.0
 var _is_connected := false
 var _listening := false
 var _followup_timer: SceneTreeTimer = null
+var _awaiting_playback_end := false
 
 const _FOLLOWUP_WINDOW := 7.0
 
@@ -143,6 +161,7 @@ func _process(delta: float) -> void:
 				_on_ws_connected()
 			_receive_messages()
 			_drain_playback_queue()
+			_check_followup_start()
 			_drain_mic(delta)
 
 		WebSocketPeer.STATE_CLOSED:
@@ -160,17 +179,23 @@ func _on_ws_connected() -> void:
 
 func _send_session_update() -> void:
 	var session := {
-		"modalities": ["text", "audio"],
-		"instructions": instructions,
-		"input_audio_format": "pcm16",
-		"output_audio_format": "pcm16",
-		"turn_detection": {
-			"type": "server_vad",
-			"threshold": 0.5,
-			"silence_duration_ms": 600,
-			"prefix_padding_ms": 300,
+		"type": "realtime",
+		"output_modalities": ["audio"],
+		"audio": {
+			"input": {
+				"format": {"type": "audio/pcm", "rate": 24000},
+				"turn_detection": {
+					"type": "server_vad",
+					"threshold": 0.5,
+					"silence_duration_ms": 600,
+					"prefix_padding_ms": 300,
+				},
+				"transcription": {"model": "whisper-1"},
+			},
+			"output": {
+				"format": {"type": "audio/pcm", "rate": 24000},
+			},
 		},
-		"input_audio_transcription": {"model": "whisper-1"},
 		"tools": tools + _extra_tools,
 		"tool_choice": "auto",
 	}
@@ -253,11 +278,11 @@ func _handle_message(msg: Dictionary) -> void:
 		"status":
 			print("CopilotManager: status → %s" % msg["state"])
 			if msg["state"] == "idle":
-				_followup_timer = get_tree().create_timer(_FOLLOWUP_WINDOW)
-				_followup_timer.timeout.connect(_stop_listening)
+				# AI finished generating; wait for playback to drain before
+				# starting the follow-up window (see _check_followup_start).
+				_awaiting_playback_end = true
 			elif msg["state"] == "listening":
-				if _followup_timer:
-					_followup_timer = null
+				_cancel_followup()
 			status_changed.emit(msg["state"])
 		"error":
 			push_warning("CopilotManager: %s" % msg.get("message", ""))
@@ -303,12 +328,6 @@ func update_tools(new_tools: Array) -> void:
 		_send_session_update()
 
 
-func update_instructions(new_instructions: String) -> void:
-	instructions = new_instructions
-	if _is_connected:
-		_send_session_update()
-
-
 func connect_voice_manager(vm: VoiceManager) -> void:
 	print("CopilotManager: connecting voice manager")
 	vm.copilot.connect(_on_wake_word)
@@ -329,6 +348,27 @@ func setup_hud(camera: Camera3D) -> void:
 	_listen_dot.position = Vector3(0.074, 0.07, -0.3)
 	_listen_dot.visible = false
 	camera.add_child(_listen_dot)
+
+
+func _check_followup_start() -> void:
+	# Begin the follow-up window only once the assistant's audio has finished
+	# playing back, not when it finished generating.
+	if not _awaiting_playback_end:
+		return
+	if not _playback_queue.is_empty():
+		return
+	_awaiting_playback_end = false
+	_followup_timer = get_tree().create_timer(_FOLLOWUP_WINDOW)
+	_followup_timer.timeout.connect(_stop_listening)
+	print("CopilotManager: AI finished speaking - follow-up window open")
+
+
+func _cancel_followup() -> void:
+	_awaiting_playback_end = false
+	if _followup_timer:
+		if _followup_timer.timeout.is_connected(_stop_listening):
+			_followup_timer.timeout.disconnect(_stop_listening)
+		_followup_timer = null
 
 
 func _stop_listening() -> void:

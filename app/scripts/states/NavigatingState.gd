@@ -82,6 +82,7 @@ func _run_experiment_loop() -> void:
 		}
 		data["fps"] = Engine.get_frames_per_second()
 		data["anchor_xr_positions"] = anchor_manager.get_space_anchor_xr_positions()
+		data["asset_positions"] = anchor_manager.get_asset_world_positions()
 		_experiment_samples.append(data)
 
 		flush_timer += DevConfig.LOCATION_EXPERIMENT_INTERVAL

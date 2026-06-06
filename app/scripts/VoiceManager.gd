@@ -8,6 +8,7 @@ extends Node
 @export var intents: PackedStringArray = ["copilot"]
 
 signal copilot
+signal show_map
 signal voice_error(error: String)
 
 var _voice: Node = null
@@ -23,6 +24,9 @@ func _ready() -> void:
 	if not _voice.is_available():
 		push_warning("VoiceManager: ML2 voice API not available")
 		return
+
+	if DevConfig.DOLLHOUSE_MAP_VOICE_SHORTCUT and "show map" not in intents:
+		intents.append("show map")
 
 	_voice.intents = intents
 	_voice.voice_intent.connect(_on_intent)
@@ -42,6 +46,9 @@ func _on_intent(intent_name: String, _intent_id: int) -> void:
 		"copilot":
 			print("VoiceManager: recognized intent '%s'" % intent_name)
 			copilot.emit()
+		"show map":
+			print("VoiceManager: recognized intent '%s'" % intent_name)
+			show_map.emit()
 		_:
 			push_warning("VoiceManager: unhandled intent '%s'" % intent_name)
 

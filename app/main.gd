@@ -64,6 +64,10 @@ func _ready() -> void:
 	var building_session := BuildingSessionManager.new()
 	add_child(building_session)
 
+	var dollhouse_map := DollhouseMapManager.new()
+	$XROrigin3D.add_child(dollhouse_map)
+	dollhouse_map.setup(anchor_manager, $XROrigin3D/XRCamera3D, voice_manager, gesture_manager)
+
 	var wifi_indicator := WifiIndicator.new()
 	$XROrigin3D/XRCamera3D.add_child(wifi_indicator)
 	if DevConfig.SHOW_FPS:

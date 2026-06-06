@@ -18,6 +18,7 @@ from spaces.router import router as spaces_router
 from stitch.router import router as stitch_router
 from video.router import router as video_router
 from copilot.router import router as realtime_router
+from copilot.proxy import build_instructions
 from navmesh_rooms.router import router as navmesh_rooms_router
 import live_asset_data
 
@@ -45,6 +46,15 @@ def _start_detour_server() -> subprocess.Popen:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     detour_proc = await asyncio.to_thread(_start_detour_server)
+
+    # Build the copilot system prompt (fetches the live DB schema) and print the
+    # exact text sent to the AI. Warms the schema cache; a failure here only logs
+    # so the rest of the service still starts.
+    try:
+        prompt = await asyncio.to_thread(build_instructions)
+        print(f'[copilot] system prompt:\n{prompt}\n', flush=True)
+    except Exception as exc:
+        print(f'[copilot] WARNING: could not build system prompt at startup: {exc}', flush=True)
 
     task = asyncio.create_task(live_asset_data.run())
     yield
