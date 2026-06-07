@@ -1,6 +1,6 @@
 <script lang="ts">
   import { T, useThrelte, useTask } from '@threlte/core'
-  import { GLTF } from '@threlte/extras'
+  import TransformedGltf from './TransformedGltf.svelte'
   import { onDestroy, untrack } from 'svelte'
   import * as THREE from 'three'
   import { TransformControls } from 'three/addons/controls/TransformControls.js'
@@ -93,34 +93,8 @@
     }
   }
 
-  // Tint the best reference space mesh orange; runs every frame to catch async GLTF loads.
-  let lastTintedIdx: number | null | undefined = undefined
-  useTask(() => {
-    const refIdx = bestReferenceIndex
-    if (refIdx === lastTintedIdx) return
-    let applied = false
-    groupRefs.forEach((group, i) => {
-      if (!group) return
-      const want = i === refIdx
-      group.traverse(obj => {
-        if (!(obj instanceof THREE.Mesh) || !obj.material) return
-        applied = true
-        const mats: THREE.Material[] = Array.isArray(obj.material) ? obj.material : [obj.material]
-        for (const mat of mats) {
-          if ('emissive' in mat) {
-            const m = mat as THREE.MeshStandardMaterial
-            m.emissive.set(want ? 0xff8800 : 0x000000)
-            m.emissiveIntensity = want ? 0.18 : 0
-          } else {
-            // MeshBasicMaterial - tint via color
-            const m = mat as THREE.MeshBasicMaterial
-            m.color.set(want ? 0xffaa55 : 0xffffff)
-          }
-        }
-      })
-    })
-    if (applied) { lastTintedIdx = refIdx; invalidate() }
-  })
+  // Best-reference space is tinted via TransformedGltf's `highlight` prop (the scan
+  // shader applies a flat tint), so no per-mesh material patching is needed here.
 
   const { stop } = useTask(() => {
     if (tc || !newGroup) return
@@ -169,7 +143,7 @@
 
 {#each builtSpaces as space, i (space.url)}
   <T.Group bind:ref={groupRefs[i]}>
-    <GLTF url={space.url} />
+    <TransformedGltf url={space.url} highlight={i === bestReferenceIndex} />
     {#if showBoundingBoxes && space.boundingBox}
       <BoundingBoxMesh boundingBox={space.boundingBox} color={BOX_COLORS[i % BOX_COLORS.length]} />
     {/if}
@@ -177,7 +151,7 @@
 {/each}
 
 <T.Group bind:ref={newGroup}>
-  <GLTF url={newSpaceUrl} />
+  <TransformedGltf url={newSpaceUrl} />
   {#if showBoundingBoxes && newBoundingBox}
     <BoundingBoxMesh boundingBox={newBoundingBox} color={0xffaa00} />
   {/if}

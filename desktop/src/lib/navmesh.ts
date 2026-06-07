@@ -180,7 +180,7 @@ export function makeNavMeshResult(navMesh: NavMesh): NavMeshResult {
   geo.setIndex(indices);
   geo.computeVertexNormals();
   const mat = new THREE.MeshStandardMaterial({
-    color: "#00d4ff",
+    color: "#ff4444",
     opacity: 0.4,
     transparent: true,
     side: THREE.DoubleSide,

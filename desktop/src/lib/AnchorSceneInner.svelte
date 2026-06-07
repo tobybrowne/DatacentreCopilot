@@ -1,6 +1,6 @@
 <script lang="ts">
   import { T, useThrelte, useTask } from '@threlte/core'
-  import { GLTF, interactivity, type IntersectionEvent } from '@threlte/extras'
+  import { interactivity, type IntersectionEvent } from '@threlte/extras'
   import { onDestroy } from 'svelte'
   import * as THREE from 'three'
   import { TransformControls } from 'three/addons/controls/TransformControls.js'
@@ -222,7 +222,7 @@
 <!-- ── Normal viewing mode ── -->
 {#if stitchPhase === 'idle'}
   {#if glbUrl}
-    <GLTF url={glbUrl} onclick={(e: IntersectionEvent<MouseEvent>) => { e.stopPropagation(); if (e.point) handleMeshClick(e.point) }} />
+    <TransformedGltf url={glbUrl} clickable={true} onclick={(e) => handleMeshClick(e.point)} />
   {/if}
 
   {#if showDensity && glbUrl}
@@ -280,7 +280,7 @@
 <!-- ── Stitch: pick source points (show new space only) ── -->
   {#if stitchPhase === 'pickSource' && stitchSourceGlbUrl}
     <!-- display GLB, use handleMeshClick to allow for adding stitch points -->
-    <GLTF url={stitchSourceGlbUrl} ondblclick={(e: IntersectionEvent<MouseEvent>) => { e.stopPropagation(); if (e.point) handleMeshClick(e.point) }} />
+    <TransformedGltf url={stitchSourceGlbUrl} clickable={true} ondblclick={(e) => handleMeshClick(e.point)} />
 
     <!-- display the stitch sphere -->
     {#each stitchSourcePoints as pt}
@@ -312,7 +312,7 @@
 
   {#if stitchSourceGlbUrl}
     <T.Group bind:ref={sourceGroup}>
-      <GLTF url={stitchSourceGlbUrl} />
+      <TransformedGltf url={stitchSourceGlbUrl} />
     </T.Group>
   {/if}
 

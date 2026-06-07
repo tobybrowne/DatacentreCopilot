@@ -1,6 +1,7 @@
 <script lang="ts">
   import { T, useThrelte } from '@threlte/core'
-  import { GLTF, interactivity, type IntersectionEvent } from '@threlte/extras'
+  import { interactivity } from '@threlte/extras'
+  import TransformedGltf from './TransformedGltf.svelte'
   import * as THREE from 'three'
   import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js'
   import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js'
@@ -203,11 +204,8 @@
 
   interactivity()
 
-  function handleClick(e: IntersectionEvent<MouseEvent>): void {
-    if (!pickingEnabled) return
-    e.stopPropagation()
-    const point: THREE.Vector3 = e.point
-    if (!point) return
+  function handleClick(point: THREE.Vector3): void {
+    if (!pickingEnabled || !point) return
     onplace?.({ x: point.x, y: point.y, z: point.z })
   }
 
@@ -235,7 +233,7 @@
 {#each spaces as space, i (space.url)}
   <T.Group bind:ref={groupRefs[i]}>
     {#if showScan}
-      <GLTF url={space.url} onclick={handleClick} />
+      <TransformedGltf url={space.url} clickable={pickingEnabled} onclick={(e) => handleClick(e.point)} />
     {/if}
     {#if showBoundingBoxes && space.boundingBox}
       <BoundingBoxMesh boundingBox={space.boundingBox} color={BOX_COLORS[i % BOX_COLORS.length]} shaded={shadedBoxes} shadedCaps={shadedBoxesCaps} />
