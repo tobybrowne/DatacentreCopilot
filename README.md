@@ -1,4 +1,4 @@
-# entangl-copilot
+# datacentre-copilot
 
 Spatial copilot for teams managing critical infrastructure. An augmented-reality
 application for the **Magic Leap 2** guides engineers through procedures in the
